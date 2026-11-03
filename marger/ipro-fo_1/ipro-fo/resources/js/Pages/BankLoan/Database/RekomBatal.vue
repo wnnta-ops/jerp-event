@@ -49,7 +49,7 @@ const countWord = computed(() => terbilang(count.value));
 
 function cetak() { window.print(); }
 
-// Textarea keterangan tumbuh mengikuti isi (agar tidak terpotong saat dicetak).
+// Textarea (nama user, sales, agent, keterangan) tumbuh mengikuti isi — agar tidak terpotong saat dicetak.
 function autogrow(e: Event) {
     const t = e.target as HTMLTextAreaElement;
     t.style.height = 'auto';
@@ -57,7 +57,7 @@ function autogrow(e: Event) {
 }
 onMounted(async () => {
     await nextTick();
-    document.querySelectorAll<HTMLTextAreaElement>('.rekom textarea.ket').forEach((t) => {
+    document.querySelectorAll<HTMLTextAreaElement>('.rekom .list-table textarea').forEach((t) => {
         t.style.height = 'auto';
         t.style.height = t.scrollHeight + 'px';
     });
@@ -138,9 +138,9 @@ onMounted(async () => {
 
                 <table class="list-table">
                     <colgroup>
-                        <col style="width:3%" /><col style="width:6%" /><col style="width:4%" /><col style="width:11%" />
+                        <col style="width:3%" /><col style="width:7%" /><col style="width:5%" /><col style="width:11%" />
                         <col style="width:12%" /><col style="width:13%" /><col style="width:8%" /><col style="width:8%" />
-                        <col style="width:7%" /><col style="width:6%" /><col style="width:22%" />
+                        <col style="width:7%" /><col style="width:6%" /><col style="width:20%" />
                     </colgroup>
                     <thead>
                         <tr>
@@ -151,13 +151,13 @@ onMounted(async () => {
                     <tbody>
                         <tr v-for="(r, i) in rows" :key="r.id">
                             <td class="c">{{ i + 1 }}</td>
-                            <td><input class="f" v-model="r.cluster" /></td>
+                            <td><input class="f c" v-model="r.cluster" /></td>
                             <td><input class="f c" v-model="r.thp" /></td>
                             <td><input class="f" v-model="r.tipe" /></td>
                             <td><input class="f" v-model="r.unit" /></td>
-                            <td><input class="f" v-model="r.user" /></td>
-                            <td><input class="f" v-model="r.sales" /></td>
-                            <td><input class="f" v-model="r.agent" /></td>
+                            <td><textarea class="f" v-model="r.user" rows="1" @input="autogrow"></textarea></td>
+                            <td><textarea class="f" v-model="r.sales" rows="1" @input="autogrow"></textarea></td>
+                            <td><textarea class="f" v-model="r.agent" rows="1" @input="autogrow"></textarea></td>
                             <td><input class="f c" v-model="r.cara_bayar" /></td>
                             <td><input class="f c" v-model="r.status" /></td>
                             <td><textarea class="f ket" v-model="r.keterangan" rows="1" @input="autogrow"></textarea></td>

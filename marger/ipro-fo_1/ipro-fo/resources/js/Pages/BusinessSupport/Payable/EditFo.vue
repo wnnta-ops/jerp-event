@@ -4,13 +4,14 @@ import { useForm, Link } from '@inertiajs/vue3';
 import { ArrowLeft, Plus, Trash2, Save, Pencil } from 'lucide-vue-next';
 import Button from '@/Components/UI/Button.vue';
 import SearchSelect from '@/Components/UI/SearchSelect.vue';
+import { pilihCc, opsiCc } from '@/Composables/costCenterAkun';
 import MoneyInput from '@/Components/UI/MoneyInput.vue';
 
 /*
  * Edit invoice hasil Posting Invoice dari FO (Refund / Komisi / BLT / Gimmick). Semua isian bisa
  * diubah; terkunci (oleh server) begitu jurnalnya di-approve Accounting atau sudah diproses FAT.
  */
-type Acc = { id: number; code: string; name: string; cost_center_optional?: boolean; cost_center_id?: number | null };
+type Acc = { id: number; code: string; name: string; cost_center_optional?: boolean; cost_center_id?: number | null; cc_ids?: number[] };
 const props = defineProps<{
     invoice: { id: number; invoice_number: string; supplier_id: number | null; supplier_invoice_no: string | null; invoice_date: string; due_date: string; description: string; pph_amount: number; source_type: string };
     lines: Array<{ description: string; amount: number }>;
@@ -21,6 +22,7 @@ const props = defineProps<{
     costCenters: Array<{ id: number; code: string; name: string }>;
     coaTanpaAnggaran: string[];
     ccPengguna: number | null;
+    ccUser?: number[];
     bisaUbahCc: boolean;
 }>();
 
@@ -48,8 +50,18 @@ function pilihAkun(l: any, v: any) {
     const a = props.accounts.find((x) => x.id === Number(v));
     if (!v || !a) return;
     if (ccOptional(v)) { l.cost_center_id = null; return; }
-    if (a.cost_center_id) { l.cost_center_id = Number(a.cost_center_id); return; }
+    // COA berdaftar cost center → unit kerja user bila ada di daftar, selain itu default COA.
+    if ((a.cc_ids ?? []).length) { l.cost_center_id = ccBawaan(v); return; }
     if (!l.cost_center_id) l.cost_center_id = props.ccPengguna ?? null;
+}
+/** Cost center bawaan baris (CostCenterAkun) — unit kerja user dicocokkan dengan daftar COA. */
+function ccBawaan(accountId: any): number | null {
+    const milik = props.ccUser ?? (props.ccPengguna ? [props.ccPengguna] : []);
+    return pilihCc(props.accounts.find((a: any) => a.id === Number(accountId)), milik);
+}
+/** Pilihan cost center baris: dibatasi daftar COA bila ada. */
+function ccOpsiBaris(accountId: any) {
+    return opsiCc(props.accounts.find((a: any) => a.id === Number(accountId)), ccOpsi.value);
 }
 const ccKurang = (l: any) => !!l.account_id && !l.cost_center_id && !ccOptional(l.account_id);
 
@@ -60,7 +72,7 @@ const balance = computed(() => Math.round(totalDebit.value * 100) === Math.round
 const bolehSimpan = computed(() => balance.value && form.lines.length > 0 && !form.journal_lines.some(ccKurang) && !!form.description.trim());
 
 function tambahBaris() { form.lines.push({ description: form.description, amount: 0 }); }
-function tambahJurnal() { form.journal_lines.push({ account_id: null as any, cost_center_id: props.ccPengguna ?? null, description: form.description, debit: 0, credit: 0 }); }
+function tambahJurnal() { form.journal_lines.push({ account_id: null as any, cost_center_id: ccBawaan(null), description: form.description, debit: 0, credit: 0 }); }
 function simpan() {
     if (!bolehSimpan.value) return;
     form.put(route('bs.ap.update-fo', props.invoice.id));
@@ -122,7 +134,7 @@ const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 
                         <tr v-for="(l, i) in form.journal_lines" :key="i">
                             <td class="px-3 py-2"><SearchSelect :model-value="l.account_id" :options="akunOpsi" placeholder="— pilih akun —" @update:model-value="(v) => pilihAkun(l, v)" /></td>
                             <td class="px-3 py-2">
-                                <div :class="ccKurang(l) ? 'rounded-lg ring-1 ring-danger-400' : ''"><SearchSelect v-model="l.cost_center_id" :options="ccOpsi" :disabled="!bisaUbahCc" :placeholder="ccOptional(l.account_id) ? '— tanpa cost center —' : '— cost center —'" /></div>
+                                <div :class="ccKurang(l) ? 'rounded-lg ring-1 ring-danger-400' : ''"><SearchSelect v-model="l.cost_center_id" :options="ccOpsiBaris(l.account_id)" :disabled="!bisaUbahCc" :placeholder="ccOptional(l.account_id) ? '— tanpa cost center —' : '— cost center —'" /></div>
                                 <p v-if="ccKurang(l)" class="mt-0.5 text-[10.5px] font-medium text-danger-500">Wajib diisi</p>
                                 <p v-else-if="l.account_id && ccOptional(l.account_id)" class="mt-0.5 text-[10.5px] text-neutral-400">Boleh dikosongkan</p>
                             </td>

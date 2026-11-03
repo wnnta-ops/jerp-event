@@ -63,8 +63,8 @@ class KirimKwitansiUtjJob implements ShouldQueue
             nomor: $r->phone ?: $r->customer?->mobile,
             email: $r->email ?: $r->customer?->email,
             // {{3}} = nama acara, bukan nomor NUP: pada tahap ini NUP belum tentu terbit.
-            waIdBawaan: (string) config('services.qontak.template_utj_paid'),
-            waKunciBawaan: ['nama', 'nominal_angka', 'nama_acara'],
+            waIdBawaan: JenisPesan::waIdBawaan(JenisPesan::KWITANSI_UTJ),
+            waKunciBawaan: JenisPesan::bawaan(JenisPesan::KWITANSI_UTJ)['wa_kunci'],
             dokumen: [
                 'url' => route('fo.cetak.kwitansi-utj-pdf', ['registration' => $r->id, 'hash' => ClosingPrintController::kwitansiUtjPdfHash($r->id)]),
                 'nama' => ClosingPrintController::namaBerkasKwitansiUtj($r).'.pdf',

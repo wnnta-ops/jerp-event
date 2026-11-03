@@ -221,6 +221,7 @@ return [
         'LaporanPenjualan' => 'fo.laporan_penjualan',
         'PelunasanAngsuran' => 'fo.pelunasan_angsuran',
         'PembatalanKontrak' => 'fo.pembatalan_kontrak',
+        'RescheduleTagihan' => 'fo.reschedule_tagihan',
         'PembayaranAr' => 'fo.pembayaran_ar',
         'PengajuanKpr' => 'fo.pengajuan_kpr',
         'PengaturanFo' => 'fo.pengaturan_fo',

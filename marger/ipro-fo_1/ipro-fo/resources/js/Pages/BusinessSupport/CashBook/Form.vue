@@ -4,11 +4,14 @@ import { useForm, Link } from '@inertiajs/vue3';
 import { ArrowLeft, Save, Banknote, Plus, Trash2 } from 'lucide-vue-next';
 import Button from '@/Components/UI/Button.vue';
 import SearchSelect from '@/Components/UI/SearchSelect.vue';
+import { pilihCc, opsiCc } from '@/Composables/costCenterAkun';
 
 const props = defineProps<{
     types: Record<string, string>;
     cashAccounts: Array<any>;
-    counterAccounts: Array<{ id: number; code: string; name: string; type: string; cost_center_optional?: boolean | number }>;
+    counterAccounts: Array<{ id: number; code: string; name: string; type: string; cost_center_optional?: boolean | number; cost_center_id?: number | null; cc_ids?: number[] }>;
+    /** Unit kerja penginput (Utama dulu) — cost center bawaan baris (CostCenterAkun). */
+    ccUser?: number[];
     /** Cost center aktif — dimensi per baris yang menautkan pengeluaran ke Budget Control. */
     costCenters: Array<{ id: number; code: string; name: string }>;
     defaultType: string;
@@ -108,6 +111,18 @@ const ccOptional = (accountId: number | string) => {
 };
 /** Baris yang akunnya sudah dipilih, menuntut cost center, tetapi belum diisi. */
 const ccKurang = (l: Line) => !! l.account_id && ! ccOptional(l.account_id) && ! l.cost_center_id;
+const akunLawan = (id: any) => props.counterAccounts.find((x: any) => String(x.id) === String(id));
+/* Cost center IKUT COA yang dipilih: akun berdaftar → unit kerja penginput bila ada di daftar,
+   selain itu default COA; akun tanpa daftar → unit kerja penginput bila barisnya masih kosong. */
+function pilihAkunBaris(line: Line, v: any) {
+    line.account_id = v;
+    if (! v) return;
+    if (ccOptional(v)) { line.cost_center_id = ''; return; }
+    const a = akunLawan(v);
+    if ((a?.cc_ids ?? []).length || ! line.cost_center_id) {
+        line.cost_center_id = pilihCc(a as any, props.ccUser ?? []) ?? '';
+    }
+}
 const akunKurangCc = computed(() => {
     const out: string[] = [];
     for (const l of form.lines as Line[]) {
@@ -195,14 +210,14 @@ const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 
                                      Lebar panel dropdown mengikuti lebar kolom ini (lantai 260px), jadi
                                      melebarkan halaman ikut melebarkan daftarnya. -->
                                 <td class="py-2 pl-1 pr-2">
-                                    <SearchSelect v-model="line.account_id" :options="counterOptions" placeholder="— pilih akun —" :no-truncate="true" />
+                                    <SearchSelect :model-value="line.account_id" @update:model-value="(v: any) => pilihAkunBaris(line, v)" :options="counterOptions" placeholder="— pilih akun —" :no-truncate="true" />
                                     <p v-if="lineError(i, 'account_id')" class="mt-1 text-xs text-danger-500">{{ lineError(i, 'account_id') }}</p>
                                 </td>
                                 <!-- Barisnya ditandai merah selagi cost centernya kurang, jadi baris mana yang
                                      menahan tombol Simpan terlihat langsung tanpa perlu membaca pesan di bawah. -->
                                 <td class="py-2 pr-2">
                                     <div :class="ccKurang(line) ? 'rounded-lg ring-1 ring-danger-400' : ''">
-                                        <SearchSelect v-model="line.cost_center_id" :options="costCenters"
+                                        <SearchSelect v-model="line.cost_center_id" :options="opsiCc(akunLawan(line.account_id) as any, costCenters)"
                                             :placeholder="line.account_id && ccOptional(line.account_id) ? '— tanpa cost center —' : '— cost center —'" />
                                     </div>
                                     <p v-if="ccKurang(line)" class="mt-0.5 text-[10.5px] font-medium text-danger-500">Wajib diisi</p>

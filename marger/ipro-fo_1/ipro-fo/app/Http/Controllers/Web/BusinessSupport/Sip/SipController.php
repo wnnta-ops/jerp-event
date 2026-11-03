@@ -54,7 +54,32 @@ class SipController extends Controller
                 'approved' => BsSip::where('status', 'approved')->count(),
                 'total' => (float) BsSip::whereIn('status', ['submitted', 'printed', 'approved'])->sum('total'),
             ],
+            'ttd' => BsSip::ttdNames(),
+            'signers' => BsSip::SIGNERS,
+            'canSetupTtd' => (bool) $request->user()?->can('bs.sip.ttd-setup'),
         ]);
+    }
+
+    /** Setup TTD SIP — nama di bawah tanda tangan cetak SIP; berlaku untuk cetakan berikutnya. */
+    public function simpanTtd(Request $request): RedirectResponse
+    {
+        abort_unless($request->user()?->can('bs.sip.ttd-setup'), 403);
+
+        $aturan = [];
+        foreach (array_keys(BsSip::TTD_DEFAULT) as $slot) {
+            $aturan["ttd.$slot"] = ['required', 'string', 'max:60'];
+        }
+        $v = $request->validate($aturan, [], ['ttd.*' => 'nama TTD']);
+
+        foreach ($v['ttd'] as $slot => $nama) {
+            DB::table('parameters')->updateOrInsert(
+                ['tenant_id' => tenant_id() ?? default_tenant_id(), 'group' => BsSip::TTD_GROUP, 'key' => $slot],
+                ['value' => trim($nama), 'data_type' => 'string', 'label' => 'TTD SIP — '.BsSip::SIGNERS[$slot],
+                    'updated_at' => now(), 'created_at' => now()],
+            );
+        }
+
+        return back()->with('success', 'Setup TTD SIP disimpan. Berlaku pada cetakan SIP berikutnya.');
     }
 
     /**
@@ -502,111 +527,131 @@ class SipController extends Controller
         return $out;
     }
 
+    /**
+     * Cetak SIP — format surat "STANDING INSTRUCTION PAYMENT" Finance (SIP 413): logo + periode
+     * + nomor, Kepada/Dari/Tembusan, lalu satu blok per REKENING SUMBER ("dari Rekening …")
+     * yang di dalamnya dikelompokkan per departemen pengaju (baris tebal di kolom Keterangan),
+     * subtotal per rekening, dan tanda tangan Dibuat / Diperiksa / Diketahui / Disetujui.
+     */
     private function renderPrint(BsSip $sip): string
     {
         $e = fn ($s) => htmlspecialchars((string) $s, ENT_QUOTES, 'UTF-8');
-        $rp = fn ($n) => 'Rp '.number_format((float) $n, 0, ',', '.');
-        $co = (string) config('business_support.company.name', 'PT. Mitra Usaha Propertindo');
-        $now = now()->translatedFormat('d F Y H:i');
-        // #114: bank sumber bisa lebih dari satu — daftar bank distinct di header + grup per bank di tabel.
-        $bankList = $sip->lines->map(fn ($l) => $l->cashAccount ? $l->cashAccount->code.' — '.$l->cashAccount->name : null)->filter()->unique()->values();
-        $bank = $bankList->isNotEmpty() ? $e($bankList->implode('   |   ')) : ($e($sip->cashAccount?->code).' — '.$e($sip->cashAccount?->name));
+        $rp = fn ($n) => number_format((float) $n, 2, ',', '.');
+        $co = mb_strtoupper((string) config('business_support.company.name', 'PT. Mitra Usaha Propertindo'));
+        $logo = '/images/mup-logo.jpeg';
 
-        // Pengelompokan DUA TINGKAT: departemen pengaju (luar) → bank sumber (dalam).
-        //
-        // Departemen di luar karena itulah yang diminta pembaca dokumen: siapa yang mengajukan
-        // tagihan/bon ini. Bank sumber DIPERTAHANKAN di dalam berikut subtotalnya (#123) —
-        // bank yang mengeksekusi instruksi ini butuh total per rekening sumber, dan membuangnya
-        // demi pengelompokan baru akan merusak kegunaan dokumennya sebagai instruksi bayar.
+        // Nomor resmi; SIP LAMA (nomor SIP/MUP/…) ikut menampilkan nomor dokumennya.
+        $nomor = $sip->printNumber() ?: $sip->sip_number;
+        $noDokumen = $sip->printNumber() && $sip->printNumber() !== $sip->sip_number
+            ? '<div class="muted">No. Dokumen: '.$e($sip->sip_number).'</div>'
+            : '';
+
+        // Periode = Senin–Jumat pada minggu Tanggal SIP (format Finance: "26 - 30 Oktober 2026").
+        $periode = '';
+        if ($sip->sip_date) {
+            $a = $sip->sip_date->copy()->startOfWeek(\Carbon\Carbon::MONDAY);
+            $b = $a->copy()->addDays(4);
+            $periode = match (true) {
+                $a->year !== $b->year => $a->translatedFormat('d F Y').' - '.$b->translatedFormat('d F Y'),
+                $a->month !== $b->month => $a->translatedFormat('d F').' - '.$b->translatedFormat('d F Y'),
+                default => $a->format('d').' - '.$b->translatedFormat('d F Y'),
+            };
+        }
+
+        // Nama di bawah TTD dari Setup TTD SIP (bukan akun penyetuju). Inisial: nama satu kata
+        // (mis. "BA") dipakai apa adanya; nama lengkap diambil huruf depannya (Ainur Rofiq → AR).
+        $namaTtd = BsSip::ttdNames();
+        $orang = fn (string $slot) => $namaTtd[$slot] ?? '';
+        $inisial = function (string $slot) use ($orang): string {
+            $kata = preg_split('/\s+/', trim($orang($slot)), -1, PREG_SPLIT_NO_EMPTY);
+
+            return count($kata) === 1
+                ? mb_strtoupper($kata[0])
+                : implode('', array_map(fn ($w) => mb_strtoupper(mb_substr($w, 0, 1)), $kata));
+        };
+
         $departemen = $this->departemenPerBaris($sip);
 
-        // Nomor resmi dokumen ini.
-        //
-        // Sejak penomorannya disatukan, sip_number DAN nomor cetak adalah satu angka yang
-        // sama, jadi barisnya cukup satu. Baris "No. Dokumen" hanya dimunculkan untuk SIP
-        // LAMA yang nomornya masih berformat SIP/MUP/… — di situ keduanya memang berbeda dan
-        // pembacanya perlu melihat kedua-duanya.
-        $nomorCetak = $sip->printNumber()
-            ? '<div style="font-size:12px;font-weight:700;color:#1f2937">'.$e($sip->printNumber()).'</div>'
-            : '';
-        $noDokumen = $sip->printNumber() === $sip->sip_number
-            ? ''
-            : 'No. Dokumen: '.$e($sip->sip_number).'<br>';
+        // Status "Paid" bila dokumen asalnya sudah dibayar (invoice lunas / bon sudah dicairkan).
+        $lunas = fn (BsSipLine $l): bool => match (true) {
+            $l->sourceable instanceof BsApInvoice => $l->sourceable->status === 'paid' || $l->sourceable->outstanding <= 0.009,
+            $l->sourceable instanceof BsCashAdvance => in_array($l->sourceable->status, ['outstanding', 'realized'], true),
+            default => false,
+        };
 
-        $rows = '';
-        $no = 0;
-        $perDept = $sip->lines->groupBy(fn ($l) => $departemen[$l->id] ?? self::TANPA_DEPT);
-        // Departemen bernama lebih dulu, "Tanpa Departemen" selalu di ekor.
-        $perDept = $perDept->sortKeys()->sortBy(fn ($v, $k) => $k === self::TANPA_DEPT ? 1 : 0);
+        $blok = '';
+        $akun = fn ($l) => $l->cashAccount ?? $sip->cashAccount;
+        $perBank = $sip->lines->groupBy(fn ($l) => $l->cash_account_id ?: $sip->cash_account_id)
+            ->sortBy(fn ($g) => (string) $akun($g->first())?->code);
+        foreach ($perBank as $glines) {
+            // Nama akun kas berpola "BCA REK. 7205529888" → bank + nomor rekening.
+            $nama = (string) $akun($glines->first())?->name;
+            [$bank, $rek] = preg_match('/^(.*?)\s+REK\.?\s*(.+)$/i', $nama, $m)
+                ? [trim($m[1]), preg_replace('/[\s-]+/', '', $m[2])]
+                : [$nama, '-'];
 
-        // Tabelnya 7 kolom sejak kolom Departemen ditambahkan; colspan di bawah mengikutinya.
-        $kolom = 7;
-        foreach ($perDept as $namaDept => $dlines) {
-            $totalDept = 0.0;
-            $rows .= '<tr class="dept"><td colspan="'.$kolom.'">DEPARTEMEN: '.$e($namaDept).'</td></tr>';
-
-            foreach ($dlines->groupBy('cash_account_id') as $glines) {
-                $acc = $glines->first()->cashAccount;
-                $bankLabel = $acc ? $e($acc->code).' — '.$e($acc->name) : 'Bank Sumber';
-                $sub = 0.0;
-                $rows .= '<tr class="grp"><td colspan="'.$kolom.'">Bank Sumber: '.$bankLabel.'</td></tr>';
-                foreach ($glines as $l) {
-                    $no++;
+            $rows = '';
+            $sub = 0.0;
+            $perDept = $glines->groupBy(fn ($l) => $departemen[$l->id] ?? self::TANPA_DEPT)
+                ->sortKeys()->sortBy(fn ($v, $k) => $k === self::TANPA_DEPT ? 1 : 0);
+            foreach ($perDept as $namaDept => $dlines) {
+                $rows .= '<tr><td></td><td></td><td></td><td></td><td></td><td class="b">'.$e(mb_strtoupper((string) $namaDept)).'</td><td></td></tr>';
+                foreach ($dlines as $l) {
                     $sub += (float) $l->amount;
-                    $rows .= '<tr><td class="c">'.$no.'</td><td>'.$e($l->payee_name).'</td>'
-                        .'<td>'.$e($departemen[$l->id] ?? self::TANPA_DEPT).'</td>'
-                        .'<td>'.$e($l->dest_bank_name).'</td><td>'.$e($l->dest_account_no).'</td>'
-                        .'<td>'.$e($l->description).'</td><td class="r">'.$rp($l->amount).'</td></tr>';
+                    $rows .= '<tr><td>'.$e($l->dest_account_name ?: $l->payee_name).'</td>'
+                        .'<td class="c">'.$e($l->dest_bank_name).'</td><td class="c">'.$e($l->dest_account_no).'</td>'
+                        .'<td class="r">'.$rp($l->amount).'</td><td></td>'
+                        .'<td>'.$e($l->description).'</td><td class="c b">'.($lunas($l) ? 'Paid' : '').'</td></tr>';
                 }
-                $rows .= '<tr class="sub"><td colspan="'.($kolom - 1).'" class="r">Total — '.$bankLabel.'</td><td class="r">'.$rp($sub).'</td></tr>';
-                $totalDept += $sub;
             }
 
-            $rows .= '<tr class="deptsub"><td colspan="'.($kolom - 1).'" class="r">Total Departemen — '.$e($namaDept).'</td><td class="r">'.$rp($totalDept).'</td></tr>';
+            $blok .= '<table class="info"><tr><td>dari Rekening</td><td>'.$e(trim($bank.' '.$co)).'</td></tr>'
+                .'<tr><td>Nomor Rekening</td><td>'.$e($rek).'</td></tr>'
+                .'<tr><td colspan="2">dengan rincian pembayaran sebagai berikut :</td></tr></table>'
+                .'<table class="grid"><colgroup><col style="width:16%"><col style="width:7%"><col style="width:10%"><col style="width:10%"><col style="width:5%"><col><col style="width:5%"></colgroup>'
+                .'<thead><tr><th>Nama Rekening</th><th>Bank</th><th>Nomor Rekening</th><th>Amount</th><th>Y/N*</th><th>Peruntukan/Keterangan</th><th>Status</th></tr></thead>'
+                .'<tbody>'.$rows.'<tr class="tot"><td colspan="3" class="nb"></td><td class="r b">'.$rp($sub).'</td><td colspan="3" class="nb"></td></tr></tbody></table>';
         }
 
-        // Slot yang sudah disetujui dicetak dengan BARCODE tanda tangan penyetujunya. Bila
-        // penyetuju belum punya barcode, namanya dipakai kembali agar dokumen tetap sah dibaca.
-        $approvals = $sip->approvals ?? [];
-        // Modul kecil (2 px) agar QR yang berbentuk kotak muat di kotak TTD yang sempit.
+        // Tanda tangan 7 kolom rata (format Finance): baris judul kelompok, ruang TTD, baris nama.
+        // Judul "Diketahui" di atas kolom tengahnya (GM), "Disetujui" di atas Moch Winarto.
+        // Slot yang sudah disetujui di sistem menampilkan barcode penyetujunya di ruang TTD.
         $barcodes = $this->approvalBarcodes($sip, 2);
-        $signs = '';
-        foreach (BsSip::SIGNERS as $key => $label) {
-            $ap = $approvals[$key] ?? null;
-            $bc = $barcodes[$key] ?? null;
-            $name = $ap ? $e($ap['name']) : '(__________)';
-            $space = $bc
-                ? '<div class="sign-space sign-bc">'.$bc.'</div>'
-                : '<div class="sign-space"></div>';
-            $date = $ap ? '<div class="muted" style="font-size:8px">'.$e(substr((string) $ap['approved_at'], 0, 10)).'</div>' : '';
-            $signs .= '<div class="sign-box"><div class="sign-label">'.$e($label).'</div>'.$space
-                .'<div class="sign-name">'.($bc ? '' : $name).'</div>'.$date.'</div>';
+        $judul = ['staf_finance' => 'Dibuat', 'spv_finance' => 'Diperiksa', 'gm' => 'Diketahui', 'moch_winarto' => 'Disetujui'];
+        $baris = ['', '', ''];
+        foreach (array_keys(BsSip::SIGNERS) as $slot) {
+            $baris[0] .= '<td>'.($judul[$slot] ?? '').'</td>';
+            $baris[1] .= '<td class="ttd-space">'.($barcodes[$slot] ?? '').'</td>';
+            $baris[2] .= '<td>'.$e($orang($slot)).'</td>';
         }
+        $signs = '<table class="signs"><tr>'.implode('</tr><tr>', $baris).'</tr></table>';
 
-        return '<!DOCTYPE html><html lang="id"><head><meta charset="utf-8"><title>'.$e($sip->sip_number).'</title><style>
-            @page{size:A4 landscape;margin:12mm}*{box-sizing:border-box}body{font-family:"Segoe UI",Arial,sans-serif;font-size:11px;color:#1f2937;margin:0}
-            h1{font-size:16px;margin:0 0 2px}.muted{color:#6b7280;font-size:10px}
-            .head{border-bottom:2px solid #1f2937;padding-bottom:6px;margin-bottom:8px;display:flex;justify-content:space-between}
-            dl{display:grid;grid-template-columns:120px 1fr;gap:1px 8px;margin:6px 0}dt{color:#6b7280}
-            table{border-collapse:collapse;width:100%;margin:6px 0;font-size:10px}th,td{border:1px solid #cbd5e1;padding:4px 6px;text-align:left}
-            .r{text-align:right;font-variant-numeric:tabular-nums}.c{text-align:center}.tot{font-weight:bold;background:#f1f5f9}
-            .grp{background:#e2e8f0;font-weight:600}.sub{background:#f8fafc;font-weight:600}
-            /* Departemen = pengelompokan terluar, dibuat paling menonjol supaya terbaca lebih dulu daripada bank sumber. */
-            .dept{background:#1f2937;color:#fff;font-weight:700;letter-spacing:.03em}
-            .deptsub{background:#e2e8f0;font-weight:700;border-top:2px solid #1f2937}
-            .signs{display:grid;grid-template-columns:repeat(7,1fr);gap:6px;margin-top:24px}
-            .sign-box{text-align:center;font-size:9px}.sign-label{font-weight:600;margin-bottom:2px}.sign-space{height:52px}.sign-name{border-top:1px solid #1f2937;padding-top:2px;min-height:12px}
-            /* QR berbentuk KOTAK — ruang TTD ditinggikan & gambarnya dibatasi tinggi kotak. */
-            .sign-bc{display:flex;align-items:flex-end;justify-content:center;overflow:hidden}
-            .sign-bc svg{max-width:100%;max-height:52px;height:auto;width:auto}
+        $kepada = implode(', ', array_filter([$inisial('boy_arifin'), $inisial('moch_winarto')]));
+
+        return '<!DOCTYPE html><html lang="id"><head><meta charset="utf-8"><title>'.$e($nomor).'</title><style>
+            @page{size:A4 landscape;margin:10mm}*{box-sizing:border-box}body{font-family:Arial,Helvetica,sans-serif;font-size:10px;color:#000;margin:0}
+            .muted{color:#555;font-size:8px;font-weight:400}.b{font-weight:700}.c{text-align:center}.r{text-align:right;font-variant-numeric:tabular-nums}
+            .head{display:flex;align-items:center;padding-bottom:6px;border-bottom:3px double #000}
+            .head img{width:64px;height:64px;object-fit:contain}.head .t{flex:1;text-align:center;font-weight:700;font-size:11px;line-height:1.4;margin-right:64px}
+            .info{border-collapse:collapse;margin:6px 0}.info td{padding:0 8px 0 0;vertical-align:top}.info td:first-child{width:150px}
+            .meta{border-bottom:2px solid #000;padding:8px 0 10px;margin-bottom:10px}
+            .grid{border-collapse:collapse;width:100%;margin:4px 0 10px;font-size:9.5px}.grid th,.grid td{border:1px solid #000;padding:1px 4px}
+            .grid th{text-align:center}.grid td.nb{border:none}.grid tr.tot td.r{border-bottom:2px solid #000}
+            .signs{width:100%;table-layout:fixed;border-collapse:collapse;margin-top:18px;page-break-inside:avoid}.signs td{padding:0 4px 0 0;vertical-align:bottom}
+            .signs td.ttd-space{height:56px}.ttd-space svg{max-height:54px;max-width:100%;width:auto;height:auto}
             @media print{.noprint{display:none}}</style></head><body>
-            <div class="head"><div><h1>STANDING INSTRUCTION PAYMENT (SIP)</h1><div class="muted">'.$e($co).'</div></div>
-            <div class="muted" style="text-align:right">'.$nomorCetak.$noDokumen.'Cetak: '.$e($now).'</div></div>
-            <dl><dt>Tanggal</dt><dd>'.$e(optional($sip->sip_date)->translatedFormat('d F Y')).'</dd>
-            <dt>Bank Sumber</dt><dd>'.$bank.'</dd>
-            <dt>Judul / Ket.</dt><dd>'.$e($sip->title ?: $sip->description ?: '-').'</dd></dl>
-            <table><thead><tr><th class="c">No</th><th>Nama Penerima</th><th>Departemen</th><th>Bank Tujuan</th><th>No. Rekening</th><th>Keterangan</th><th class="r">Nominal</th></tr></thead><tbody>'.$rows.'</tbody></table>
-            <div class="signs">'.$signs.'</div>
+            <div class="head"><img src="'.$logo.'" alt="MUP"><div class="t">STANDING INSTRUCTION PAYMENT<br>Periode : '.$e($periode).'<br>No : '.$e($nomor).$noDokumen.'</div></div>
+            <div class="meta"><table class="info">
+            <tr><td>Kepada Yth</td><td>'.$e($kepada).'</td></tr>
+            <tr><td>Dari</td><td>'.$e($inisial('manager_finance')).'</td></tr>
+            <tr><td>Tembusan</td><td>'.$e($inisial('gm')).'</td></tr>
+            <tr><td>Tanggal Pengajuan</td><td>'.$e(optional($sip->sip_date)->format('d/m/Y')).'</td></tr></table></div>
+            <div>Dengan Hormat,</div><br>
+            <div>Bersama ini kami sampaikan list permohonan pembayaran <b>TRANSFER</b></div>
+            '.$blok.'
+            <div>*) Mohon untuk diberikan keterangan Y (Untuk payment yang diapprove untuk dibayar) atau N (Untuk payment yang ditunda/didiscuss lebih lanjut), jika ada.</div>
+            <div>Demikian permohonan pembayaran ini kami sampaikan, Terima Kasih</div>
+            '.$signs.'
             <button class="noprint" onclick="window.print()" style="margin-top:12px;padding:6px 14px">Cetak</button>
             <script>window.onload=function(){setTimeout(function(){window.print()},300)}</script></body></html>';
     }

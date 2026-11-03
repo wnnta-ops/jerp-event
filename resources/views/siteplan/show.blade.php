@@ -29,16 +29,41 @@
         body.hide-status .sold-stamp { display: none !important; }
         body.hide-status .sp-pill { display: none !important; }
 
-        /* Switcher cluster (Lokasi) — tiap cluster siteplannya sendiri */
-        .cluster-switch {
-            position: fixed; top: 12px; left: 50%; transform: translateX(-50%); z-index: 1000;
-            display: flex; gap: 6px; background: rgba(255,255,255,.92); border: 1px solid #cbd5e1;
-            border-radius: 999px; padding: 5px 8px; box-shadow: 0 4px 14px rgba(0,0,0,.25);
-            max-width: 90vw; overflow-x: auto;
+        /* Pilih cluster (Lokasi) — tombol pojok kiri atas + daftar dengan pencarian */
+        .pick { position: fixed; top: 12px; left: 12px; z-index: 1001; }
+        .pick-btn {
+            display: flex; align-items: center; gap: 12px; max-width: calc(100vw - 24px);
+            border: 1px solid #cbd5e1; background: rgba(255,255,255,.95); color: #1e293b; font: inherit;
+            border-radius: 12px; padding: 8px 14px 8px 10px; cursor: pointer; text-align: left;
+            box-shadow: 0 6px 20px rgba(0,0,0,.3);
         }
-        .cluster-switch a { font-size: 12px; font-weight: 700; color: #334155; text-decoration: none; padding: 5px 12px; border-radius: 999px; white-space: nowrap; }
-        .cluster-switch a.active { background: #2563eb; color: #fff; }
-        .cluster-switch a:hover:not(.active) { background: #e2e8f0; }
+        .pick-btn:hover { background: #fff; }
+        .pick-ikon { flex: 0 0 auto; width: 32px; height: 32px; border-radius: 8px; background: #2563eb; color: #fff; display: grid; place-items: center; font-weight: 800; font-size: 13px; }
+        .pick-teks { min-width: 0; }
+        .pick-teks small { display: block; font-size: 10.5px; font-weight: 700; letter-spacing: .07em; color: #64748b; text-transform: uppercase; }
+        .pick-teks strong { display: block; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .pick-chev { color: #64748b; transition: transform .2s; }
+        .pick.open .pick-chev { transform: rotate(180deg); }
+        .pick-pop {
+            position: absolute; top: calc(100% + 8px); left: 0; width: min(330px, calc(100vw - 24px));
+            background: #fff; color: #1e293b; border-radius: 14px; padding: 8px;
+            box-shadow: 0 18px 50px rgba(0,0,0,.45); animation: pick-muncul .18s ease;
+        }
+        @keyframes pick-muncul { from { opacity: 0; transform: translateY(-6px); } }
+        .pick-pop input { width: 100%; font: inherit; font-size: 14px; border: 1px solid #e2e8f0; border-radius: 9px; padding: 8px 11px; outline: none; background: #f8fafc; }
+        .pick-pop input:focus { border-color: #2563eb; background: #fff; }
+        .pick-list { list-style: none; margin: 6px 0 0; padding: 0; max-height: min(320px, 60vh); overflow-y: auto; }
+        .pick-list a { display: grid; grid-template-columns: 1fr auto; gap: 1px 10px; align-items: center; padding: 8px 10px; border-radius: 9px; color: inherit; text-decoration: none; }
+        .pick-list a:hover, .pick-list a:focus-visible { background: #eff6ff; outline: none; }
+        .pick-list a[aria-selected="true"] { background: #dbeafe; }
+        .pick-list .n { font-weight: 700; font-size: 13.5px; }
+        .pick-list .k { font-size: 11.5px; color: #64748b; grid-column: 1; }
+        .pick-list .sisa { grid-row: 1 / span 2; grid-column: 2; font-size: 11.5px; font-weight: 800; padding: 3px 9px; border-radius: 999px; background: #dcfce7; color: #15803d; font-variant-numeric: tabular-nums; white-space: nowrap; }
+        .pick-list .sisa.habis { background: #fee2e2; color: #b91c1c; }
+        .pick-kosong { padding: 12px 10px; font-size: 13px; color: #64748b; }
+        .pick-btn:focus-visible { outline: 2px solid #93c5fd; outline-offset: 2px; }
+        @media (max-width: 768px) { .info-wrap { top: 72px; } }
+        @media (prefers-reduced-motion: reduce) { .pick-pop { animation: none; } .pick-chev { transition: none; } }
         .info-card {
             background: rgba(255,255,255,.94); border: 1px solid #cbd5e1; border-radius: 8px;
             padding: 10px 14px; box-shadow: 0 6px 18px rgba(0,0,0,.22); font-size: 13px;
@@ -107,10 +132,29 @@
 <body class="{{ ($showStatus ?? true) ? '' : 'hide-status' }}">
     {{-- Switcher cluster (Lokasi). Tiap cluster pakai siteplan-nya sendiri. --}}
     @if (isset($clusters) && $clusters->count() > 1)
-        <div class="cluster-switch">
-            @foreach ($clusters as $cl)
-                <a href="?cluster={{ $cl->kode }}" class="{{ isset($lokasi) && $lokasi && $lokasi->id === $cl->id ? 'active' : '' }}">{{ $cl->nama }}</a>
-            @endforeach
+        <div class="pick" id="pick">
+            <button type="button" class="pick-btn" id="pick-btn" aria-haspopup="listbox" aria-expanded="false" aria-controls="pick-pop">
+                <span class="pick-ikon">{{ $lokasi ? mb_substr(preg_replace('/^JR/i', '', $lokasi->kode), 0, 3) : '?' }}</span>
+                <span class="pick-teks"><small>Cluster</small><strong>{{ $lokasi?->nama ?? 'Pilih cluster' }}</strong></span>
+                <span class="pick-chev" aria-hidden="true">▾</span>
+            </button>
+            <div class="pick-pop" id="pick-pop" hidden>
+                <input type="search" id="pick-cari" placeholder="Cari cluster…" autocomplete="off" aria-label="Cari cluster">
+                <ul class="pick-list" role="listbox" aria-label="Daftar cluster">
+                    @foreach ($clusters as $cl)
+                        @php($stok = $clusterStok[$cl->id] ?? null)
+                        @php($aktif = $lokasi && $lokasi->id === $cl->id)
+                        <li data-cari="{{ mb_strtolower($cl->nama.' '.$cl->kode) }}">
+                            <a href="?cluster={{ $cl->kode }}" role="option" aria-selected="{{ $aktif ? 'true' : 'false' }}">
+                                <span class="n">{{ $cl->nama }}</span>
+                                <span class="k">{{ $cl->kode }} · {{ (int) ($stok->total ?? 0) }} unit</span>
+                                <span class="sisa {{ (int) ($stok->ready ?? 0) > 0 ? '' : 'habis' }}" @if ($aktif) id="pick-sisa-aktif" @endif>{{ (int) ($stok->ready ?? 0) > 0 ? (int) $stok->ready.' siap' : 'habis' }}</span>
+                            </a>
+                        </li>
+                    @endforeach
+                </ul>
+                <div class="pick-kosong" id="pick-kosong" hidden>Tidak ada cluster dengan nama itu.</div>
+            </div>
         </div>
     @endif
     @if (! $siteplan)
@@ -188,7 +232,9 @@
         if (SITEPLAN) {
             const W = SITEPLAN.width, H = SITEPLAN.height;
             const bounds = [[0, 0], [H, W]];
-            const map = L.map('map', { crs: L.CRS.Simple, minZoom: -4, maxZoom: 4, zoomSnap: 0.25, attributionControl: true });
+            // Tombol zoom di kanan bawah: pojok kiri atas dipakai tombol Pilih cluster.
+            const map = L.map('map', { crs: L.CRS.Simple, minZoom: -4, maxZoom: 4, zoomSnap: 0.25, attributionControl: true, zoomControl: false });
+            L.control.zoom({ position: 'bottomright' }).addTo(map);
             map.attributionControl.setPrefix(false);
             map.attributionControl.addAttribution('{{ $project->name }}');
 
@@ -386,6 +432,13 @@
                     };
                     set('ready', g.ready); set('sold', g.sold); set('hold', g.hold);
                 });
+                // Sisa unit cluster yang sedang dibuka di daftar Pilih cluster.
+                const sisa = document.getElementById('pick-sisa-aktif');
+                if (sisa) {
+                    const ready = Object.values(groups).reduce((n, g) => n + g.ready, 0);
+                    sisa.textContent = ready > 0 ? ready + ' siap' : 'habis';
+                    sisa.classList.toggle('habis', ready === 0);
+                }
             }
 
             // ── Terapkan perubahan status (dari broadcast) ke peta + panel ──
@@ -464,6 +517,37 @@
                 if (attempt < 40) setTimeout(() => subscribeRealtime(attempt + 1), 250);
             })(0);
         }
+
+        // ── Pilih cluster: buka/tutup daftar, cari, Esc menutup, Enter membuka hasil pertama ──
+        (function () {
+            const pick = document.getElementById('pick');
+            if (!pick) return;
+            const tombol = document.getElementById('pick-btn');
+            const pop = document.getElementById('pick-pop');
+            const cari = document.getElementById('pick-cari');
+            const kosong = document.getElementById('pick-kosong');
+            const items = Array.from(pop.querySelectorAll('.pick-list li'));
+            const saring = () => {
+                const q = cari.value.trim().toLowerCase();
+                let ada = 0;
+                items.forEach(li => { const ok = !q || li.dataset.cari.includes(q); li.hidden = !ok; ada += ok ? 1 : 0; });
+                kosong.hidden = ada > 0;
+            };
+            const setel = (buka) => {
+                pop.hidden = !buka;
+                pick.classList.toggle('open', buka);
+                tombol.setAttribute('aria-expanded', buka ? 'true' : 'false');
+                if (buka) { cari.value = ''; saring(); cari.focus(); }
+            };
+            tombol.addEventListener('click', () => setel(pop.hidden));
+            cari.addEventListener('input', saring);
+            cari.addEventListener('keydown', (e) => {
+                if (e.key === 'Escape') { setel(false); tombol.focus(); }
+                if (e.key === 'Enter') { const li = items.find(x => !x.hidden); if (li) li.querySelector('a').click(); }
+            });
+            pop.addEventListener('keydown', (e) => { if (e.key === 'Escape') { setel(false); tombol.focus(); } });
+            document.addEventListener('click', (e) => { if (!pick.contains(e.target)) setel(false); });
+        })();
 
         // ── Buka/tutup panel informasi ──
         // Di layar sempit panel ini menutupi hampir seluruh siteplan, jadi bawaannya

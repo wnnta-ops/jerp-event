@@ -67,9 +67,10 @@ class VerifikasiBookedResource extends Resource
             ])
             ->actions([
                 Tables\Actions\ActionGroup::make([
+                    // KTP/NPWP customer + Bukti UTJ pendaftaran dalam satu ZIP.
                     Tables\Actions\Action::make('download_semua')->label('Download Semua (ZIP)')->icon('heroicon-o-archive-box-arrow-down')
-                        ->url(fn (NupRegistration $r) => route('fo.customer.files-zip', $r->customer_id))
-                        ->visible(fn (NupRegistration $r) => (bool) ($r->customer?->ktp_file_path || $r->customer?->npwp_file_path || $r->customer?->ktp_pasangan_file_path || $r->customer?->npwp_pasangan_file_path)),
+                        ->url(fn (NupRegistration $r) => route('fo.booked.files-zip', ['ids' => $r->id]))
+                        ->visible(fn (NupRegistration $r) => (bool) ($r->bukti_transfer_path || $r->customer?->ktp_file_path || $r->customer?->npwp_file_path || $r->customer?->ktp_pasangan_file_path || $r->customer?->npwp_pasangan_file_path)),
                     Tables\Actions\Action::make('lihat_ktp')->label('Lihat KTP')->icon('heroicon-o-eye')
                         ->url(fn (NupRegistration $r) => route('fo.customer.file', [$r->customer_id, 'ktp']), shouldOpenInNewTab: true)
                         ->visible(fn (NupRegistration $r) => (bool) $r->customer?->ktp_file_path),
@@ -82,16 +83,22 @@ class VerifikasiBookedResource extends Resource
                     Tables\Actions\Action::make('unduh_npwp')->label('Unduh NPWP')->icon('heroicon-o-arrow-down-tray')
                         ->url(fn (NupRegistration $r) => route('fo.customer.file', [$r->customer_id, 'npwp']).'?download=1')
                         ->visible(fn (NupRegistration $r) => (bool) $r->customer?->npwp_file_path),
+                    Tables\Actions\Action::make('lihat_ktp_pasangan')->label('Lihat KTP Pasangan')->icon('heroicon-o-eye')
+                        ->url(fn (NupRegistration $r) => route('fo.customer.file', [$r->customer_id, 'ktp_pasangan']), shouldOpenInNewTab: true)
+                        ->visible(fn (NupRegistration $r) => (bool) $r->customer?->ktp_pasangan_file_path),
                     Tables\Actions\Action::make('unduh_ktp_pasangan')->label('Unduh KTP Pasangan')->icon('heroicon-o-arrow-down-tray')
                         ->url(fn (NupRegistration $r) => route('fo.customer.file', [$r->customer_id, 'ktp_pasangan']).'?download=1')
                         ->visible(fn (NupRegistration $r) => (bool) $r->customer?->ktp_pasangan_file_path),
+                    Tables\Actions\Action::make('lihat_npwp_pasangan')->label('Lihat NPWP Pasangan')->icon('heroicon-o-eye')
+                        ->url(fn (NupRegistration $r) => route('fo.customer.file', [$r->customer_id, 'npwp_pasangan']), shouldOpenInNewTab: true)
+                        ->visible(fn (NupRegistration $r) => (bool) $r->customer?->npwp_pasangan_file_path),
                     Tables\Actions\Action::make('unduh_npwp_pasangan')->label('Unduh NPWP Pasangan')->icon('heroicon-o-arrow-down-tray')
                         ->url(fn (NupRegistration $r) => route('fo.customer.file', [$r->customer_id, 'npwp_pasangan']).'?download=1')
                         ->visible(fn (NupRegistration $r) => (bool) $r->customer?->npwp_pasangan_file_path),
-                    Tables\Actions\Action::make('lihat_bukti')->label('Lihat Bukti Transfer')->icon('heroicon-o-eye')->color('success')
+                    Tables\Actions\Action::make('lihat_bukti')->label('Lihat Bukti UTJ')->icon('heroicon-o-eye')->color('success')
                         ->url(fn (NupRegistration $r) => route('fo.booked.bukti', $r->id), shouldOpenInNewTab: true)
                         ->visible(fn (NupRegistration $r) => (bool) $r->bukti_transfer_path),
-                    Tables\Actions\Action::make('unduh_bukti')->label('Unduh Bukti Transfer')->icon('heroicon-o-arrow-down-tray')->color('success')
+                    Tables\Actions\Action::make('unduh_bukti')->label('Unduh Bukti UTJ')->icon('heroicon-o-arrow-down-tray')->color('success')
                         ->url(fn (NupRegistration $r) => route('fo.booked.bukti', $r->id).'?download=1')
                         ->visible(fn (NupRegistration $r) => (bool) $r->bukti_transfer_path),
                 ])->label('Berkas')->icon('heroicon-o-paper-clip')->button()->color('gray'),
@@ -203,6 +210,12 @@ class VerifikasiBookedResource extends Resource
                         Notification::make()->warning()->title('Pendaftaran ditolak')->send();
                     }),
                 Tables\Actions\DeleteAction::make(),
+            ])
+            ->bulkActions([
+                // Massal: satu ZIP, satu folder per pendaftar (KTP/NPWP + Bukti UTJ).
+                Tables\Actions\BulkAction::make('download_semua_massal')->label('Download Semua (ZIP)')
+                    ->icon('heroicon-o-archive-box-arrow-down')->deselectRecordsAfterCompletion()
+                    ->action(fn (\Illuminate\Support\Collection $records) => redirect()->route('fo.booked.files-zip', ['ids' => $records->pluck('id')->implode(',')])),
             ])
             ->defaultSort('tgl_daftar', 'desc');
     }

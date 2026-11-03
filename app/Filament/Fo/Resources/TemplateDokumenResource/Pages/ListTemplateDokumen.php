@@ -12,11 +12,17 @@ class ListTemplateDokumen extends ListRecords
 
     protected function getHeaderActions(): array
     {
-        return [Actions\CreateAction::make()->label('Buat Versi Baru')];
+        return [
+            // Versi baru dibuat di editor visual (per halaman, seperti hasil cetak).
+            Actions\CreateAction::make()->label('Buat Versi Baru')->url(route('fo.template-dokumen.editor')),
+            Actions\Action::make('formulir')->label('Buat (mode formulir)')->color('gray')
+                ->visible(fn () => TemplateDokumenResource::canCreate())
+                ->url(TemplateDokumenResource::getUrl('create')),
+        ];
     }
 
     public function getSubheading(): ?string
     {
-        return 'Belum ada versi = SPR/SPRS dicetak dengan teks bawaan aplikasi. Versi yang sudah berlaku terkunci; ubah dengan membuat versi baru.';
+        return 'Belum ada versi = SPR/SPRS dicetak dengan teks bawaan aplikasi. Hapus versi terbaru = kembali ke versi sebelumnya; Edit untuk koreksi.';
     }
 }

@@ -38,6 +38,7 @@ final class DaftarTabel
             // ── FO ──────────────────────────────────────────────────────────
             'fo_customers' => [
                 'db' => 'fo', 'modul' => 'Customer', 'kunci' => 'code',
+                'kunci_jerp' => '/^CUST-/',   // kode terbitan J-ERP; kode eProperty berupa angka
                 'master' => ['project_id' => 'projects', 'bank_id' => 'banks'],
                 'perbarui' => false,
                 'cocok' => ['pihak' => 'nik', 'pihak_wajib' => true, 'teks' => 'full_name'],
@@ -63,7 +64,10 @@ final class DaftarTabel
                 'perbarui' => true,
                 // pihak_juga: SPR baru dianggap SAMA bila customer-nya juga sama — unit + nominal saja
                 // terlalu longgar (unit bisa berpindah pembeli). Beda customer → ditahan, dicek manual.
-                'cocok' => ['nominal' => 'total_kontrak', 'pihak' => 'unit_id', 'pihak_wajib' => true, 'pihak_juga' => ['customer_id'], 'tanggal' => 'tgl_kontrak'],
+                // tahan_pihak_sama: SPR J-ERP di unit yang sama tapi nominal beda (mis. harga belum diisi) → ditahan, bukan SPR kedua;
+                // bila customer-nya juga sama dan kandidatnya tunggal → langsung ditautkan (nomor SPR ikut disamakan).
+                'cocok' => ['nominal' => 'total_kontrak', 'pihak' => 'unit_id', 'pihak_wajib' => true, 'pihak_juga' => ['customer_id'], 'tanggal' => 'tgl_kontrak',
+                    'tahan_pihak_sama' => true],
                 'label' => ['unit_id', 'total_kontrak', 'cara_bayar'],
             ],
             'fo_tts' => [
@@ -71,7 +75,8 @@ final class DaftarTabel
                 'ref' => ['customer_id' => 'fo_customers', 'kontrak_id' => 'fo_kontrak'],
                 'tunda' => ['bkm_id' => 'fo_bkm'], 'master' => ['bank_id' => 'banks'],
                 'perbarui' => true,
-                'cocok' => ['nominal' => 'amount', 'pihak' => 'kontrak_id', 'teks' => 'keterangan', 'tanggal' => 'tgl_tts'],
+                // pihak_cadangan: TTS booking (UTJ) belum berkontrak → dibandingkan per customer.
+                'cocok' => ['nominal' => 'amount', 'pihak' => 'kontrak_id', 'pihak_cadangan' => 'customer_id', 'teks' => 'keterangan', 'tanggal' => 'tgl_tts'],
                 'label' => ['jenis_pembayaran', 'amount', 'keterangan'],
             ],
             'fo_bkm' => [
@@ -81,7 +86,7 @@ final class DaftarTabel
                 'master' => ['bank_id' => 'banks'],
                 'perbarui' => false,
                 'tambahPelunasan' => true,
-                'cocok' => ['nominal' => 'amount', 'pihak' => 'kontrak_id', 'teks' => 'keterangan', 'tanggal' => 'tgl_bkm'],
+                'cocok' => ['nominal' => 'amount', 'pihak' => 'kontrak_id', 'pihak_cadangan' => 'customer_id', 'teks' => 'keterangan', 'tanggal' => 'tgl_bkm'],
                 'label' => ['jenis_pembayaran', 'amount', 'keterangan'],
             ],
             'fo_memo' => [

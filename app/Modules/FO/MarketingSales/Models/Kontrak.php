@@ -54,7 +54,7 @@ class Kontrak extends TenantAwareModel
     ];
 
     /** Pesan untuk aksi yang ditolak pada kontrak hasil migrasi data lama. */
-    public const PESAN_DATA_LAMA = 'Jadwal tagihan kontrak ini berasal dari data aplikasi lama dan tidak dibentuk ulang otomatis — ubah lewat Adjustment.';
+    public const PESAN_DATA_LAMA = 'Jadwal tagihan kontrak ini berasal dari data aplikasi lama dan tidak dibentuk ulang otomatis — ganti skema bayar lewat menu Reschedule Tagihan.';
 
     /**
      * Kontrak hasil migrasi aplikasi lama (penanda `data_lama`, diisi skrip migrasi).

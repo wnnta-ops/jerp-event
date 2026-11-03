@@ -3,6 +3,7 @@
 namespace App\Modules\Eprop\Services;
 
 use App\Modules\Eprop\Support\DaftarTabel;
+use App\Services\Numerator\NumeratorService;
 use Illuminate\Database\Connection;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -68,13 +69,24 @@ class MesinSinkron
     /** Nomor SPR J-ERP yang diganti nomor eProperty pada jalan ini: [lama, baru]. */
     private array $nomorDisamakan = [];
 
+    /** @var array<string,true> SPR J-ERP berharga 0 yang baru tertaut — isinya diambil dari eProperty walau mode hanya data baru. */
+    private array $isiDariEprop = [];
+
+    /** @var int[] id kontrak J-ERP yang diisi dari eProperty (pemanggil: faktur + booking BO). */
+    private array $kontrakDiisi = [];
+
+    private ?int $idCustomerNa = null;
+
     private int $jalanId = 0;
 
     /**
      * @param  array{fo:string,bo:string,bfo:string,bbo:string}  $db
      * @param  string|null  $modul  'fo' / 'bo' = hanya dokumen modul itu; null = semua
+     * @param  bool  $hanyaBaru  true = hanya MEMASUKKAN dokumen yang belum ada; data J-ERP yang sudah ada
+     *                           tidak diperbarui (perubahan di eProperty dilaporkan sebagai konflik); penyamaan
+     *                           nomor SPR dengan nomor eProperty tetap dijalankan
      */
-    public function __construct(private array $db, private string $batas, private bool $kering = false, private ?string $kiriman = null, private ?string $modul = null)
+    public function __construct(private array $db, private string $batas, private bool $kering = false, private ?string $kiriman = null, private ?string $modul = null, private bool $hanyaBaru = false)
     {
         $this->c = DB::connection();
         $this->cfg = DaftarTabel::dokumen();
@@ -128,6 +140,24 @@ class MesinSinkron
                     }
                 }
                 foreach ($r['ubah'] as $kunci => [$idB, $idN]) {
+                    if (isset($this->isiDariEprop[$tabel . '|' . $kunci])) {
+                        $this->isiKontrakDariEprop((int) $idB, (int) $idN, (string) $kunci);
+
+                        continue;
+                    }
+                    if ($this->hanyaBaru) {
+                        $rowB = $this->baris('b', $tabel, (int) $idB);
+                        $rowN = $this->baris('n', $tabel, (int) $idN);
+                        $beda = $tabel === 'bs_journals' ? ['isi baris jurnal'] : $this->bedaKolom(
+                            $this->kanonik('b', $tabel, $this->cfg[$tabel], $rowB), $this->kanonik('n', $tabel, $this->cfg[$tabel], $rowN));
+                        if ($beda === ['category_id']) {
+                            continue;   // kategori AP sudah dibetulkan di J-ERP — beda yang disengaja, tidak dilaporkan
+                        }
+                        $this->tambahHasil($tabel, $this->cfg[$tabel], (string) $kunci, 'konflik', $rowB, $this->labelNyata($tabel, $this->cfg[$tabel], $rowN),
+                            'Berubah di eProperty — TIDAK diterapkan (mode hanya data baru). Data J-ERP tetap. Beda: ' . implode(', ', $beda));
+
+                        continue;
+                    }
                     $this->perbaruiDokumen($tabel, (int) $idB, (int) $idN, (string) $kunci);
                 }
             }
@@ -151,7 +181,7 @@ class MesinSinkron
             'status' => 'selesai', 'ringkasan' => json_encode($ringkasan), 'selesai' => now(), 'updated_at' => now(),
         ]);
 
-        return ['jalan_id' => $this->jalanId, 'ringkasan' => $ringkasan, 'hasil' => $this->hasil, 'kontrak_baru' => $this->kontrakBaru];
+        return ['jalan_id' => $this->jalanId, 'ringkasan' => $ringkasan, 'hasil' => $this->hasil, 'kontrak_baru' => $this->kontrakBaru, 'kontrak_diisi' => $this->kontrakDiisi];
     }
 
     // ═════════════════════════════ klasifikasi ═════════════════════════════
@@ -195,6 +225,7 @@ class MesinSinkron
                     // Ditautkan manual di layar Rekonsiliasi → nomor SPR J-ERP ikut disamakan.
                     if ($tabel === 'fo_kontrak' && $taut[$kunci][1] === 'cocok') {
                         $this->samakanNomorSpr($cfg, (int) $taut[$kunci][0], (string) $kunci, $this->baris('b', $tabel, $idB));
+                        $this->tandaiIsiBilaKosong($r, (string) $kunci, (int) $idB, (int) $taut[$kunci][0]);
                     }
                 }
                 $this->lewatiNomor[$kunci] = true;
@@ -214,6 +245,7 @@ class MesinSinkron
                 $this->tambahHasil($tabel, $cfg, $kunci, 'cocok', $rowB, $this->labelNyata($tabel, $cfg, $pasangan));
                 if ($tabel === 'fo_kontrak') {
                     $this->samakanNomorSpr($cfg, (int) $pasangan->id, (string) $kunci, $rowB);
+                    $this->tandaiIsiBilaKosong($r, (string) $kunci, (int) $idB, (int) $pasangan->id);
                 }
             } elseif ($aksi === 'ditahan') {
                 foreach ($calon as $x) {
@@ -224,6 +256,12 @@ class MesinSinkron
                 $this->tambahHasil($tabel, $cfg, $kunci, 'ditahan', $rowB,
                     implode(' | ', array_map(fn ($x) => $this->labelNyata($tabel, $cfg, $x), array_slice($calon, 0, 3))),
                     'Ada input J-ERP bernominal sama tetapi keterangan/pihaknya berbeda — dicek manual (tautkan atau masukkan).');
+            } elseif ($tabel === 'fo_kontrak' && ($dobel = $this->nomorUrutSprDipakai((string) $kunci)) !== null) {
+                // Nomor urutnya sudah dipakai SPR lain (mis. 001690/X vs 001690/XI) → jangan jadi nomor ganda.
+                $this->lewatiNomor[$kunci] = true;
+                $r['ditahan'][$kunci] = $idB;
+                $this->tambahHasil($tabel, $cfg, $kunci, 'ditahan', $rowB, $dobel,
+                    "Nomor urut SPR ini sudah dipakai SPR {$dobel} — dicek manual (tautkan, atau ganti nomor salah satunya).");
             } else {
                 $r['masuk'][$kunci] = $idB;
             }
@@ -284,6 +322,10 @@ class MesinSinkron
 
         // Dokumen hasil muat yang hilang dari eProperty (dihapus di sana) — dilaporkan saja.
         $hilang = array_diff_key($nyata, $bayang);
+        if (isset($cfg['kunci_jerp'])) {
+            // Nomor terbitan J-ERP (mis. customer NUP publik CUST-…) memang tidak pernah ada di eProperty.
+            $hilang = array_filter($hilang, fn ($kunci) => ! preg_match($cfg['kunci_jerp'], (string) $kunci), ARRAY_FILTER_USE_KEY);
+        }
         if ($hilang && $this->adaKolom('n', $tabel, 'created_at')) {
             $nHilang = $this->c->table($this->n($tabel))->whereIn('id', array_values($hilang))->where('created_at', '<', $this->batas)
                 ->when(isset($cfg['native_sumber']), fn ($q) => $q->whereNotIn('source', $cfg['native_sumber']))->count();
@@ -324,7 +366,22 @@ class MesinSinkron
             if (! empty($m['pihak_wajib']) && ! $this->pihakSama($tabel, $cfg, $rowB, $x)) {
                 continue;
             }
+            if (isset($m['pihak_cadangan']) && $this->pihakTerang($cfg, $rowB, $x) === false) {
+                continue;   // kontrak/customer jelas berbeda → bukan dokumen yang sama
+            }
             $calon[] = $x;
+        }
+        if (! $calon && ! empty($m['tahan_pihak_sama'])) {
+            // Mis. SPR J-ERP di unit yang sama tetapi harganya belum diisi (0): jangan jadi SPR kedua.
+            $calon = array_values(array_filter($native, fn ($x) => $this->pihakSama($tabel, $cfg, $rowB, $x)));
+            // Unit DAN customer sama, hanya satu kandidat → transaksi yang sama (SPRS J-ERP harga belum diisi): tautkan otomatis.
+            $samaPihak = array_values(array_filter($calon, fn ($x) => $this->pihakJugaSama($cfg, $rowB, $x)));
+            if (count($calon) === 1 && count($samaPihak) === 1) {
+                return ['cocok', $samaPihak[0], $calon];
+            }
+            if ($calon) {
+                return ['ditahan', null, $calon];
+            }
         }
         if (! $calon) {
             return ['masuk', null, []];
@@ -334,6 +391,9 @@ class MesinSinkron
             && $this->pihakJugaSama($cfg, $rowB, $x)));
         if (! $persis && ! isset($m['teks']) && ! isset($m['pihak_juga']) && count($calon) === 1) {
             $persis = $calon;
+        }
+        if (! $persis && isset($m['pihak_cadangan']) && count($calon) === 1 && $this->pihakTerang($cfg, $rowB, $calon[0]) === true) {
+            $persis = $calon;   // satu-satunya kandidat, nominal + kontrak/customer sama → keterangan boleh beda
         }
         if (count($persis) > 1 && isset($m['tanggal'])) {
             // Beberapa input J-ERP sama persis: ambil yang tanggalnya paling dekat.
@@ -372,6 +432,28 @@ class MesinSinkron
     }
 
     /**
+     * Pihak dokumen yang bisa dipastikan (cocok.pihak_cadangan): kontrak bila keduanya berkontrak,
+     * selain itu customer (mis. TTS booking/UTJ yang belum punya SPR). Customer MIGRASI-NA (tak dikenal)
+     * dianggap tidak jelas. true = sama, false = jelas beda, null = tidak bisa dipastikan.
+     */
+    private function pihakTerang(array $cfg, object $b, object $n): ?bool
+    {
+        $kol = $cfg['cocok']['pihak'];
+        $vb = $b->{$kol} === null ? null : (isset($cfg['ref'][$kol]) ? $this->idNyataRef($cfg['ref'][$kol], $b->{$kol}) : $b->{$kol});
+        if ($vb !== null && $n->{$kol} !== null) {
+            return (string) $vb === (string) $n->{$kol};
+        }
+        $kol = $cfg['cocok']['pihak_cadangan'];
+        $vb = $b->{$kol} === null ? null : (isset($cfg['ref'][$kol]) ? $this->idNyataRef($cfg['ref'][$kol], $b->{$kol}) : $b->{$kol});
+        $na = $this->idCustomerNa ??= (int) $this->c->table($this->n('fo_customers'))->where('code', 'MIGRASI-NA')->value('id');
+        if ($vb === null || $n->{$kol} === null || (int) $vb === $na || (int) $n->{$kol} === $na) {
+            return null;
+        }
+
+        return (string) $vb === (string) $n->{$kol};
+    }
+
+    /**
      * SPR J-ERP yang sama dengan SPR eProperty memakai NOMOR eProperty — selama input masih di dua
      * tempat, eProperty-lah yang menerbitkan nomor resmi; nomor J-ERP hanya sementara. Ikut diganti:
      * booking BO (BO mengenal SPR lewat nomornya) dan rujukan nomor di data MUK. Nomor lama dicatat di
@@ -383,10 +465,11 @@ class MesinSinkron
         if ($lama === '' || $lama === $nomorEprop) {
             return;
         }
-        $bentrok = $this->c->table($this->n('fo_kontrak'))->where('no_kontrak', $nomorEprop)->where('id', '!=', $idN)->exists();
-        if ($bentrok) {
+        $bentrok = $this->c->table($this->n('fo_kontrak'))->where('no_kontrak', $nomorEprop)->where('id', '!=', $idN)->exists()
+            ? $nomorEprop : $this->nomorUrutSprDipakai($nomorEprop, $idN);
+        if ($bentrok !== null) {
             $this->tambahHasil('fo_kontrak', $cfg, $nomorEprop, 'konflik', $rowB, $lama,
-                "Nomor eProperty {$nomorEprop} sudah dipakai SPR J-ERP lain — nomor {$lama} TIDAK diganti. Periksa manual.");
+                "Nomor eProperty {$nomorEprop} sudah dipakai SPR J-ERP lain ({$bentrok}) — nomor {$lama} TIDAK diganti. Periksa manual.");
 
             return;
         }
@@ -421,6 +504,58 @@ class MesinSinkron
             }
         }
         $this->tambahHasil('fo_kontrak', $cfg, $nomorEprop, 'diperbarui', $rowB, $lama, $alasan);
+    }
+
+    private ?string $formatSpr = null;
+
+    /**
+     * SPR J-ERP lain yang sudah memakai NOMOR URUT yang sama dengan $nomor (bulan/tahun boleh beda),
+     * menurut format numerator SPR. Null bila tidak ada, atau $nomor tidak berpola format itu.
+     */
+    private function nomorUrutSprDipakai(string $nomor, ?int $kecualiId = null): ?string
+    {
+        $this->formatSpr ??= (string) $this->c->table($this->db['fo'] . '.numerators')
+            ->where('code', 'SPR')->whereNull('deleted_at')->where('is_active', true)
+            ->when($this->c->table('information_schema.columns')->where('table_schema', $this->db['fo'])
+                ->where('table_name', 'numerators')->where('column_name', 'reset')->exists(), fn ($q) => $q->orderByRaw("CASE WHEN reset = 'tidak' THEN 0 ELSE 1 END"))
+            ->value('format');
+        $seq = $this->formatSpr === '' ? null : NumeratorService::seqDari($this->formatSpr, $nomor);
+
+        return $seq === null ? null
+            : NumeratorService::nomorUrutDipakai($this->n('fo_kontrak'), 'no_kontrak', $this->formatSpr, $seq, $nomor, $kecualiId);
+    }
+
+    /**
+     * SPR J-ERP yang tertaut ke SPR eProperty tetapi harganya belum diisi (0) → acuannya eProperty:
+     * harga, skema, jadwal tagihan diambil dari eProperty (juga pada mode hanya data baru). SPR J-ERP
+     * yang harganya sudah terisi tidak disentuh. Dilewati bila nomornya gagal disamakan (bentrok).
+     */
+    private function tandaiIsiBilaKosong(array &$r, string $kunci, int $idB, int $idN): void
+    {
+        $k = $this->c->table($this->n('fo_kontrak'))->where('id', $idN)->first(['no_kontrak', 'total_kontrak']);
+        if (! $k || (string) $k->no_kontrak !== $kunci || abs((float) $k->total_kontrak) >= 1) {
+            return;
+        }
+        $this->isiDariEprop['fo_kontrak|' . $kunci] = true;
+        $r['ubah'][$kunci] = [$idB, $idN];
+    }
+
+    /** Isi SPR J-ERP dari eProperty lalu finalkan seperti tombol "Simpan sebagai SPR": tahap SPR + unit TERJUAL. */
+    private function isiKontrakDariEprop(int $idB, int $idN, string $kunci): void
+    {
+        $this->perbaruiDokumen('fo_kontrak', $idB, $idN, $kunci);
+        $this->c->table($this->n('fo_kontrak'))->where('id', $idN)->update(['tahap' => 'SPR', 'updated_at' => now()]);
+        $unit = $this->c->table($this->n('fo_kontrak'))->where('id', $idN)->value('unit_id');
+        if ($unit) {
+            $this->c->table($this->n('fo_units'))->where('id', $unit)->update(['status' => 'TERJUAL', 'updated_at' => now()]);
+        }
+        $this->kontrakDiisi[] = $idN;
+        for ($i = count($this->hasil) - 1; $i >= 0; $i--) {
+            if ($this->hasil[$i]['tabel'] === 'fo_kontrak' && $this->hasil[$i]['kunci'] === $kunci && $this->hasil[$i]['aksi'] === 'diperbarui') {
+                $this->hasil[$i]['alasan'] = mb_substr('SPR J-ERP berharga 0 — diisi dari eProperty (acuan eProperty), tahap SPR, unit TERJUAL. ' . $this->hasil[$i]['alasan'], 0, 500);
+                break;
+            }
+        }
     }
 
     /** Kolom tautan tambahan yang wajib sama (cocok.pihak_juga), dibandingkan sesudah dipetakan ke id J-ERP. */

@@ -68,7 +68,23 @@ function kirimImpor() {
 const editingId = ref<number | null>(null);
 // Induk yang sedang ditambahi anak (dari tombol "+" per baris) — hanya untuk petunjuk di modal.
 const parentAcc = ref<any | null>(null);
-const form = useForm<any>({ code: '', name: '', level: 1, parent_id: null, type: 'asset', normal_balance: 'D', is_postable: false, is_active: true, cf_direct_category_id: null, cf_indirect_category_id: null, cost_center_id: null, cost_center_optional: false, cogs_component: null });
+const form = useForm<any>({ code: '', name: '', level: 1, parent_id: null, type: 'asset', normal_balance: 'D', is_postable: false, is_active: true, cf_direct_category_id: null, cf_indirect_category_id: null, cost_center_id: null, cost_center_ids: [] as number[], cost_center_optional: false, cogs_component: null });
+// Mode cost center: null = tidak dipetakan (ikut unit kerja user) · '__kosong' = tanpa cost center ·
+// '__daftar' = dibatasi ke cost_center_ids, dengan cost_center_id sebagai default.
+const ccMode = ref<null | '__kosong' | '__daftar'>(null);
+const ccTambah = ref<any>(null);
+const ccNama = (id: any) => { const c = props.costCenters.find((x) => Number(x.id) === Number(id)); return c ? `${c.code} - ${c.name}` : String(id); };
+const ccBelumDipilih = computed(() => props.costCenters.filter((c) => !form.cost_center_ids.includes(Number(c.id))));
+function tambahCc(v: any) {
+    const id = Number(v);
+    if (id && !form.cost_center_ids.includes(id)) form.cost_center_ids.push(id);
+    if (!form.cost_center_id) form.cost_center_id = id || null;
+    ccTambah.value = null;
+}
+function hapusCc(id: number) {
+    form.cost_center_ids = form.cost_center_ids.filter((x: number) => x !== id);
+    if (Number(form.cost_center_id) === id) form.cost_center_id = form.cost_center_ids[0] ?? null;
+}
 
 /** Panjang kode yang dituntut level: tiap turun satu tingkat menambah dua digit. */
 const panjangKode = computed(() => 2 * Number(form.level || 1) - 1);
@@ -106,6 +122,7 @@ function openCreate() {
     parentAcc.value = null;
     form.reset();
     form.clearErrors();
+    ccMode.value = null;
     showModal.value = true;
 }
 
@@ -118,6 +135,7 @@ function openCreateChild(a: any) {
     editingId.value = null;
     form.reset();
     form.clearErrors();
+    ccMode.value = null;
     const bisaBeranak = Number(a.level ?? 6) < 6;
     parentAcc.value = bisaBeranak ? a : null;
     if (bisaBeranak) {
@@ -144,17 +162,19 @@ function openEdit(a: any) {
     form.is_postable = !!a.is_postable; form.is_active = !!a.is_active;
     form.cf_direct_category_id = a.cf_direct_category_id ?? null;
     form.cf_indirect_category_id = a.cf_indirect_category_id ?? null;
-    // '__kosong' = pilihan "dikosongkan (tanpa cost center)" — penanda cost_center_optional.
-    form.cost_center_id = a.cost_center_optional ? '__kosong' : (a.cost_center_id ?? null);
+    form.cost_center_ids = (a.cost_centers ?? []).map((c: any) => Number(c.id));
+    form.cost_center_id = a.cost_center_id ?? null;
+    ccMode.value = a.cost_center_optional ? '__kosong' : (form.cost_center_ids.length ? '__daftar' : null);
     form.cogs_component = a.cogs_component ?? null;
     showModal.value = true;
 }
 function submit() {
-    // Pilihan "dikosongkan" dikirim sebagai penanda, bukan id cost center.
+    // Mode "dikosongkan" dikirim sebagai penanda; mode tidak dipetakan = daftar kosong.
     form.transform((d: any) => ({
         ...d,
-        cost_center_optional: d.cost_center_id === '__kosong',
-        cost_center_id: d.cost_center_id === '__kosong' ? null : d.cost_center_id,
+        cost_center_optional: ccMode.value === '__kosong',
+        cost_center_ids: ccMode.value === '__daftar' ? d.cost_center_ids : [],
+        cost_center_id: ccMode.value === '__daftar' ? d.cost_center_id : null,
     }));
     const opts = { onSuccess: () => { showModal.value = false; } };
     editingId.value ? form.put(route('bs.accounts.update', editingId.value), opts) : form.post(route('bs.accounts.store'), opts);
@@ -217,7 +237,10 @@ const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 
                         <td class="px-4 py-2 text-center font-mono text-xs">{{ a.is_postable ? a.normal_balance : '' }}</td>
                         <td class="px-4 py-2 text-center">{{ a.is_postable ? '✓' : '—' }}</td>
                         <td class="px-4 py-2 text-xs">
-                            <span v-if="a.cost_center" class="inline-flex items-center gap-1 whitespace-nowrap rounded bg-primary-50 px-1.5 py-0.5 text-primary-700 dark:bg-primary-900/25 dark:text-primary-300"><span class="font-mono">{{ a.cost_center.code }}</span> {{ a.cost_center.name }}</span>
+                            <div v-if="(a.cost_centers ?? []).length" class="flex flex-wrap gap-1">
+                                <span v-for="c in a.cost_centers" :key="c.id" class="inline-flex items-center gap-1 whitespace-nowrap rounded bg-primary-50 px-1.5 py-0.5 text-primary-700 dark:bg-primary-900/25 dark:text-primary-300"
+                                      :title="Number(c.id) === Number(a.cost_center_id) ? 'Default' : ''"><span v-if="Number(c.id) === Number(a.cost_center_id)">★</span><span class="font-mono">{{ c.code }}</span> {{ c.name }}</span>
+                            </div>
                             <span v-else-if="a.cost_center_optional" class="whitespace-nowrap text-[11px] italic text-neutral-500">(dikosongkan)</span>
                             <span v-else class="text-neutral-300 dark:text-neutral-600">—</span>
                         </td>
@@ -309,14 +332,27 @@ const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 
                         </div>
                         <div>
                             <label class="mb-1 block text-xs font-medium text-neutral-500">Cost Center</label>
-                            <select v-model="form.cost_center_id" :class="inputCls">
+                            <select v-model="ccMode" :class="inputCls">
                                 <option :value="null">— tidak dipetakan — (ikut unit kerja user)</option>
+                                <option value="__daftar">Dipetakan ke cost center tertentu</option>
                                 <option value="__kosong">— dikosongkan (tanpa cost center) —</option>
-                                <option v-for="c in costCenters" :key="c.id" :value="c.id">{{ c.code }} - {{ c.name }}</option>
                             </select>
-                            <p v-if="form.cost_center_id === '__kosong'" class="mt-1 text-[11px] text-neutral-400">Baris jurnal yang memakai akun ini otomatis tanpa cost center dan boleh disimpan kosong (mis. Utang Usaha Customer).</p>
-                            <p v-else class="mt-1 text-[11px] text-neutral-400">Dipakai otomatis & dikunci pada tiap baris Input Jurnal yang memakai akun ini.</p>
+                            <div v-if="ccMode === '__daftar'" class="mt-2 space-y-1.5 rounded-lg border border-neutral-200 p-2 dark:border-neutral-700">
+                                <div v-for="id in form.cost_center_ids" :key="id" class="flex items-center gap-2 text-sm">
+                                    <label class="flex flex-1 cursor-pointer items-center gap-2">
+                                        <input type="radio" :value="id" v-model="form.cost_center_id" />
+                                        <span>{{ ccNama(id) }}</span>
+                                        <span v-if="Number(form.cost_center_id) === id" class="rounded bg-primary-50 px-1.5 text-[10px] font-semibold text-primary-700 dark:bg-primary-900/25 dark:text-primary-300">DEFAULT</span>
+                                    </label>
+                                    <button type="button" class="text-neutral-400 hover:text-danger-500" @click="hapusCc(id)"><Trash2 class="h-3.5 w-3.5" /></button>
+                                </div>
+                                <SearchSelect :model-value="ccTambah" @update:model-value="tambahCc" :options="ccBelumDipilih" placeholder="+ tambah cost center…" />
+                            </div>
+                            <p v-if="ccMode === '__kosong'" class="mt-1 text-[11px] text-neutral-400">Baris jurnal yang memakai akun ini otomatis tanpa cost center dan boleh disimpan kosong (mis. Utang Usaha Customer).</p>
+                            <p v-else-if="ccMode === '__daftar'" class="mt-1 text-[11px] text-neutral-400">Baris jurnal hanya boleh memakai cost center di atas. Terisi otomatis dengan unit kerja penginput bila ada di daftar; bila tidak, dengan yang bertanda DEFAULT.</p>
+                            <p v-else class="mt-1 text-[11px] text-neutral-400">Baris jurnal terisi otomatis dengan unit kerja penginput dan boleh diganti.</p>
                             <p v-if="form.errors.cost_center_id" class="mt-1 text-xs text-danger-500">{{ form.errors.cost_center_id }}</p>
+                            <p v-if="form.errors.cost_center_ids" class="mt-1 text-xs text-danger-500">{{ form.errors.cost_center_ids }}</p>
                         </div>
                         <div>
                             <label class="mb-1 block text-xs font-medium text-neutral-500">Komponen COGS</label>

@@ -8,6 +8,7 @@ use App\Modules\FO\Launching\Models\NupRegistration;
 use App\Modules\FO\Launching\Services\PilihUnitService;
 use App\Modules\FO\MarketingSales\Models\Lokasi;
 use App\Modules\FO\MarketingSales\Models\Unit;
+use App\Support\PesanGagal;
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;
 
@@ -205,8 +206,8 @@ class PilihUnit extends Page
                 projectId: $this->clusterId,
             );
         } catch (\Throwable $e) {
-            $this->pickError = $e->getMessage();
-            Notification::make()->danger()->title('Gagal pilih unit')->body($e->getMessage())->send();
+            $this->pickError = PesanGagal::dari($e);
+            Notification::make()->danger()->title('Gagal pilih unit')->body($this->pickError)->send();
         }
     }
 

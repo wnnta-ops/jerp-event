@@ -103,19 +103,37 @@ class VerifikasiNupResource extends Resource
                 Tables\Actions\ActionGroup::make([
                     Tables\Actions\Action::make('download_semua')->label('Download Semua (ZIP)')->icon('heroicon-o-archive-box-arrow-down')
                         ->url(fn (NupRegistration $r) => route('fo.customer.files-zip', $r->customer_id))
-                        ->visible(fn (NupRegistration $r) => (bool) ($r->customer?->ktp_file_path || $r->customer?->npwp_file_path || $r->customer?->ktp_pasangan_file_path)),
+                        ->visible(fn (NupRegistration $r) => (bool) ($r->customer?->ktp_file_path || $r->customer?->npwp_file_path || $r->customer?->ktp_pasangan_file_path || $r->customer?->npwp_pasangan_file_path)),
                     Tables\Actions\Action::make('lihat_ktp')->label('Lihat KTP')->icon('heroicon-o-eye')
                         ->url(fn (NupRegistration $r) => route('fo.customer.file', [$r->customer_id, 'ktp']), shouldOpenInNewTab: true)
                         ->visible(fn (NupRegistration $r) => (bool) $r->customer?->ktp_file_path),
                     Tables\Actions\Action::make('unduh_ktp')->label('Unduh KTP')->icon('heroicon-o-arrow-down-tray')
                         ->url(fn (NupRegistration $r) => route('fo.customer.file', [$r->customer_id, 'ktp']).'?download=1')
                         ->visible(fn (NupRegistration $r) => (bool) $r->customer?->ktp_file_path),
+                    Tables\Actions\Action::make('lihat_npwp')->label('Lihat NPWP')->icon('heroicon-o-eye')
+                        ->url(fn (NupRegistration $r) => route('fo.customer.file', [$r->customer_id, 'npwp']), shouldOpenInNewTab: true)
+                        ->visible(fn (NupRegistration $r) => (bool) $r->customer?->npwp_file_path),
                     Tables\Actions\Action::make('unduh_npwp')->label('Unduh NPWP')->icon('heroicon-o-arrow-down-tray')
                         ->url(fn (NupRegistration $r) => route('fo.customer.file', [$r->customer_id, 'npwp']).'?download=1')
                         ->visible(fn (NupRegistration $r) => (bool) $r->customer?->npwp_file_path),
+                    Tables\Actions\Action::make('lihat_ktp_pasangan')->label('Lihat KTP Pasangan')->icon('heroicon-o-eye')
+                        ->url(fn (NupRegistration $r) => route('fo.customer.file', [$r->customer_id, 'ktp_pasangan']), shouldOpenInNewTab: true)
+                        ->visible(fn (NupRegistration $r) => (bool) $r->customer?->ktp_pasangan_file_path),
                     Tables\Actions\Action::make('unduh_ktp_pasangan')->label('Unduh KTP Pasangan')->icon('heroicon-o-arrow-down-tray')
                         ->url(fn (NupRegistration $r) => route('fo.customer.file', [$r->customer_id, 'ktp_pasangan']).'?download=1')
                         ->visible(fn (NupRegistration $r) => (bool) $r->customer?->ktp_pasangan_file_path),
+                    Tables\Actions\Action::make('lihat_npwp_pasangan')->label('Lihat NPWP Pasangan')->icon('heroicon-o-eye')
+                        ->url(fn (NupRegistration $r) => route('fo.customer.file', [$r->customer_id, 'npwp_pasangan']), shouldOpenInNewTab: true)
+                        ->visible(fn (NupRegistration $r) => (bool) $r->customer?->npwp_pasangan_file_path),
+                    Tables\Actions\Action::make('unduh_npwp_pasangan')->label('Unduh NPWP Pasangan')->icon('heroicon-o-arrow-down-tray')
+                        ->url(fn (NupRegistration $r) => route('fo.customer.file', [$r->customer_id, 'npwp_pasangan']).'?download=1')
+                        ->visible(fn (NupRegistration $r) => (bool) $r->customer?->npwp_pasangan_file_path),
+                    Tables\Actions\Action::make('lihat_bukti')->label('Lihat Bukti Transfer')->icon('heroicon-o-eye')->color('success')
+                        ->url(fn (NupRegistration $r) => route('fo.booked.bukti', $r->id), shouldOpenInNewTab: true)
+                        ->visible(fn (NupRegistration $r) => (bool) $r->bukti_transfer_path),
+                    Tables\Actions\Action::make('unduh_bukti')->label('Unduh Bukti Transfer')->icon('heroicon-o-arrow-down-tray')->color('success')
+                        ->url(fn (NupRegistration $r) => route('fo.booked.bukti', $r->id).'?download=1')
+                        ->visible(fn (NupRegistration $r) => (bool) $r->bukti_transfer_path),
                 ])->label('Berkas')->icon('heroicon-o-paper-clip')->button()->color('gray'),
 
                 // Cetak SPRS — SENGAJA tersedia sejak sebelum approve, supaya berkasnya

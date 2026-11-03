@@ -17,6 +17,7 @@ use App\Domain\BusinessSupport\Models\BsLedger;
 use App\Domain\BusinessSupport\Models\BsLocation;
 use App\Domain\BusinessSupport\Models\BsSip;
 use App\Domain\BusinessSupport\Models\BsSupplier;
+use App\Domain\BusinessSupport\Services\CostCenterAkun;
 use App\Domain\BusinessSupport\Services\CostCenterPengguna;
 use App\Domain\BusinessSupport\Support\PosisiHutang;
 use App\Domain\Master\Unit\Models\Unit;
@@ -306,6 +307,7 @@ class ApInvoiceController extends Controller
             // Hutang = kredit akun Hutang Supplier/BYMHD di jurnal (sesudah PPh) — bukan total bruto.
             $hutang = BsApInvoice::nilaiHutangJurnal($inv);
             $rows = $inv->map(fn ($r) => [
+                    'id' => $r->id,
                     'invoice_no' => $r->invoice_number,
                     'invoice_date' => $r->invoice_date?->toDateString(),
                     'receive_date' => $r->receive_date?->toDateString(),
@@ -475,7 +477,8 @@ class ApInvoiceController extends Controller
             // dan tanpa penanda ini ia tidak bisa membedakan akun yang MEMANG boleh tanpa cost
             // center (mis. Utang Usaha Supplier) — hasilnya wizard-nya mengunci diri sendiri
             // pada invoice yang sebenarnya sah. Daftar akunnya sama dengan Jurnal Memorial.
-            'accounts' => BsAccount::where('is_active', true)->where('is_postable', true)->orderBy('code')->get(['id', 'code', 'name', 'cost_center_optional', 'cost_center_id']),
+            // cc_ids = daftar cost center COA, cost_center_id = default-nya (CostCenterAkun).
+            'accounts' => CostCenterAkun::lampirkan(BsAccount::where('is_active', true)->where('is_postable', true)->orderBy('code')->get(['id', 'code', 'name', 'cost_center_optional', 'cost_center_id'])),
             'costCenters' => BsCostCenter::where('is_active', true)->orderBy('code')->get(['id', 'code', 'name']),
             'departments' => BsDepartment::where('is_active', true)->orderBy('code')->get(['id', 'code', 'name']),
             'ledgers' => BsLedger::where('is_active', true)->orderBy('code')->get(['id', 'code', 'name']),
@@ -492,6 +495,8 @@ class ApInvoiceController extends Controller
             // keduanya salah. Hanya pemegang ap.costcenter.override (Accounting) yang boleh
             // mengubahnya.
             'ccPengguna' => app(CostCenterPengguna::class)->idUntuk($request->user()),
+            // Semua unit kerja penginput (Utama dulu) — dicocokkan dengan daftar cost center COA.
+            'ccUser' => app(CostCenterAkun::class)->milikUser($request->user()),
             'bisaUbahCc' => (bool) $request->user()?->can('ap.costcenter.override'),
             // Akun tanpa anggaran: tidak diisi cost center otomatis, dan tidak dituntut
             // mengisinya. Dikirim sebagai KODE supaya layar memakai daftar yang sama dengan
@@ -835,6 +840,10 @@ class ApInvoiceController extends Controller
         if ($kurang = $this->akunKurangCostCenter($v['journal_lines'] ?? [])) {
             return back()->withInput()->with('error',
                 'Cost center wajib diisi untuk akun: '.implode(', ', $kurang).'.');
+        }
+        if ($salah = app(CostCenterAkun::class)->diLuarDaftar($v['journal_lines'] ?? [])) {
+            return back()->withInput()->with('error',
+                'Cost center di luar daftar COA untuk akun: '.implode(', ', $salah).'.');
         }
 
         // KOREKSI BUDGET (langkah Struktur): baris yang melewati sisa budget BULAN invoice boleh tetap

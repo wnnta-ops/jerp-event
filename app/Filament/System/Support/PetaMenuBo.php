@@ -107,14 +107,16 @@ final class PetaMenuBo
         'bs.payroll' => ['Data Center', '', 'Payroll'],
 
         // ── KPR ──────────────────────────────────────────────────────────────────────
+        // Sidebar KPR tidak punya izin tampil per butir: tiap izin di bawah membuka SEKELOMPOK
+        // menu sekaligus — rinciannya di KETERANGAN. Menu KPR → Approval bukan izin peran.
         'bankloan.setup' => ['KPR', 'Set Up', 'Set Up KPR'],
         'bankloan.application' => ['KPR', 'Transaction', 'Pengajuan KPR'],
-        'bankloan.document' => ['KPR', 'Transaction', 'Berkas KPR'],
-        'bankloan.sp3k' => ['KPR', 'Transaction', 'SP3K'],
-        'bankloan.akad' => ['KPR', 'Transaction', 'Akad Kredit'],
-        'bankloan.disbursement' => ['KPR', 'Transaction', 'Pencairan KPR'],
-        'bankloan.retensi' => ['KPR', 'Transaction', 'Retensi KPR'],
-        'bankloan.buyback' => ['KPR', 'Transaction', 'Buyback'],
+        'bankloan.document' => ['KPR', 'Transaction — Tombol di Proses KPR', 'Berkas KPR'],
+        'bankloan.sp3k' => ['KPR', 'Transaction — Tombol di Proses KPR', 'SP3K'],
+        'bankloan.akad' => ['KPR', 'Transaction — Tombol di Proses KPR', 'Akad Kredit'],
+        'bankloan.disbursement' => ['KPR', 'Transaction — Tombol di Proses KPR', 'Pencairan KPR'],
+        'bankloan.retensi' => ['KPR', 'Transaction — Tombol di Proses KPR', 'Retensi KPR'],
+        'bankloan.buyback' => ['KPR', 'Transaction — Tombol di Proses KPR', 'Buyback'],
 
         // ── Booked Revenue ───────────────────────────────────────────────────────────
         'ar.booked-revenue' => ['Booked Revenue', '', 'Sudah Booked Revenue'],
@@ -480,6 +482,31 @@ final class PetaMenuBo
         'menu.bs.gl.kurs.index' => ['General Ledger', 'Setup', 'Kurs Sistem', 'gl.kurs.view'],
         'menu.bs.gl.currency.index' => ['General Ledger', 'Setup', 'Multi Currency', 'gl.currency.view'],
         'menu.bs.gl.repair.index' => ['General Ledger', 'Setup', 'Repair Data', 'gl.repair.view'],
+    ];
+
+    /**
+     * Keterangan di bawah nama baris — [Modul][Nama menu] => teks. Untuk baris yang namanya
+     * tidak sama dengan butir sidebar (satu izin membuka beberapa menu, atau izin tombol).
+     * Ditelusuri dari navGroups.ts & KprApplicationController aplikasi BO.
+     *
+     * @var array<string,array<string,string>>
+     */
+    public const KETERANGAN = [
+        'KPR' => [
+            'Set Up KPR' => 'Lihat membuka 7 menu Set Up: Kategori Retensi, Kategori Bank, Kategori Analisa Berkas, Kategori Berkas Tidak Lengkap, Kategori Reject Bank, Kategori Perhitungan KPR, Setup Approval KPR. Kelola = boleh tambah/ubah/hapus di menu-menu itu.',
+            'Pengajuan KPR' => 'Lihat membuka Transaction (Inisiasi KPR, Proses KPR), seluruh Query/Report (Master Data KPR, Reject BI Checking, Reject Proses KPR, Realisasi vs Budget, Realisasi KPR per Bank, Realisasi KPR per Cluster, Kalkulator KPR), dan Booked Revenue → Rincian Batal Akad.',
+            'Berkas KPR' => 'Belum dipakai aplikasi BO — centang ini belum berpengaruh.',
+            'SP3K' => 'Daftarkan = tombol tahap SP3K di Proses KPR (juga dipakai di tahap Akad).',
+            'Akad Kredit' => 'Jadwalkan / Selesaikan = tombol tahap Akad di Proses KPR.',
+            'Pencairan KPR' => 'Buat = tombol tahap Pencairan di Proses KPR. Verifikasi belum dipakai aplikasi BO.',
+            'Retensi KPR' => 'Rilis = tombol Retensi di Proses KPR. Tahan belum dipakai aplikasi BO.',
+            'Buyback' => 'Belum dipakai aplikasi BO — centang ini belum berpengaruh.',
+        ],
+    ];
+
+    /** Catatan di kepala modul, untuk menu yang aksesnya TIDAK diatur di layar ini. */
+    public const CATATAN_MODUL = [
+        'KPR' => 'Menu KPR → Approval (Proses Bank, SP3K, Akad, Pencairan, Batal / Tolak) tidak diatur di sini: menunya muncul bagi user yang tercantum sebagai approver tahap itu di BO → KPR → Set Up → Setup Approval KPR.',
     ];
 
     /**

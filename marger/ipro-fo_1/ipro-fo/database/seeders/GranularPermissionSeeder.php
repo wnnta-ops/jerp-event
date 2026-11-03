@@ -130,7 +130,7 @@ class GranularPermissionSeeder extends Seeder
                 'bs.po.approve', 'bs.po.close', 'bs.po.create', 'bs.po.revise',
                 'bs.po.termin', 'bs.po.view', 'bs.projection.view', 'bs.receipt.create',
                 'bs.receipt.view', 'bs.sip.approve', 'bs.sip.cancel', 'bs.sip.create',
-                'bs.sip.print', 'bs.sip.reject', 'bs.sip.update', 'bs.sip.view',
+                'bs.sip.print', 'bs.sip.reject', 'bs.sip.ttd-setup', 'bs.sip.update', 'bs.sip.view',
                 'bs.stockcard.view',
             ],
         ];

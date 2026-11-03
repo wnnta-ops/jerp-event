@@ -95,11 +95,12 @@
         $tglSurat = $k?->tgl_kontrak ?: now();
 
         // Teks dari Pengaturan → Template Dokumen (versi yang berlaku pada tanggal surat,
-        // cluster unit lebih dulu). $isiDokumen = pratinjau dari layar Template Dokumen.
+        // cluster + tahap unit lebih dulu). $isiDokumen = pratinjau dari layar Template Dokumen.
         $lokasiSprs = $unit?->lokasi_id ?: ($reg->unit_id ? $reg->unit?->lokasi_id : null);
+        $tahapSprs = $unit?->tahap_id ?: ($reg->unit_id ? $reg->unit?->tahap_id : null);
         $dok = array_replace(
             \App\Modules\FO\Komunikasi\Support\DokumenBawaan::sprs(),
-            (array) ($isiDokumen ?? \App\Modules\FO\Komunikasi\Models\TemplateDokumen::berlakuUntuk('SPRS', $lokasiSprs, $tglSurat)?->isi ?? []),
+            (array) ($isiDokumen ?? \App\Modules\FO\Komunikasi\Models\TemplateDokumen::berlakuUntuk('SPRS', $lokasiSprs, $tglSurat, $tahapSprs)?->isi ?? []),
         );
         $nilaiDok = [
             'nama_perusahaan' => $dok['nama_perusahaan'],
@@ -110,6 +111,16 @@
             'tanggal' => $tgl($tglSurat),
         ];
         $tx = fn ($teks) => \App\Modules\FO\Komunikasi\Support\DokumenBawaan::teks($teks, $nilaiDok);
+        // $editor = editor visual Template Dokumen (lihat spr.blade.php).
+        $editor = $editor ?? null;
+        $ed = function (string $kunci, bool $polos = false) use ($dok, $tx, $editor) {
+            $v = (string) data_get($dok, $kunci, '');
+            if (! $editor) {
+                return $polos ? e($v) : $tx($v);
+            }
+
+            return \App\Modules\FO\Komunikasi\Support\EditorDokumen::kolom($kunci, $v, $polos);
+        };
     @endphp
 
     {{-- Logo di-embed base64 supaya ikut tercetak di PDF (Browsershot tak selalu
@@ -121,6 +132,7 @@
             : null;
     @endphp
 
+    @if ($editor)<div class="page">@endif
     <div class="head">
         {{-- KIRI ATAS: logo Java Residence. --}}
         @if ($logoSrc)
@@ -129,8 +141,8 @@
             <div class="brand">JAVA<br>RESIDENCE</div>
         @endif
         <div class="co">
-            <div class="pt">{{ $dok['nama_perusahaan'] }}</div>
-            <div class="ttl">{{ $dok['judul'] }}</div>
+            <div class="pt">{!! $ed('nama_perusahaan', true) !!}</div>
+            <div class="ttl">{!! $ed('judul', true) !!}</div>
         </div>
         <div class="right">
             {{-- QR Customer dipindah ke HALAMAN 2 (lihat bagian bawah berkas ini):
@@ -201,20 +213,31 @@
     <div class="kk">
         <div class="h">Syarat dan Ketentuan :</div>
         <ol class="terms">
-            @foreach ((array) $dok['syarat'] as $sy)
-                @if (filled($sy))<li>{!! $tx($sy) !!}</li>@endif
+            @foreach ((array) $dok['syarat'] as $iSy => $sy)
+                @if ($editor)
+                    <li class="ed-item">{!! \App\Modules\FO\Komunikasi\Support\EditorDokumen::kendali('syarat', $iSy, [
+                        ['naik', '↑', 'Geser ke atas'], ['turun', '↓', 'Geser ke bawah'], ['tambah', '+', 'Tambah syarat di bawah ini'], ['hapus', 'Hapus', 'Hapus syarat ini'],
+                    ]) !!}{!! $ed('syarat.'.$iSy) !!}</li>
+                @elseif (filled($sy))<li>{!! $tx($sy) !!}</li>@endif
             @endforeach
         </ol>
+        @if ($editor && empty($dok['syarat']))
+            <button type="button" class="ed-add" data-op="tambah" data-list="syarat" data-i="-1">+ Tambah syarat</button>
+        @endif
     </div>
 
-    <div style="margin-top:10px;">{{ $dok['kota'] }}, {{ $tgl($tglSurat) }}</div>
+    <div style="margin-top:10px;">{!! $ed('kota', true) !!}, {{ $tgl($tglSurat) }}</div>
 
     <div class="sign">
         <div class="c"><div class="line">{{ $nama ?: '' }}<br>Pembeli</div></div>
         {{-- Tanpa nomor telepon: kolom tanda tangan cukup nama sales + jabatan. --}}
         <div class="c"><div class="line">{{ $sales }}<br>Marketing</div></div>
-        <div class="c"><div class="line">{{ $dok['label_perusahaan'] }}</div></div>
+        <div class="c"><div class="line">{!! $ed('label_perusahaan', true) !!}</div></div>
     </div>
+    @if ($editor)
+        </div>
+        @include('fo.template-dokumen.editor', ['editor' => $editor, 'isi' => $dok])
+    @endif
 
     {{-- ════════════ HALAMAN 2 — QR CUSTOMER ════════════
          Dipisah ke halamannya sendiri supaya bisa dicetak besar: petugas memindainya

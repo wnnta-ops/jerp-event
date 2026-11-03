@@ -13,6 +13,7 @@ use App\Domain\BusinessSupport\Models\BsJournal;
 use App\Domain\BusinessSupport\Print\PengajuanKasbonPrinter;
 use App\Domain\BusinessSupport\Services\CashAdvanceAllocationService;
 use App\Domain\BusinessSupport\Services\CashAdvanceService;
+use App\Domain\BusinessSupport\Services\CostCenterAkun;
 use App\Domain\BusinessSupport\Services\CostCenterPengguna;
 use App\Domain\BusinessSupport\Support\SaldoBonSementara;
 use App\Exceptions\BusinessRuleException;
@@ -827,21 +828,12 @@ class CashAdvanceController extends Controller
         }
         $v['cost_center_id'] = $ccDipilih ?? (int) $emp->cost_center_id;
 
-        // REKENING TUJUAN — nomornya diambil server dari master, bukan dari kiriman layar
-        // (layar hanya menyebut "sendiri"/"atasan"), lalu disalin ke bon.
-        $opsiRek = $this->opsiRekening($emp);
-        $sumber = $v['rek_sumber'] ?? (($opsiRek['sendiri']['ada'] ?? false) ? 'sendiri' : null);
+        $rek = $this->salinRekening($emp, $v['rek_sumber'] ?? null);
         unset($v['rek_sumber']);
-        if ($sumber !== null) {
-            $rek = $opsiRek[$sumber] ?? null;
-            if (! $rek || ! $rek['ada']) {
-                return back()->withInput()->with('error', $sumber === 'atasan'
-                    ? 'Rekening atasan belum tersedia — isi Atasan dan rekeningnya di Data Karyawan.'
-                    : 'Rekening Anda belum diisi di Data Karyawan.');
-            }
-            $v += ['rek_sumber' => $sumber, 'rek_employee_id' => $rek['employee_id'],
-                'rek_bank' => $rek['bank'], 'rek_nomor' => $rek['nomor'], 'rek_atas_nama' => $rek['nama']];
+        if (is_string($rek)) {
+            return back()->withInput()->with('error', $rek);
         }
+        $v += $rek;
 
         try {
             $adv = $svc->issue($v, $request->user()->id);
@@ -851,6 +843,111 @@ class CashAdvanceController extends Controller
         }
 
         return redirect()->route('bs.advance.show', $adv)->with('success', "Pengajuan Bon Sementara {$adv->advance_number} tercatat — menunggu pembayaran Finance (jurnal belum terbentuk).");
+    }
+
+    /**
+     * REKENING TUJUAN — nomornya diambil server dari master, bukan dari kiriman layar
+     * (layar hanya menyebut "sendiri"/"atasan"), lalu disalin ke bon.
+     *
+     * @return array<string,mixed>|string kolom rek_* untuk bon, atau pesan galat
+     */
+    private function salinRekening(BsEmployee $emp, ?string $sumber): array|string
+    {
+        $opsiRek = $this->opsiRekening($emp);
+        $sumber ??= ($opsiRek['sendiri']['ada'] ?? false) ? 'sendiri' : null;
+        if ($sumber === null) {
+            return [];
+        }
+        $rek = $opsiRek[$sumber] ?? null;
+        if (! $rek || ! $rek['ada']) {
+            return $sumber === 'atasan'
+                ? 'Rekening atasan belum tersedia — isi Atasan dan rekeningnya di Data Karyawan.'
+                : 'Rekening karyawan belum diisi di Data Karyawan.';
+        }
+
+        return ['rek_sumber' => $sumber, 'rek_employee_id' => $rek['employee_id'],
+            'rek_bank' => $rek['bank'], 'rek_nomor' => $rek['nomor'], 'rek_atas_nama' => $rek['nama']];
+    }
+
+    /**
+     * Karyawan PEMILIK BON — akun pengajunya (created_by), lalu nama pemegangnya. Pilihan
+     * departemen & rekening pada Edit Pengajuan dibaca dari dia, bukan dari akun yang mengedit:
+     * bon yang diubah orang Finance tetap bon milik pengajunya.
+     */
+    private function karyawanPemilikBon(BsCashAdvance $advance): ?BsEmployee
+    {
+        $pengaju = $advance->created_by ? \App\Models\User::find($advance->created_by) : null;
+        $id = $pengaju ? app(CostCenterPengguna::class)->idKaryawan($pengaju) : null;
+        if ($id !== null) {
+            return BsEmployee::find($id);
+        }
+        $nama = trim(explode(' — ', (string) $advance->holder)[0]);
+
+        return $nama === '' ? null : BsEmployee::whereRaw('LOWER(name) = ?', [mb_strtolower($nama)])->first();
+    }
+
+    /** Edit Pengajuan — hanya selagi Diajukan (belum dibayar Finance). */
+    public function edit(Request $request, BsCashAdvance $advance): Response|RedirectResponse
+    {
+        abort_unless($request->user()?->can('cashbook.advance.update'), 403);
+        abort_unless($this->bolehBukaBon($request, $advance), 403);
+        if ($advance->status !== 'requested') {
+            return redirect()->route('bs.advance.show', $advance)->with('error', 'Bon yang sudah dibayar tidak bisa diubah — mundurkan dulu lewat Batal Pembayaran.');
+        }
+
+        $emp = $this->karyawanPemilikBon($advance);
+
+        return Inertia::render('BusinessSupport/CashBook/Advances/Form', [
+            'karyawan' => $emp === null ? null : [
+                'id' => $emp->id, 'name' => $emp->name, 'position' => $emp->position,
+                'punya_cost_center' => $emp->cost_center_id !== null,
+            ],
+            'departemen' => $emp === null ? [] : $this->opsiDepartemen($emp),
+            'rekening' => $emp === null ? [] : $this->opsiRekening($emp),
+            'advance' => $advance->only(['id', 'advance_number', 'advance_date', 'holder', 'purpose', 'amount',
+                'approval_mode', 'rek_sumber', 'cost_center_id', 'approvals']),
+        ]);
+    }
+
+    public function update(Request $request, BsCashAdvance $advance, CashAdvanceService $svc): RedirectResponse
+    {
+        abort_unless($request->user()?->can('cashbook.advance.update'), 403);
+        abort_unless($this->bolehBukaBon($request, $advance), 403);
+
+        $v = $request->validate([
+            'advance_date' => ['required', 'date'],
+            'purpose' => ['required', 'string', 'max:255'],
+            'amount' => ['required', 'numeric', 'min:0.01'],
+            'approval_mode' => ['nullable', 'string', 'in:'.implode(',', array_keys(BsCashAdvance::APPROVAL_MODES))],
+            'rek_sumber' => ['nullable', 'string', 'in:sendiri,atasan'],
+            'cost_center_id' => ['nullable', 'integer'],
+        ]);
+
+        $emp = $this->karyawanPemilikBon($advance);
+        if ($emp === null) {
+            return back()->with('error', 'Pemilik bon ini tidak tertaut ke data karyawan — departemen & rekeningnya tidak bisa ditentukan.');
+        }
+        // Departemen hanya dari milik karyawan pemilik bon (aturan yang sama dengan pengajuan).
+        $ccDipilih = ($v['cost_center_id'] ?? null) ? (int) $v['cost_center_id'] : (int) $advance->cost_center_id;
+        if (! in_array($ccDipilih, $emp->costCenterIds(), true)) {
+            return back()->with('error', 'Departemen yang dipilih bukan departemen karyawan '.$emp->name.'.');
+        }
+        $v['cost_center_id'] = $ccDipilih;
+
+        $rek = $this->salinRekening($emp, $v['rek_sumber'] ?? null);
+        unset($v['rek_sumber']);
+        if (is_string($rek)) {
+            return back()->with('error', $rek);
+        }
+        $v += $rek;
+
+        try {
+            $svc->ubahPengajuan($advance, $v, $request->user()->id);
+        } catch (BusinessRuleException $e) {
+            return $this->balikDenganGalat($e);
+        }
+
+        return redirect()->route('bs.advance.show', $advance)->with('success', 'Pengajuan '.$advance->advance_number.' diperbarui.');
     }
 
     /** #49: daftar pengajuan bon sementara yang menunggu pembayaran Finance. */
@@ -985,7 +1082,15 @@ class CashAdvanceController extends Controller
                     'number' => BsJournal::whereKey($advance->realize_journal_id)->value('journal_number'),
                     'bisaBuka' => (bool) $request->user()?->can('gl.journal.view')]
                 : null,
-            'expenseAccounts' => BsAccount::where('is_active', true)->where('is_postable', true)->whereIn('type', ['expense', 'asset'])->orderBy('code')->get(['id', 'code', 'name', 'type']),
+            // Selain beban & aset, dibuka juga: TITIPAN ESTATE, PENYELESAIAN BIAYA KONSTRUKSI (kewajiban)
+            // dan NURSERY ESTATE — biayanya dibayar dari dana titipan/cadangan tsb.
+            'expenseAccounts' => BsAccount::where('is_active', true)->where('is_postable', true)
+                ->where(fn ($q) => $q->whereIn('type', ['expense', 'asset'])
+                    ->orWhere('name', 'like', 'TITIPAN ESTATE%')
+                    ->orWhere('name', 'like', 'PENYELESAIAN BIAYA KONSTRUKSI%')
+                    ->orWhere('code', '10104010199'))
+                ->orderBy('code')->get(['id', 'code', 'name', 'type', 'cost_center_id', 'cost_center_optional'])
+                ->pipe(fn ($c) => CostCenterAkun::lampirkan($c)),
             // Cost center per baris realisasi → diteruskan ke jurnal, dibaca Budget Control.
             'costCenters' => BsCostCenter::where('is_active', true)
                 ->orderBy('code')->get(['id', 'code', 'name']),
@@ -1059,6 +1164,12 @@ class CashAdvanceController extends Controller
             // Mundur satu langkah / hapus pengajuan — izin cashbook.advance.undo (Hak Akses).
             'langkahMundur' => $request->user()?->can('cashbook.advance.undo')
                 ? app(CashAdvanceService::class)->langkahMundur($advance) : null,
+            // Edit Pengajuan — izin cashbook.advance.update, hanya selagi Diajukan (belum dibayar).
+            'bisaEditPengajuan' => (bool) $request->user()?->can('cashbook.advance.update')
+                && $advance->status === 'requested',
+            // Edit Realisasi — izin cashbook.advance.realize-edit, hanya selama selisihnya belum diselesaikan.
+            'bisaEditRealisasi' => (bool) $request->user()?->can('cashbook.advance.realize-edit')
+                && app(CashAdvanceService::class)->bisaEditRealisasi($advance),
             'riwayatMundur' => \Illuminate\Support\Facades\DB::table('bs_cash_advance_mundur as m')
                 ->leftJoin('users as u', 'u.id', '=', 'm.user_id')
                 ->where('m.cash_advance_id', $advance->id)->orderByDesc('m.id')
@@ -1217,6 +1328,63 @@ class CashAdvanceController extends Controller
         $v = $request->validate([
             'realized_date' => ['required', 'date'],
             'defer_settlement' => ['nullable', 'boolean'],
+            ...$this->aturanBarisRealisasi(),
+        ], self::PESAN_BARIS_REALISASI);
+
+        // Tanggal realisasi dikunci hari ini (UI read-only); penyelesaian sisa/kekurangan
+        // selalu ditunda → ditangani dept Finance lewat Refund/Reimburse.
+        $v['realized_date'] = now()->toDateString();
+        $v['defer_settlement'] = true;
+        if ($salah = app(CostCenterAkun::class)->diLuarDaftar($v['lines'], [], 'expense_account_id')) {
+            return back()->with('error', 'Cost center di luar daftar COA untuk akun: '.implode(', ', $salah).'.');
+        }
+
+        try {
+            $svc->realize($advance, $v, $request->user()->id);
+        } catch (BusinessRuleException $e) {
+            return back()->with('error', $e->getMessage());
+        }
+
+        return redirect()->route('bs.advance.show', $advance)->with('success', 'Realisasi bon sementara tercatat — jurnal otomatis terbentuk.');
+    }
+
+    /**
+     * Edit Realisasi — membetulkan rincian realisasi (mis. salah input nominal). Tanggal
+     * realisasinya TETAP tanggal lama; jurnal lama dibuang dan jurnal baru diposting.
+     */
+    public function editRealisasi(Request $request, BsCashAdvance $advance, CashAdvanceService $svc): RedirectResponse
+    {
+        abort_unless($request->user()?->can('cashbook.advance.realize-edit'), 403);
+        abort_unless($this->bolehBukaBon($request, $advance), 403);
+
+        $v = $request->validate([
+            ...$this->aturanBarisRealisasi(),
+            'alasan' => ['required', 'string', 'max:255'],
+        ], ['alasan.required' => 'Alasan edit wajib diisi.'] + self::PESAN_BARIS_REALISASI);
+        // Baris realisasi lama yang sudah tercatat tetap boleh (forward-only).
+        $lama = $advance->lines()->get(['expense_account_id', 'cost_center_id'])
+            ->mapWithKeys(fn ($l) => [$l->expense_account_id.'|'.$l->cost_center_id => true])->all();
+        if ($salah = app(CostCenterAkun::class)->diLuarDaftar($v['lines'], $lama, 'expense_account_id')) {
+            return back()->with('error', 'Cost center di luar daftar COA untuk akun: '.implode(', ', $salah).'.');
+        }
+
+        try {
+            $svc->editRealisasi($advance, $v['lines'], $v['alasan'], $request->user()->id);
+        } catch (BusinessRuleException $e) {
+            return back()->with('error', $e->getMessage());
+        }
+
+        return redirect()->route('bs.advance.show', $advance)->with('success', 'Realisasi '.$advance->advance_number.' diperbarui — jurnal realisasi dibentuk ulang.');
+    }
+
+    private const PESAN_BARIS_REALISASI = [
+        'lines.*.description.max' => 'Keterangan maksimal 500 karakter.',
+    ];
+
+    /** Aturan baris realisasi — dipakai bersama oleh Realisasi dan Edit Realisasi. */
+    private function aturanBarisRealisasi(): array
+    {
+        return [
             'lines' => ['required', 'array', 'min:1'],
             'lines.*.expense_account_id' => ['required', 'integer', 'exists:bs_accounts,id'],
             // WAJIB. Cost center inilah yang menentukan anggaran mana yang terpakai: ia
@@ -1227,22 +1395,9 @@ class CashAdvanceController extends Controller
             // di sini ia diwajibkan, berbeda dari BudgetController yang memang boleh
             // menganggarkan lintas cost center.
             'lines.*.cost_center_id' => ['required', 'integer', 'exists:bs_cost_centers,id'],
-            'lines.*.description' => ['nullable', 'string', 'max:200'],
+            'lines.*.description' => ['nullable', 'string', 'max:500'],
             'lines.*.amount' => ['required', 'numeric', 'min:0.01'],
-        ]);
-
-        // Tanggal realisasi dikunci hari ini (UI read-only); penyelesaian sisa/kekurangan
-        // selalu ditunda → ditangani dept Finance lewat Refund/Reimburse.
-        $v['realized_date'] = now()->toDateString();
-        $v['defer_settlement'] = true;
-
-        try {
-            $svc->realize($advance, $v, $request->user()->id);
-        } catch (BusinessRuleException $e) {
-            return back()->with('error', $e->getMessage());
-        }
-
-        return redirect()->route('bs.advance.show', $advance)->with('success', 'Realisasi bon sementara tercatat — jurnal otomatis terbentuk.');
+        ];
     }
 
     public function refund(Request $request, BsCashAdvance $advance, CashAdvanceService $svc): RedirectResponse

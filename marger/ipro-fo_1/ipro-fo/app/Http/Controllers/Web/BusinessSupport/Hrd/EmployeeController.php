@@ -12,6 +12,7 @@ use App\Support\Xlsx\SimpleXlsx;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
 use Throwable;
@@ -329,9 +330,11 @@ class EmployeeController extends Controller
             'nik' => ['nullable', 'string', 'max:32'],
             'name' => ['required', 'string', 'max:150'],
             'position' => ['nullable', 'string', 'max:100'],
-            'cost_center_id' => ['nullable', 'integer', 'exists:bs_cost_centers,id'],
+            // Cost center yang sudah dihapus (soft delete) ditolak — `exists` biasa meloloskannya,
+            // lalu Memo/SIP gagal membaca Manager-nya dan diam-diam mencetak nama pembuat.
+            'cost_center_id' => ['nullable', 'integer', Rule::exists('bs_cost_centers', 'id')->whereNull('deleted_at')],
             'cost_center_ids' => ['sometimes', 'array'],
-            'cost_center_ids.*' => ['integer', 'distinct', 'exists:bs_cost_centers,id'],
+            'cost_center_ids.*' => ['integer', 'distinct', Rule::exists('bs_cost_centers', 'id')->whereNull('deleted_at')],
             'join_date' => ['nullable', 'date'],
             'base_salary' => ['required', 'numeric', 'min:0'],
             'allowance' => ['nullable', 'numeric', 'min:0'],

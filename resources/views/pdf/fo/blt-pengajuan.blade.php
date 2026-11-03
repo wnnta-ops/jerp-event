@@ -37,10 +37,10 @@
 @php
     $labels = ['SALES' => 'SALES', 'KOORDINATOR' => 'KOORDINATOR', 'KANTOR' => 'KANTOR'];
     $rp = fn ($n) => number_format((float) $n, 0, ',', '.');
-    // Logo MUP = logo kop Memo Internal BO (mup-logo.jpeg). Di-embed base64 supaya ikut
+    // Logo MUP = logo yang sama dengan SPR (images/logo/MUP.png). Di-embed base64 supaya ikut
     // tercetak di PDF (Browsershot tak selalu bisa memuat URL lokal).
-    $logoPath = public_path('images/mup-logo.jpeg');
-    $logoMup = is_file($logoPath) ? 'data:image/jpeg;base64,'.base64_encode((string) file_get_contents($logoPath)) : null;
+    $logoPath = public_path('images/logo/MUP.png');
+    $logoMup = is_file($logoPath) ? 'data:image/png;base64,'.base64_encode((string) file_get_contents($logoPath)) : null;
 @endphp
 
 @forelse ($groups as $type => $rows)

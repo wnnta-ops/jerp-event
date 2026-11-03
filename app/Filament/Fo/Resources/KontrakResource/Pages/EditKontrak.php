@@ -380,7 +380,8 @@ class EditKontrak extends EditRecord
                 ->modalDescription('Finalkan SPRS ini menjadi SPR. Setelah ini kontrak pindah ke menu SPR.')
                 ->action(function () {
                     $this->save(shouldRedirect: false, shouldSendSavedNotification: false);
-                    $this->record->update(['tahap' => 'SPR']);
+                    // SPRS → SPR: nomor SPR baru diterbitkan sekarang (nomor SPRS jadi riwayat).
+                    app(\App\Modules\FO\MarketingSales\Services\NomorSprService::class)->naikkan($this->record);
                     // Unit jadi TERJUAL hanya saat kontrak final (SPR); di SPRS masih BOOKING.
                     if ($this->record->unit_id && $unit = Unit::find($this->record->unit_id)) {
                         $unit->update(['status' => 'TERJUAL']);

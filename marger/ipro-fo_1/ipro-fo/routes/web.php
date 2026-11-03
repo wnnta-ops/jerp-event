@@ -1049,12 +1049,15 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::get('/business-support/bon-sementara/create', [BsAdvanceController::class, 'create'])->name('bs.advance.create');
     Route::post('/business-support/bon-sementara', [BsAdvanceController::class, 'store'])->name('bs.advance.store');
     Route::get('/business-support/bon-sementara/{advance}', [BsAdvanceController::class, 'show'])->name('bs.advance.show');
+    Route::get('/business-support/bon-sementara/{advance}/ubah', [BsAdvanceController::class, 'edit'])->name('bs.advance.edit');
+    Route::post('/business-support/bon-sementara/{advance}/ubah', [BsAdvanceController::class, 'update'])->name('bs.advance.update');
     // Tampilan DEPT FINANCE untuk bon yang sama — layar & controller yang sama, hanya
     // panel-panel Finance yang ikut dirender. Dipisah lewat rute, bukan izin: SuperAdmin
     // memegang semua izin, sehingga penjagaan izin saja tidak pernah membuat tampilan
     // pengaju benar-benar bersih.
     Route::get('/business-support/bon-sementara-finance/{advance}', [BsAdvanceController::class, 'show'])->name('bs.advance.finance.show');
     Route::post('/business-support/bon-sementara/{advance}/realisasi', [BsAdvanceController::class, 'realize'])->name('bs.advance.realize');
+    Route::post('/business-support/bon-sementara/{advance}/realisasi/edit', [BsAdvanceController::class, 'editRealisasi'])->name('bs.advance.realize.edit');
     Route::post('/business-support/bon-sementara/{advance}/refund', [BsAdvanceController::class, 'refund'])->name('bs.advance.refund');
     Route::post('/business-support/bon-sementara/{advance}/reimburse', [BsAdvanceController::class, 'reimburse'])->name('bs.advance.reimburse');
     // Sisa bon Debit VA dikembalikan ke saldo kartunya — tanpa jurnal (uangnya masih di akun kartu).
@@ -1084,6 +1087,7 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     // ── SIP (Standing Instruction Payment) #98 ──
     Route::get('/business-support/sip', [BsSipController::class, 'index'])->name('bs.sip.index');
     Route::get('/business-support/sip/create', [BsSipController::class, 'create'])->name('bs.sip.create');
+    Route::put('/business-support/sip/setup-ttd', [BsSipController::class, 'simpanTtd'])->name('bs.sip.ttd');
     Route::post('/business-support/sip', [BsSipController::class, 'store'])->name('bs.sip.store');
     Route::get('/business-support/sip/{sip}/edit', [BsSipController::class, 'edit'])->name('bs.sip.edit');     // #124
     Route::put('/business-support/sip/{sip}', [BsSipController::class, 'update'])->name('bs.sip.update'); // #124

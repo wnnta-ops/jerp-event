@@ -7,6 +7,7 @@ use App\Filament\Fo\Resources\TemplateDokumenResource\Pages;
 use App\Modules\FO\Komunikasi\Models\TemplateDokumen;
 use App\Modules\FO\Komunikasi\Support\DokumenBawaan;
 use App\Modules\FO\MarketingSales\Models\Lokasi;
+use App\Modules\FO\MarketingSales\Models\Tahap;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Resources\Resource;
@@ -16,18 +17,19 @@ use Illuminate\Support\HtmlString;
 use Illuminate\Support\Str;
 
 /**
- * Pengaturan → Template Dokumen: teks SPR & SPRS ber-versi, per cluster atau semua cluster.
+ * Pengaturan → Template Dokumen: teks SPR & SPRS ber-versi, per cluster (+ tahap) atau semua cluster.
  *
- * Versi yang sudah berlaku TIDAK bisa diubah/dihapus: kontrak dicetak dengan versi yang
- * berlaku pada tanggal kontraknya, jadi mengubahnya berarti mengubah surat yang sudah
- * ditandatangani customer. Perubahan dibuat sebagai versi baru dengan tanggal berlaku.
+ * Ubah/buat versi lewat editor visual (TemplateDokumenEditorController) — dokumen tampil per
+ * halaman seperti hasil cetak. Formulir di resource ini tetap ada sebagai "Mode formulir".
+ *
+ * Semua versi bisa diubah/dihapus (koreksi salah ketik, atau hapus versi terbaru untuk kembali
+ * ke versi sebelumnya). Hati-hati: kontrak dicetak dengan versi yang berlaku pada tanggal
+ * kontraknya, jadi mengubah/menghapus versi yang sudah berlaku ikut mengubah cetak ulang
+ * kontrak lama. Tanggal berlaku bebas, boleh mundur.
  */
 class TemplateDokumenResource extends Resource
 {
-    use MematuhiIzin {
-        canEdit as protected bolehUbah;
-        canDelete as protected bolehHapus;
-    }
+    use MematuhiIzin;
 
     protected static ?string $model = TemplateDokumen::class;
 
@@ -41,38 +43,39 @@ class TemplateDokumenResource extends Resource
 
     protected static ?string $pluralModelLabel = 'Template Dokumen SPR / SPRS';
 
-    public static function canEdit(mixed $record): bool
-    {
-        return ! $record->sudahBerlaku() && static::bolehUbah($record);
-    }
-
-    public static function canDelete(mixed $record): bool
-    {
-        return ! $record->sudahBerlaku() && static::bolehHapus($record);
-    }
-
     public static function form(Form $form): Form
     {
         $isSpr = fn (Forms\Get $get) => $get('dokumen') === DokumenBawaan::SPR;
         $isSprs = fn (Forms\Get $get) => $get('dokumen') === DokumenBawaan::SPRS;
         $isiAwal = fn (Forms\Get $get, Forms\Set $set) => $get('dokumen')
-            ? $set('isi', self::untukForm(self::isiAwal($get('dokumen'), $get('lokasi_id'))))
+            ? $set('isi', self::untukForm(self::isiAwal($get('dokumen'), $get('lokasi_id'), $get('tahap_id'))))
             : null;
 
         return $form->schema([
-            Forms\Components\Section::make('Versi')->columns(3)->schema([
+            Forms\Components\Section::make('Versi')->columns(4)->schema([
                 Forms\Components\Select::make('dokumen')->label('Dokumen')->options(DokumenBawaan::pilihan())
                     ->required()->live()->disabledOn('edit')->dehydrated()
                     ->afterStateUpdated($isiAwal),
                 Forms\Components\Select::make('lokasi_id')->label('Cluster')
                     ->options(fn () => Lokasi::query()->orderBy('nama')->pluck('nama', 'id'))
                     ->placeholder('Semua cluster')->searchable()->live()->disabledOn('edit')->dehydrated()
-                    ->afterStateUpdated($isiAwal)
+                    ->afterStateUpdated(function (Forms\Get $get, Forms\Set $set) use ($isiAwal) {
+                        $set('tahap_id', null);
+                        $isiAwal($get, $set);
+                    })
                     ->helperText('Kosongkan = semua cluster. Versi khusus cluster dipakai lebih dulu.'),
+                Forms\Components\Select::make('tahap_id')->label('Tahap')
+                    ->options(fn (Forms\Get $get) => $get('lokasi_id')
+                        ? Tahap::query()->where('lokasi_id', $get('lokasi_id'))->orderBy('kode')->get()
+                            ->mapWithKeys(fn ($t) => [$t->id => trim($t->kode.($t->nama && $t->nama !== $t->kode ? ' — '.$t->nama : ''))])
+                        : [])
+                    ->placeholder('Semua tahap')->live()->dehydrated()
+                    ->disabled(fn (Forms\Get $get, string $operation) => $operation === 'edit' || ! $get('lokasi_id'))
+                    ->afterStateUpdated($isiAwal)
+                    ->helperText('Pilih cluster dulu. Versi khusus tahap dipakai lebih dulu dari versi cluster.'),
                 Forms\Components\DatePicker::make('berlaku_mulai')->label('Berlaku mulai')->required()
-                    ->native(false)->displayFormat('d M Y')->minDate(today())->default(today()->addDay())
-                    ->rule('after_or_equal:today')->validationMessages(['after_or_equal' => 'Tanggal berlaku tidak boleh mundur — versi baru hanya berlaku ke depan.'])
-                    ->helperText('Kontrak bertanggal sejak hari ini memakai teks versi ini. Setelah berlaku, versi terkunci.'),
+                    ->native(false)->displayFormat('d M Y')->default(today()->addDay())
+                    ->helperText('Kontrak bertanggal sejak tanggal ini memakai teks versi ini. Tanggal mundur / mengubah versi yang sudah berlaku ikut mengubah cetak ulang kontrak lama.'),
                 Forms\Components\Textarea::make('catatan')->label('Catatan perubahan')->rows(2)->columnSpanFull()
                     ->placeholder('mis. Pasal VIII denda diubah jadi 1,5‰ — memo direksi 12/10/2026'),
             ]),
@@ -131,10 +134,11 @@ class TemplateDokumenResource extends Resource
     public static function table(Table $table): Table
     {
         return $table
-            ->modifyQueryUsing(fn ($query) => $query->with(['lokasi', 'pembuat']))
+            ->modifyQueryUsing(fn ($query) => $query->with(['lokasi', 'tahap', 'pembuat']))
             ->columns([
                 Tables\Columns\TextColumn::make('dokumen')->label('Dokumen')->badge()->sortable(),
                 Tables\Columns\TextColumn::make('lokasi.nama')->label('Cluster')->placeholder('Semua cluster'),
+                Tables\Columns\TextColumn::make('tahap.kode')->label('Tahap')->placeholder('Semua tahap'),
                 Tables\Columns\TextColumn::make('versi')->label('Versi')->prefix('v')->alignCenter()->sortable(),
                 Tables\Columns\TextColumn::make('berlaku_mulai')->label('Berlaku mulai')->date('d M Y')->sortable(),
                 Tables\Columns\TextColumn::make('status')->label('Status')->badge()
@@ -157,9 +161,12 @@ class TemplateDokumenResource extends Resource
                     ->url(fn (TemplateDokumen $r) => route('fo.cetak.template-dokumen', $r), shouldOpenInNewTab: true),
                 Tables\Actions\Action::make('versiBaru')->label('Versi baru dari ini')->icon('heroicon-o-document-plus')
                     ->visible(fn () => static::canCreate())
-                    ->url(fn (TemplateDokumen $r) => static::getUrl('create', ['dari' => $r->id])),
-                Tables\Actions\EditAction::make(),
-                Tables\Actions\DeleteAction::make(),
+                    ->url(fn (TemplateDokumen $r) => route('fo.template-dokumen.editor', ['dari' => $r->id])),
+                // Ubah = editor visual; formulir lama tetap bisa dibuka dari editor ("Mode formulir").
+                Tables\Actions\EditAction::make()->url(fn (TemplateDokumen $r) => route('fo.template-dokumen.editor', $r)),
+                Tables\Actions\DeleteAction::make()->modalDescription(fn (TemplateDokumen $r) => $r->sudahBerlaku()
+                    ? 'Versi ini sudah berlaku. Setelah dihapus, kontrak pada periodenya dicetak dengan versi sebelumnya (atau teks bawaan bila tidak ada). Lanjutkan?'
+                    : 'Versi terjadwal ini akan dihapus. Lanjutkan?'),
             ])
             ->defaultSort('berlaku_mulai', 'desc');
     }
@@ -181,6 +188,7 @@ class TemplateDokumenResource extends Resource
         }
         $aktif = TemplateDokumen::query()->where('dokumen', $r->dokumen)
             ->when($r->lokasi_id, fn ($q) => $q->where('lokasi_id', $r->lokasi_id), fn ($q) => $q->whereNull('lokasi_id'))
+            ->when($r->tahap_id, fn ($q) => $q->where('tahap_id', $r->tahap_id), fn ($q) => $q->whereNull('tahap_id'))
             ->whereDate('berlaku_mulai', '<=', today())->orderByDesc('berlaku_mulai')->orderByDesc('versi')->value('id');
 
         return $aktif === $r->id ? 'Berlaku' : 'Riwayat';
@@ -205,10 +213,10 @@ class TemplateDokumenResource extends Resource
         return $isi;
     }
 
-    /** Isian awal versi baru: versi yang berlaku sekarang (cluster → semua), atau teks bawaan. */
-    public static function isiAwal(string $dokumen, $lokasiId): array
+    /** Isian awal versi baru: versi yang berlaku sekarang (cluster+tahap → cluster → semua), atau teks bawaan. */
+    public static function isiAwal(string $dokumen, $lokasiId, $tahapId = null): array
     {
-        $sekarang = TemplateDokumen::berlakuUntuk($dokumen, $lokasiId ? (int) $lokasiId : null, today());
+        $sekarang = TemplateDokumen::berlakuUntuk($dokumen, $lokasiId ? (int) $lokasiId : null, today(), $tahapId ? (int) $tahapId : null);
 
         return array_replace(DokumenBawaan::untuk($dokumen), (array) ($sekarang?->isi ?? []));
     }

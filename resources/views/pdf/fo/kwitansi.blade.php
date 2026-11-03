@@ -7,7 +7,9 @@
         * { box-sizing: border-box; }
         body { font-family: Arial, Helvetica, sans-serif; color: #111; font-size: 13px; margin: 0; padding: 40px 48px; }
         .logo { width: 56px; height: 56px; background: #ea7a1d; color: #fff; font-weight: 900; font-size: 26px; display: flex; align-items: center; justify-content: center; border-radius: 4px; }
-        .head { text-align: center; margin-top: -56px; }
+        .top { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+        .top .side { width: 150px; }
+        .head { text-align: center; flex: 1; }
         .head .t { font-weight: 800; font-size: 16px; letter-spacing: 1px; }
         .head .n { font-weight: 700; margin-top: 2px; }
         hr { border: 0; border-top: 1px solid #111; margin: 16px 0; }
@@ -35,11 +37,23 @@
         $isGiro = in_array($cara, ['GIRO', 'CHEQUE'], true);
         $isTunai = $cara === 'CASH';
         $unitKode = $bkm->kontrak?->unit?->kode_unit;
+        // Logo MUP sama dengan SPR (public/images/logo/<file>), di-embed base64 agar ikut di PDF.
+        $logoTag = function (string $file, string $fallback, string $style) {
+            $path = public_path('images/logo/'.$file);
+            if (is_file($path)) {
+                $mime = @mime_content_type($path) ?: 'image/png';
+                return '<img src="data:'.$mime.';base64,'.base64_encode((string) file_get_contents($path)).'" style="'.$style.'" alt="">';
+            }
+            return $fallback;
+        };
     @endphp
-    <div class="logo">M</div>
-    <div class="head">
-        <div class="t">KWITANSI</div>
-        <div class="n">{{ $bkm->no_bkm }}</div>
+    <div class="top">
+        <div class="side">{!! $logoTag('MUP.png', '<div class="logo">M</div>', 'max-width:70px; max-height:64px;') !!}</div>
+        <div class="head">
+            <div class="t">KWITANSI</div>
+            <div class="n">{{ $bkm->no_bkm }}</div>
+        </div>
+        <div class="side"></div>
     </div>
     <hr>
 
@@ -60,7 +74,7 @@
         <div class="p"><span class="box {{ $isGiro ? 'on' : '' }}"></span> Giro/Cek</div>
         <div class="p"><span class="box {{ $isTunai ? 'on' : '' }}"></span> Tunai</div>
         <div style="flex:1"></div>
-        <div>Sidoarjo, {{ optional($bkm->tgl_bkm)->format('d M Y') }}</div>
+        <div style="margin-right:60px">Sidoarjo, {{ optional($bkm->tgl_bkm)->format('d M Y') }}</div>
     </div>
 
     <div class="nb">NB. Pembayaran dengan Bilyet Giro / Cheque dianggap sah jika sudah dicairkan / diuangkan.</div>

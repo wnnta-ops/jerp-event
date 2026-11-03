@@ -192,7 +192,10 @@ const STATUS_KUI: Record<string, [string, string]> = {
                     <p class="mt-1 text-[11px] text-neutral-400">Otomatis sesuai user login.</p>
                 </div>
                 <div><label class="mb-1 block text-xs font-medium text-neutral-500">No. Manual</label><input v-model="form.manual_no" :class="inputCls" /></div>
-                <div class="md:col-span-3"><label class="mb-1 block text-xs font-medium text-neutral-500">Keterangan</label><input v-model="form.description" :class="inputCls" /></div>
+                <div class="md:col-span-3">
+                    <label class="mb-1 block text-xs font-medium text-neutral-500">Keterangan</label><input v-model="form.description" maxlength="2000" :class="inputCls" />
+                    <p v-if="form.errors.description" class="mt-1 text-xs text-danger-500">{{ form.errors.description }}</p>
+                </div>
             </div>
 
             <div v-if="mode === 'invoice'" class="card p-5">
