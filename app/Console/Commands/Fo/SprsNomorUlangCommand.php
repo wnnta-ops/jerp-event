@@ -10,8 +10,9 @@ use Illuminate\Support\Facades\DB;
 
 /**
  * Satu kali: SPRS AKTIF yang terlanjur memakai nomor SPR (sebelum SPRS punya penomoran sendiri)
- * diberi nomor SPRS, lalu penghitung SPR dimundurkan ke nomor urut SPR tertinggi yang masih
- * dipakai — nomor yang dilepas (mis. 001692) diterbitkan lagi untuk SPR berikutnya.
+ * diberi nomor SPRS, lalu penghitung SPR dimundurkan ke tepat sebelum nomor urut terkecil yang
+ * dilepas — nomor itu (mis. 001692) diterbitkan lagi untuk SPR berikutnya. Nomor sesudahnya yang
+ * masih dipakai SPR lain (mis. 001694) dilewati pengaman nomor ganda NumeratorService.
  *
  * Nomor SPR lamanya disimpan di no_kontrak_sementara; booking BO ikut diganti nomornya.
  */
@@ -31,11 +32,21 @@ class SprsNomorUlangCommand extends Command
 
         if ($daftar->isEmpty()) {
             $this->info('Tidak ada SPRS aktif yang memakai nomor SPR.');
+
+            return self::SUCCESS;
         }
 
+        $row = DB::table('numerators')->where('tenant_id', 1)->whereNull('company_id')->where('code', 'SPR')
+            ->whereNull('deleted_at')->where('is_active', true)
+            ->orderByRaw("CASE WHEN reset = 'tidak' THEN 0 ELSE 1 END")->orderByDesc('period')->first();
+
         $baris = [];
+        $dilepas = [];
         foreach ($daftar as $k) {
             $lama = (string) $k->no_kontrak;
+            if ($row && ($seq = NumeratorService::seqDari((string) $row->format, $lama)) !== null) {
+                $dilepas[] = $seq;
+            }
             $baru = $tulis
                 ? DB::transaction(function () use ($k, $numerator, $nomorSpr) {
                     $nomorSpr->gantiNomor($k, $numerator->next('SPRS'));
@@ -45,21 +56,15 @@ class SprsNomorUlangCommand extends Command
                 : $numerator->peek('SPRS').' (contoh)';
             $baris[] = [$k->id, $lama, $baru, $k->customer?->full_name];
         }
-        if ($baris) {
-            $this->table(['id', 'nomor lama', 'nomor baru', 'customer'], $baris);
-        }
+        $this->table(['id', 'nomor lama', 'nomor baru', 'customer'], $baris);
 
-        // Penghitung SPR → nomor urut SPR tertinggi yang masih ada di data (hanya dimundurkan).
-        $row = DB::table('numerators')->where('tenant_id', 1)->whereNull('company_id')->where('code', 'SPR')
-            ->whereNull('deleted_at')->where('is_active', true)
-            ->orderByRaw("CASE WHEN reset = 'tidak' THEN 0 ELSE 1 END")->orderByDesc('period')->first();
-        if ($row) {
-            $tertinggi = (int) NumeratorService::tertinggiDiData('SPR', (string) $row->format);
-            if ($tulis && $tertinggi < (int) $row->last_seq) {
-                DB::table('numerators')->where('id', $row->id)->update(['last_seq' => $tertinggi, 'updated_at' => now()]);
+        if ($row && $dilepas) {
+            $mundur = min((int) $row->last_seq, min($dilepas) - 1);
+            if ($tulis && $mundur < (int) $row->last_seq) {
+                DB::table('numerators')->where('id', $row->id)->update(['last_seq' => $mundur, 'updated_at' => now()]);
             }
-            $this->line("Penghitung SPR: {$row->last_seq} → ".min($tertinggi, (int) $row->last_seq)
-                .' | SPR berikutnya: '.$numerator->peek('SPR').($tulis ? '' : ' (sebelum dijalankan)'));
+            $this->line("Penghitung SPR: {$row->last_seq} → {$mundur} | nomor urut dilepas: ".implode(', ', $dilepas)
+                .($tulis ? ' | SPR berikutnya: '.$numerator->peek('SPR') : ''));
         }
 
         if (! $tulis) {
