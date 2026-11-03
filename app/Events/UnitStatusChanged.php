@@ -8,15 +8,18 @@ use Illuminate\Broadcasting\InteractsWithSockets;
 use Illuminate\Broadcasting\PresenceChannel;
 use Illuminate\Broadcasting\PrivateChannel;
 use Illuminate\Contracts\Broadcasting\ShouldBroadcast;
+use Illuminate\Contracts\Events\ShouldDispatchAfterCommit;
 use Illuminate\Foundation\Events\Dispatchable;
 use Illuminate\Queue\SerializesModels;
 
 /**
  * Broadcast when a unit's status changes — drives UnitPetaLive (BR-LNC, RULE-06).
+ * Dikirim SETELAH transaksi commit: bila transaksi batal (mis. pilih unit gagal), peta
+ * yang sedang terbuka tidak ikut menampilkan status yang tak pernah tersimpan.
  * Channel: presence project.{projectId}.units
  * Replaces legacy SignalR unitHub (see docs/04_BusinessFlow.md §3).
  */
-class UnitStatusChanged implements ShouldBroadcast
+class UnitStatusChanged implements ShouldBroadcast, ShouldDispatchAfterCommit
 {
     use Dispatchable, InteractsWithSockets, SerializesModels;
 
