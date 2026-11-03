@@ -119,7 +119,8 @@ class BookedVerificationService
 
             $kontrak = Kontrak::create([
                 'tenant_id' => $reg->tenant_id,
-                'no_kontrak' => $this->numerator->next('SPR'), // semua kontrak: prefix SPR-{YYYY}-{seq}
+                // SPRS bernomor SPRS sendiri; nomor SPR baru terbit saat naik ke SPR (NomorSprService).
+                'no_kontrak' => $this->numerator->next('SPRS'),
                 'reservasi_id' => $reservasi->id,
                 'customer_id' => $reg->customer_id,
                 'unit_id' => $unit->id,

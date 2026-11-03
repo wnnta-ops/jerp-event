@@ -13,6 +13,7 @@ use App\Modules\FO\MarketingSales\Models\Kontrak;
 use App\Modules\FO\MarketingSales\Models\Unit;
 use App\Modules\FO\MarketingSales\Services\HitungPembatalan;
 use App\Modules\FO\MarketingSales\Services\KontrakGeneratorService;
+use App\Modules\FO\MarketingSales\Services\NomorSprService;
 use App\Modules\FO\MarketingSales\Services\PengalihanHakService;
 use App\Modules\FO\MarketingSales\Services\PindahUnitService;
 use App\Modules\FO\MarketingSales\Services\RescheduleTagihanService;
@@ -96,7 +97,7 @@ class ApprovalExecutionService
         if ($k->tahap === 'SPR') {
             return '';
         }
-        $k->update(['tahap' => 'SPR']);
+        app(NomorSprService::class)->naikkan($k);
         if ($k->unit_id && $unit = Unit::find($k->unit_id)) {
             $unit->update(['status' => 'TERJUAL']);
         }
