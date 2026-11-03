@@ -35,6 +35,8 @@ const props = defineProps<{
     batasOpsi?: number;
     filters: { search?: string; t?: Partial<Record<Kolom, string>>; c?: Partial<Record<Kolom, string[]>> };
     canBerkasFinance?: boolean;
+    /** Invoice yang menunggu berkas supplier (link) — nomor sudah dipesan, belum aktif. baru = berkas supplier masuk & belum dibuka. */
+    menungguSupplier?: Array<{ id: number; invoice_number: string; supplier: string | null; status: string; baru: boolean; berkas_number: string | null; description: string | null; url: string; created_at: string | null }>;
     /** Modul yang sedang dibuka: Invoice Hutang / Reimburse Karyawan / Deposit Renovasi. */
     jenis: { kunci: string; judul: string; penerima: string; rute: string; izin: string };
 }>();
@@ -213,6 +215,29 @@ watch(rows, () => nextTick(measure));
                 <Link v-if="punyaIzin('ap.kuitansi.view')" :href="route('bs.ap.kuitansi.index')"><Button variant="secondary"><template #icon-left><ReceiptText class="h-4 w-4" /></template>Kuitansi</Button></Link>
                 <Link v-if="punyaIzin(jenis.izin + '.create')" :href="route(modulInvoice ? 'bs.ap.create' : jenis.rute + '.create')"><Button><template #icon-left><Plus class="h-4 w-4" /></template>{{ modulInvoice ? 'Invoice' : jenis.judul.split(' ')[0] }}</Button></Link>
             </div>
+        </div>
+
+        <!-- Invoice yang menunggu berkas supplier (Generate Link di Detil Tagihan). Titik merah = supplier sudah mengunggah. -->
+        <div v-if="menungguSupplier?.length" class="card overflow-hidden">
+            <div class="border-b border-neutral-200 px-4 py-2.5 text-sm font-semibold dark:border-neutral-800">Draft menunggu berkas supplier <span class="font-normal text-neutral-400">({{ menungguSupplier.length }})</span></div>
+            <table class="w-full text-sm">
+                <tbody>
+                    <tr v-for="l in menungguSupplier" :key="l.id" class="border-t border-neutral-100 first:border-t-0 dark:border-neutral-800">
+                        <td class="whitespace-nowrap px-4 py-2 font-mono text-xs">
+                            <span class="inline-flex items-center gap-1.5">
+                                <span v-if="l.baru" class="h-2 w-2 rounded-full bg-danger-500" title="Supplier sudah mengunggah dokumen"></span>
+                                <Link :href="route('bs.ap.create', { link: l.id })" class="text-primary-600 hover:underline">{{ l.invoice_number }}</Link>
+                            </span>
+                        </td>
+                        <td class="px-4 py-2">{{ l.supplier ?? '—' }}<div v-if="l.description" class="truncate text-xs text-neutral-400">{{ l.description }}</div></td>
+                        <td class="whitespace-nowrap px-4 py-2 text-xs">
+                            <span v-if="l.status === 'terisi'" class="font-medium text-emerald-700 dark:text-emerald-300">Berkas supplier masuk{{ l.berkas_number ? ' · ' + l.berkas_number : '' }}</span>
+                            <span v-else class="text-amber-600">Menunggu supplier sejak {{ l.created_at }}</span>
+                        </td>
+                        <td class="whitespace-nowrap px-4 py-2 text-right"><Link :href="route('bs.ap.create', { link: l.id })" class="text-xs font-medium text-primary-600 hover:underline">Lanjutkan →</Link></td>
+                    </tr>
+                </tbody>
+            </table>
         </div>
 
         <!-- Ringkasan mengikuti hasil filter checklist (Total & Sisa = nett, setelah PPN & PPh). -->
