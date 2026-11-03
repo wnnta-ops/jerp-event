@@ -54,8 +54,8 @@ final class BudgetGuardService
         $tgl = Carbon::parse($journalDate);
         $year = (int) $tgl->year;
 
-        // Kontribusi NETTO (debit − credit, bertanda sesuai jenis akun) — netting dulu, BUKAN buang baris negatif,
-        // agar debit + kredit pada akun+cost center yang sama tidak dihitung berlebih (konsisten dgn realisasi GL).
+        // Kontribusi per baris = sisi pengeluaran akunnya saja (debit utk akun beban), sama dengan
+        // BudgetRealizationService — jurnal kredit di akun beban tidak membuka ruang anggaran.
         $addCc  = []; // "account|cc" → delta netto (untuk anggaran per cost center)
         $addAcc = []; // account_id → delta netto lintas cost center (untuk anggaran "Semua" / cost_center NULL)
         foreach ($lines as $l) {
@@ -257,8 +257,8 @@ final class BudgetGuardService
             'cakupan' => $cc === null ? 'semua' : 'cc',
             'anggaran' => self::anggaranBulan($budget, (int) $tgl->month),
             'terpakai' => $this->terpakaiBulan($tgl, $accountId, $cc, $excludeJournalId),
-            // +1: debit menambah realisasi (akun beban); -1: kredit yang menambah.
-            'tanda' => $this->realisasi->contribution($accountId, 1, 0) >= 0 ? 1 : -1,
+            // +1: debit yang dihitung sebagai realisasi (akun beban); -1: kredit yang dihitung.
+            'tanda' => $this->realisasi->contribution($accountId, 1, 0) > 0 ? 1 : -1,
         ];
     }
 

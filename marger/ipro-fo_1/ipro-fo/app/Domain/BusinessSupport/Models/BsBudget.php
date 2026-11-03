@@ -37,6 +37,34 @@ class BsBudget extends Model
     public function allocations(): HasMany { return $this->hasMany(BsBudgetAllocation::class, 'budget_id'); }
     public function corrections(): HasMany { return $this->hasMany(BsBudgetCorrection::class, 'budget_id'); }
 
+    /**
+     * Tambah/kurangi anggaran per bulan (1..12 → nilai) dan anggaran tahunannya — dipakai Koreksi
+     * Budget & Alokasi. Budget lama yang belum dirinci per bulan dirinci dulu (amount ÷ 12, sisa
+     * pembulatan ke Desember) supaya bulan lain tidak ikut hilang. Belum disimpan.
+     *
+     * @param  array<int,float>  $delta
+     */
+    public function tambahBulan(array $delta): void
+    {
+        $rinci = 0.0;
+        for ($m = 1; $m <= 12; $m++) {
+            $rinci += abs((float) ($this->{'m'.$m} ?? 0));
+        }
+        if ($rinci <= 0 && (float) $this->amount != 0.0) {
+            $per = round((float) $this->amount / 12, 2);
+            for ($m = 1; $m <= 11; $m++) {
+                $this->{'m'.$m} = $per;
+            }
+            $this->m12 = round((float) $this->amount - $per * 11, 2);
+        }
+        $total = 0.0;
+        foreach ($delta as $m => $v) {
+            $this->{'m'.(int) $m} = round((float) ($this->{'m'.(int) $m} ?? 0) + (float) $v, 2);
+            $total += (float) $v;
+        }
+        $this->amount = round((float) $this->amount + $total, 2);
+    }
+
     /** @return array<int,float> nilai anggaran bulan 1..12 (fallback rata bila belum diisi bulanan). */
     public function monthsArray(): array
     {

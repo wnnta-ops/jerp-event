@@ -10,9 +10,11 @@ use Illuminate\Support\Facades\DB;
 
 /**
  * Realisasi anggaran = aktual dari jurnal (status Baru/Final/Approved) per tahun/akun/cost center,
- * dengan TANDA mengikuti posisi normal akun (link ke General Ledger):
- *  - COA Aset & Beban (debit-normal)   → Debit menambah, Kredit mengurangi realisasi  (debit − credit)
- *  - COA Kewajiban, Modal & Pendapatan → Debit mengurangi, Kredit menambah realisasi  (credit − debit)
+ * dihitung MURNI dari sisi pengeluaran — hanya sisi normal akun yang dijumlahkan:
+ *  - COA Aset & Beban (debit-normal)   → hanya Debit
+ *  - COA Kewajiban, Modal & Pendapatan → hanya Kredit
+ * Sisi lawannya (mis. jurnal kredit pembatalan/retur pada akun beban) TIDAK mengurangi realisasi —
+ * keputusan meeting 3 Nov 2026: realisasi = pengeluaran, sisa = anggaran bulan − realisasi bulan.
  * Dipakai Budget Control (index, export, query Realisasi) & gerbang over-budget.
  */
 final class BudgetRealizationService
@@ -31,23 +33,20 @@ final class BudgetRealizationService
 
     public function total(int $year, int $accountId, ?int $costCenterId = null, ?string $from = null, ?string $to = null, ?int $excludeJournalId = null): float
     {
-        $raw = (float) $this->base($year, $accountId, $costCenterId, $from, $to, $excludeJournalId)
-            ->sum(DB::raw('bs_journal_lines.debit - bs_journal_lines.credit'));
-
-        return round($this->sign($accountId) * $raw, 2);
+        return round((float) $this->base($year, $accountId, $costCenterId, $from, $to, $excludeJournalId)
+            ->sum(DB::raw($this->kolom($accountId))), 2);
     }
 
     /** @return array<int,float> realisasi per bulan (1..12), sudah bertanda sesuai jenis akun. */
     public function byMonth(int $year, int $accountId, ?int $costCenterId = null, ?string $from = null, ?string $to = null): array
     {
-        $sign = $this->sign($accountId);
         $rows = $this->base($year, $accountId, $costCenterId, $from, $to)
-            ->selectRaw('bs_journals.period_month as m, SUM(bs_journal_lines.debit - bs_journal_lines.credit) as v')
+            ->selectRaw('bs_journals.period_month as m, SUM('.$this->kolom($accountId).') as v')
             ->groupBy('bs_journals.period_month')->get();
 
         $out = [];
         foreach ($rows as $r) {
-            $out[(int) $r->m] = round($sign * (float) $r->v, 2);
+            $out[(int) $r->m] = round((float) $r->v, 2);
         }
 
         return $out;
@@ -94,8 +93,8 @@ final class BudgetRealizationService
     {
         $ccEfektif = 'CASE WHEN bs_accounts.cost_center_optional = 1 THEN bs_journal_lines.cost_center_id'
             .' ELSE COALESCE(bs_journal_lines.cost_center_id, bs_journals.cost_center_id) END';
-        $bertanda  = '(bs_journal_lines.debit - bs_journal_lines.credit) * CASE WHEN bs_accounts.type IN ('
-            .rtrim(str_repeat('?,', count(self::KREDIT_NORMAL)), ',').') THEN -1 ELSE 1 END';
+        $bertanda  = 'CASE WHEN bs_accounts.type IN ('
+            .rtrim(str_repeat('?,', count(self::KREDIT_NORMAL)), ',').') THEN bs_journal_lines.credit ELSE bs_journal_lines.debit END';
 
         $rows = BsJournalLine::query()
             ->join('bs_journals', 'bs_journals.id', '=', 'bs_journal_lines.journal_id')
@@ -128,28 +127,34 @@ final class BudgetRealizationService
         $ccEfektif = $this->costCenterOptional($accountId)
             ? 'bs_journal_lines.cost_center_id'
             : 'COALESCE(bs_journal_lines.cost_center_id, bs_journals.cost_center_id)';
-        $sign = $this->sign($accountId);
+        $kolom = $this->kolom($accountId);
 
         $q = $costCenterId === 0
             ? $this->base($year, $accountId, null, $from, $to)->whereRaw($ccEfektif.' IS NULL')
             : $this->base($year, $accountId, $costCenterId, $from, $to);
 
-        return $q->orderBy('bs_journals.journal_date')->orderBy('bs_journals.id')
+        return $q->where($kolom, '>', 0)->orderBy('bs_journals.journal_date')->orderBy('bs_journals.id')
             ->selectRaw('bs_journals.id as jid, bs_journals.journal_number as nomor, bs_journals.journal_date as tgl,'
                 .' COALESCE(bs_journal_lines.description, bs_journals.description) as ket, '.$ccEfektif.' as cc,'
-                .' bs_journal_lines.debit - bs_journal_lines.credit as v')
+                .' '.$kolom.' as v')
             ->get()
             ->map(fn ($r) => [
                 'journal_id' => (int) $r->jid, 'nomor' => (string) $r->nomor,
                 'tanggal' => substr((string) $r->tgl, 0, 10), 'keterangan' => (string) $r->ket,
-                'cost_center_id' => (int) $r->cc, 'nilai' => round($sign * (float) $r->v, 2),
+                'cost_center_id' => (int) $r->cc, 'nilai' => round((float) $r->v, 2),
             ])->all();
     }
 
-    /** Kontribusi satu baris ke realisasi budget akunnya (bertanda): +menambah, −mengurangi. Utk gerbang over-budget. */
+    /** Kontribusi satu baris ke realisasi budget akunnya: hanya sisi normal akun (lihat docblock kelas). Utk gerbang over-budget. */
     public function contribution(int $accountId, float $debit, float $credit): float
     {
-        return round($this->sign($accountId) * ($debit - $credit), 2);
+        return round($this->sign($accountId) > 0 ? $debit : $credit, 2);
+    }
+
+    /** Kolom yang dijumlahkan sebagai realisasi akun ini: debit (debit-normal) atau credit (credit-normal). */
+    private function kolom(int $accountId): string
+    {
+        return $this->sign($accountId) > 0 ? 'bs_journal_lines.debit' : 'bs_journal_lines.credit';
     }
 
     /** Akun ini boleh dijurnal tanpa cost center? (lihat CoaTanpaCostCenterSeeder) */

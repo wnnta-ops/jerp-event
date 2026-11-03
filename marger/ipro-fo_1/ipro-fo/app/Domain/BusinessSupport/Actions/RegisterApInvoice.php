@@ -176,6 +176,11 @@ final class RegisterApInvoice
                 'paid_amount'         => 0,
                 'status'              => 'open',
             ];
+            // Memo Urgent yang ditarik dari wizard (sudah divalidasi controller). Pemanggil lain
+            // tidak mengirim kunci ini → memo invoice lama tidak tersentuh.
+            if (array_key_exists('memo_internal_id', $data)) {
+                $atribut['memo_internal_id'] = $data['memo_internal_id'];
+            }
             if ($lama !== null) {
                 $lama->forceFill($atribut)->save();
                 $inv = $lama;

@@ -6,7 +6,7 @@ namespace App\Http\Controllers\Web\BusinessSupport\Budget;
 
 use App\Domain\BusinessSupport\Models\BsBudget;
 use App\Domain\BusinessSupport\Models\BsBudgetAllocation;
-use App\Domain\BusinessSupport\Models\BsCostCenter;
+use App\Domain\BusinessSupport\Services\BudgetAllocationService;
 use App\Exceptions\BusinessRuleException;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\RedirectResponse;
@@ -16,8 +16,9 @@ use Inertia\Inertia;
 use Inertia\Response;
 
 /**
- * Alokasi Budget (BO: Alokasi Budget Control / BudgetAlokasi.aspx, dok BC.AL/...).
- * Mengalokasikan sebagian anggaran master untuk periode; sisa = budget − alokasi disetujui.
+ * Alokasi Budget (dok BC.AL/...): pindah anggaran dari budget A (COA lama) ke budget B (COA baru)
+ * per bulan, langsung berlaku tanpa approval — lihat BudgetAllocationService. Baris lama (tanpa
+ * budget tujuan) = alokasi model lama, tetap ditampilkan di daftar.
  */
 class BudgetAllocationController extends Controller
 {
@@ -37,7 +38,7 @@ class BudgetAllocationController extends Controller
         // Gate approval: default hanya alokasi yang SUDAH di-approve.
         $status = (string) $request->input('status', 'approved');
 
-        $rows = BsBudgetAllocation::with(['account:id,code,name', 'costCenter:id,code,name', 'budget:id,doc_no'])
+        $rows = BsBudgetAllocation::with(['account:id,code,name', 'costCenter:id,code,name', 'budget:id,doc_no', 'toBudget.account:id,code,name', 'toBudget.costCenter:id,name'])
             ->where('year', $year)
             ->when($status !== 'all', fn ($q) => $q->where('status', $status))
             ->orderByDesc('id')->get()
@@ -45,7 +46,14 @@ class BudgetAllocationController extends Controller
                 'id' => $a->id, 'doc_no' => $a->doc_no, 'date' => $a->alloc_date?->format('Y-m-d'),
                 'ref' => $a->budget?->doc_no, 'account' => $a->account?->code.' - '.$a->account?->name,
                 'cost_center' => $a->costCenter?->name ?? 'Semua',
-                'period' => BsBudget::MONTHS[($a->period_from ?: 1) - 1].' s/d '.BsBudget::MONTHS[($a->period_to ?: 12) - 1].' '.$a->year,
+                'period' => $a->months
+                    ? collect(array_keys($a->months))->map(fn ($m) => BsBudget::MONTHS[(int) $m - 1])->implode(', ').' '.$a->year
+                    : BsBudget::MONTHS[($a->period_from ?: 1) - 1].' s/d '.BsBudget::MONTHS[($a->period_to ?: 12) - 1].' '.$a->year,
+                'to_ref' => $a->toBudget?->doc_no,
+                'to_account' => $a->toBudget ? $a->toBudget->account?->code.' - '.$a->toBudget->account?->name : null,
+                'to_cost_center' => $a->toBudget ? ($a->toBudget->costCenter?->name ?? 'Semua') : null,
+                'dari_invoice' => $a->source_type === BsBudgetAllocation::SOURCE_INVOICE ? $a->source_id : null,
+                'notes' => $a->notes,
                 'amount' => (float) $a->amount, 'total_budget' => (float) $a->total_budget, 'status' => $a->status,
             ])->values();
 
@@ -57,7 +65,7 @@ class BudgetAllocationController extends Controller
         ]);
     }
 
-    /** Wizard alokasi — daftar master budget approved dengan Total & Sisa. */
+    /** Form alokasi — master budget approved; angka per bulan diambil dari bs.budget.bulan. */
     public function create(Request $request): Response
     {
         abort_unless($request->user()?->can('budget.allocation.create'), 403);
@@ -68,52 +76,34 @@ class BudgetAllocationController extends Controller
             ->map(fn ($b) => [
                 'id' => $b->id, 'doc_no' => $b->doc_no,
                 'account' => $b->account?->code.' - '.$b->account?->name,
-                'account_id' => $b->account_id, 'cost_center_id' => $b->cost_center_id,
-                'cost_center' => $b->costCenter?->name ?? 'Semua',
-                'total' => (float) $b->amount, 'sisa' => self::sisa($b),
+                'cost_center' => $b->costCenter?->name ?? 'Semua', 'amount' => (float) $b->amount,
             ])->values();
 
         return Inertia::render('BusinessSupport/Budget/Allocations/Create', [
             'year' => $year, 'budgets' => $budgets, 'monthLabels' => BsBudget::MONTHS,
-            'costCenters' => BsCostCenter::where('is_active', true)->orderBy('code')->get(['id', 'code', 'name']),
         ]);
     }
 
-    public function store(Request $request): RedirectResponse
+    public function store(Request $request, BudgetAllocationService $service): RedirectResponse
     {
         abort_unless($request->user()?->can('budget.allocation.create'), 403);
         $v = $request->validate([
             'budget_id'    => ['required', 'integer', 'exists:bs_budgets,id'],
+            'to_budget_id' => ['required', 'integer', 'exists:bs_budgets,id', 'different:budget_id'],
             'alloc_date'   => ['required', 'date'],
-            'period_from'  => ['required', 'integer', 'min:1', 'max:12'],
-            'period_to'    => ['required', 'integer', 'min:1', 'max:12'],
-            'amount'       => ['required', 'numeric', 'min:0.01'],
+            'months'       => ['required', 'array'],
+            'months.*'     => ['nullable', 'numeric', 'min:0'],
             'notes'        => ['nullable', 'string', 'max:200'],
-        ]);
+        ], ['to_budget_id.different' => 'Budget tujuan tidak boleh sama dengan budget asal.'], ['budget_id' => 'Budget asal', 'to_budget_id' => 'Budget tujuan']);
 
         try {
-            DB::transaction(function () use ($v, $request): void {
-                $budget = BsBudget::lockForUpdate()->findOrFail($v['budget_id']);
-                $sisa   = self::sisa($budget);
-                $amount = round((float) $v['amount'], 2);
-                if ($amount > $sisa) {
-                    throw new BusinessRuleException('Nilai alokasi melebihi sisa budget (Rp '.number_format($sisa, 0, ',', '.').').', errorCode: 'ALLOC_OVER');
-                }
-                BsBudgetAllocation::create([
-                    'tenant_id'    => tenant_id(),
-                    'doc_no'       => BsBudgetAllocation::nextDocNo((int) $budget->year, $budget->project, $v['alloc_date']),
-                    'year'         => $budget->year, 'project' => $budget->project, 'budget_id' => $budget->id,
-                    'cost_center_id' => $budget->cost_center_id, 'account_id' => $budget->account_id,
-                    'alloc_date'   => $v['alloc_date'], 'period_from' => $v['period_from'], 'period_to' => $v['period_to'],
-                    'amount'       => $amount, 'total_budget' => (float) $budget->amount,
-                    'status'       => 'baru', 'notes' => $v['notes'] ?? null, 'created_by' => $request->user()->id,
-                ]);
-            });
+            $a = DB::transaction(fn () => $service->pindah((int) $v['budget_id'], (int) $v['to_budget_id'],
+                array_map(fn ($x) => (float) ($x ?? 0), $v['months']), $v['alloc_date'], $v['notes'] ?? null, $request->user()->id));
         } catch (BusinessRuleException $e) {
-            return back()->with('error', $e->getMessage());
+            return back()->withInput()->with('error', $e->getMessage());
         }
 
-        return to_route('bs.budget.allocation.index')->with('success', 'Alokasi budget tercatat (menunggu approval).');
+        return to_route('bs.budget.allocation.index')->with('success', "Alokasi {$a->doc_no} tersimpan — anggaran sudah dipindah.");
     }
 
     /** Inbox approval batch alokasi. */

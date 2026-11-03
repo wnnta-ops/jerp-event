@@ -66,12 +66,11 @@ function reload() {
           <tr class="text-left text-xs uppercase text-neutral-500 bg-neutral-50 dark:bg-neutral-800">
             <th class="px-3 py-2">No. Alokasi</th>
             <th class="px-3 py-2">Tgl</th>
-            <th class="px-3 py-2">Ref. Budget</th>
-            <th class="px-3 py-2">Akun</th>
-            <th class="px-3 py-2">Cost Center</th>
+            <th class="px-3 py-2">Dari (Budget Asal)</th>
+            <th class="px-3 py-2">Ke (Budget Tujuan)</th>
             <th class="px-3 py-2">Periode</th>
             <th class="px-3 py-2 text-right">Nilai</th>
-            <th class="px-3 py-2 text-right">Total Budget</th>
+            <th class="px-3 py-2">Catatan</th>
             <th class="px-3 py-2">Status</th>
           </tr>
         </thead>
@@ -79,12 +78,23 @@ function reload() {
           <tr v-for="r in rows" :key="r.id">
             <td class="px-3 py-2 font-mono text-xs">{{ r.doc_no }}</td>
             <td class="px-3 py-2">{{ fmtDate(r.date) }}</td>
-            <td class="px-3 py-2">{{ r.ref }}</td>
-            <td class="px-3 py-2">{{ r.account }}</td>
-            <td class="px-3 py-2">{{ r.cost_center }}</td>
+            <td class="px-3 py-2">
+              <div>{{ r.account }}</div>
+              <div class="text-xs text-neutral-400">{{ r.cost_center }} · {{ r.ref }}</div>
+            </td>
+            <td class="px-3 py-2">
+              <template v-if="r.to_ref">
+                <div>{{ r.to_account }}</div>
+                <div class="text-xs text-neutral-400">{{ r.to_cost_center }} · {{ r.to_ref }}</div>
+              </template>
+              <span v-else class="text-xs text-neutral-400" title="Alokasi model lama — penyisihan dalam satu budget">—</span>
+            </td>
             <td class="px-3 py-2">{{ r.period }}</td>
             <td class="px-3 py-2 text-right">{{ fmtRp(r.amount) }}</td>
-            <td class="px-3 py-2 text-right">{{ fmtRp(r.total_budget) }}</td>
+            <td class="px-3 py-2 text-xs text-neutral-500">
+              {{ r.notes || '—' }}
+              <Link v-if="r.dari_invoice" :href="route('bs.ap.show', r.dari_invoice)" class="ml-1 text-primary-600 hover:underline">invoice</Link>
+            </td>
             <td class="px-3 py-2">
               <Badge :variant="stBadge[r.status]">{{ statuses[r.status] ?? r.status }}</Badge>
             </td>
@@ -94,6 +104,6 @@ function reload() {
       <EmptyState v-if="rows.length === 0" title="Belum ada alokasi" description="Belum ada data alokasi budget untuk tahun ini." />
     </div>
 
-    <p class="text-sm text-neutral-500">{{ summary.count }} alokasi · Rp {{ fmtRp(summary.total) }}</p>
+    <p class="text-sm text-neutral-500">{{ summary.count }} alokasi · {{ fmtRp(summary.total) }}</p>
   </div>
 </template>

@@ -8,10 +8,10 @@ declare(strict_types=1);
  * Yang dijaga:
  *   · Anggaran s.d. = Σ m1..mN (sama dengan penjaga budget bulanan); setahun = Σ 12 bulan.
  *   · Realisasi s.d. = jurnal Jan..akhir bulan s.d.; jurnal sesudahnya tidak ikut.
- *   · Selisih positif = lebih baik (pendapatan: realisasi − anggaran; beban: anggaran − realisasi).
+ *   · Sisa = anggaran − realisasi (semua bagian).
+ *   · Realisasi = sisi pengeluaran saja: jurnal kredit di akun beban tidak mengurangi realisasi.
  *   · Kelompok akun tingkat 3; total kelompok/bagian = jumlah anaknya; LABA = pendapatan − beban.
  *   · Anggaran "Semua cost center" menyerap realisasi semua cost center akun itu (tidak dobel).
- *   · Versi "awal" = berlaku dikurangi Koreksi Budget yang disetujui (yang menunggu tidak dihitung).
  *   · Drill-down jurnal = angka realisasi barisnya.
  *
  * Data DB DIBATALKAN (rollback).
@@ -102,6 +102,7 @@ try {
     $jurnal("{$TAHUN}-02-01", $beban2, $ccA->id, 3_000_000, 0);
     $jurnal("{$TAHUN}-02-02", $beban2, $ccB->id, 2_000_000, 0);
     $jurnal("{$TAHUN}-02-03", $beban, $ccB->id, 1_000_000, 0);    // realisasi tanpa anggaran
+    $jurnal("{$TAHUN}-03-20", $beban, $ccA->id, 0, 2_000_000);    // kredit (pembatalan) → tidak mengurangi realisasi
 
     // Koreksi: +12 jt Jan–Des disetujui (1 jt/bulan), +50 jt menunggu (tidak dihitung).
     DB::table('bs_budget_corrections')->insert([
@@ -112,7 +113,7 @@ try {
     ]);
 
     $svc = app(BudgetAnnualReportService::class);
-    $lap = $svc->susun($TAHUN, 'approved', 'berlaku', 3);
+    $lap = $svc->susun($TAHUN, 'approved', 3);
     $bagian = fn (array $l, string $k) => collect($l['bagian'])->firstWhere('kode', $k);
     $cariAkun = function (array $l, string $k, int $id) use ($bagian) {
         foreach ($bagian($l, $k)['grup'] ?? [] as $g) {
@@ -127,12 +128,12 @@ try {
     };
     $barisCc = fn (?array $a, string $cc) => collect($a['baris'] ?? [])->firstWhere('cc', $cc);
 
-    echo "Versi berlaku, s.d. Mar {$TAHUN}\n";
+    echo "Anggaran berlaku, s.d. Mar {$TAHUN}\n";
     $a1 = $cariAkun($lap, 'expense', $beban->id);
     $r1 = $barisCc($a1, (string) $ccA->id);
     $cek('beban × A: anggaran s.d. = 3 × 10 jt', $sama($r1['anggaran'] ?? null, 30_000_000), json_encode($r1));
-    $cek('beban × A: realisasi s.d. tidak memasukkan jurnal Juni', $sama($r1['realisasi'] ?? null, 29_000_000));
-    $cek('beban × A: selisih = anggaran − realisasi', $sama($r1['selisih'] ?? null, 1_000_000));
+    $cek('beban × A: realisasi s.d. tanpa jurnal Juni & tanpa kredit pembatalan', $sama($r1['realisasi'] ?? null, 29_000_000), json_encode($r1));
+    $cek('beban × A: sisa = anggaran − realisasi', $sama($r1['sisa'] ?? null, 1_000_000));
     $cek('beban × A: % = realisasi ÷ anggaran', $sama($r1['persen'] ?? null, 96.7));
     $cek('beban × A: anggaran setahun = 120 jt', $sama($r1['setahun'] ?? null, 120_000_000));
     $rB = $barisCc($a1, (string) $ccB->id);
@@ -145,7 +146,7 @@ try {
     $ap = $cariAkun($lap, 'income', $pend->id);
     $rp = $barisCc($ap, (string) $ccA->id);
     $cek('pendapatan: realisasi bertanda positif (kredit)', $sama($rp['realisasi'] ?? null, 70_000_000));
-    $cek('pendapatan: selisih = realisasi − anggaran (lebih baik = positif)', $sama($rp['selisih'] ?? null, 10_000_000));
+    $cek('pendapatan: sisa = anggaran − realisasi', $sama($rp['sisa'] ?? null, -10_000_000));
 
     $grupBeban = $a1['_grup'];
     $cek('kelompok = akun tingkat 3', DB::table('bs_accounts')->where('code', $grupBeban['kode'])->value('level') == 3 || $grupBeban['kode'] === $beban->code);
@@ -156,24 +157,20 @@ try {
     $ti = $bagian($lap, 'income');
     $cek('LABA = pendapatan − beban (anggaran & realisasi)', $sama($lap['laba']['anggaran'], $ti['anggaran'] - $tb['anggaran']) && $sama($lap['laba']['realisasi'], $ti['realisasi'] - $tb['realisasi']));
 
-    echo "\nVersi awal\n";
-    $awal = $svc->susun($TAHUN, 'approved', 'awal', 3);
-    $r1a = $barisCc($cariAkun($awal, 'expense', $beban->id), (string) $ccA->id);
-    $cek('awal = berlaku − koreksi disetujui (1 jt/bulan × 3)', $sama($r1a['anggaran'] ?? null, 27_000_000), json_encode($r1a));
-    $cek('awal setahun = 108 jt (koreksi menunggu tidak dihitung)', $sama($r1a['setahun'] ?? null, 108_000_000));
-    $cek('realisasi sama di kedua versi', $sama($r1a['realisasi'] ?? null, 29_000_000));
+    echo "\nKoreksi tidak dihitung dua kali\n";
+    $cek('koreksi yang sudah diterapkan tidak ditambahkan lagi (anggaran = kolom bulan)', $sama($r1['anggaran'] ?? null, 30_000_000));
 
     echo "\nDrill-down jurnal\n";
     [$from, $to] = BudgetAnnualReportService::rentang($TAHUN, 3);
     $rin = app(BudgetRealizationService::class)->rincian($TAHUN, $beban->id, (int) $ccA->id, $from, $to);
-    $cek('jurnal beban × A s.d. Mar = 2 baris, total = realisasi', count($rin) === 2 && $sama(array_sum(array_column($rin, 'nilai')), 29_000_000));
+    $cek('jurnal beban × A s.d. Mar = 2 baris (kredit tidak ikut), total = realisasi', count($rin) === 2 && $sama(array_sum(array_column($rin, 'nilai')), 29_000_000));
     $rinSemua = app(BudgetRealizationService::class)->rincian($TAHUN, $beban2->id, null, $from, $to);
     $cek('jurnal semua cost center = realisasi barisnya', $sama(array_sum(array_column($rinSemua, 'nilai')), 5_000_000));
     $rinP = app(BudgetRealizationService::class)->rincian($TAHUN, $pend->id, (int) $ccA->id, $from, $to);
     $cek('jurnal pendapatan bertanda positif', $sama($rinP[0]['nilai'] ?? null, 70_000_000));
 
     echo "\nStatus lain\n";
-    $menunggu = $svc->susun($TAHUN, 'submitted', 'berlaku', 3);
+    $menunggu = $svc->susun($TAHUN, 'submitted', 3);
     $cek('status Menunggu: realisasi tanpa anggaran tidak dimunculkan', $menunggu['bagian'] === []);
 
     echo "\n".str_repeat('─', 78)."\n";

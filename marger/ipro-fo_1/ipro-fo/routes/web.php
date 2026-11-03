@@ -705,6 +705,7 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     // Draft Registrasi Invoice Hutang (dipakai tombol "Edit" berkas di langkah Detil Tagihan).
     Route::post('/business-support/payable/draft', [BsApController::class, 'simpanDraft'])->name('bs.ap.draft.store');
     Route::get('/business-support/payable/sisa-budget', [BsApController::class, 'sisaBudget'])->name('bs.ap.sisa-budget'); // kolom Sisa Budget di langkah Struktur
+    Route::get('/business-support/payable/sumber-alokasi', [BsApController::class, 'sumberAlokasi'])->name('bs.ap.sumber-alokasi'); // pilihan budget asal Alokasi di langkah Struktur
     Route::delete('/business-support/payable/draft', [BsApController::class, 'buangDraft'])->name('bs.ap.draft.destroy');
     // AP › Master: Reimburse Biaya Karyawan & Deposit Renovasi Customer — alur Invoice Hutang,
     // dibedakan penerima & akunnya (BsApInvoice::JENIS). Detail/Memo/Kuitansi memakai rute bs.ap.*.
@@ -1135,6 +1136,7 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::get('/business-support/budget-export', [BsBudgetController::class, 'export'])->name('bs.budget.export');
     Route::get('/business-support/budget-laporan-export', [BsBudgetController::class, 'laporanExport'])->name('bs.budget.laporan-export');
     Route::get('/business-support/budget-rincian', [BsBudgetController::class, 'rincian'])->name('bs.budget.rincian');
+    Route::get('/business-support/budget/{budget}/bulan', [BsBudgetController::class, 'bulan'])->name('bs.budget.bulan');
     Route::post('/business-support/budget', [BsBudgetController::class, 'store'])->name('bs.budget.store');
     Route::put('/business-support/budget/{budget}', [BsBudgetController::class, 'update'])->name('bs.budget.update');
     Route::delete('/business-support/budget/{budget}', [BsBudgetController::class, 'destroy'])->name('bs.budget.destroy');

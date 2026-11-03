@@ -93,8 +93,23 @@ class ApInvoiceController extends Controller
         $daftar = new \App\Domain\BusinessSupport\Support\DaftarInvoiceHutang($jenis);
         $q = $daftar->saring($daftar->dasar(), $request);
 
+        // Status Memo Urgent yang ditarik ke invoice — dimuat per memo yang muncul (≤ 25 per halaman).
+        $memo = [];
+        $memoDari = function (?int $id) use (&$memo): ?array {
+            if (! $id) {
+                return null;
+            }
+            if (! array_key_exists($id, $memo)) {
+                $m = \App\Domain\ApprovalInbox\Models\MemoInternal::withTrashed()->with('approval.steps')->find($id);
+                $memo[$id] = $m ? ['number' => $m->memo_number, 'status' => \App\Domain\ApprovalInbox\Services\MemoUntukInvoice::status($m),
+                    'url' => $m->approval_id ? route('approval-inbox.show', $m->approval_id) : null] : null;
+            }
+
+            return $memo[$id];
+        };
         $baris = fn ($r) => [
             'id' => $r->id,
+            'memo' => $memoDari($r->memo_internal_id ? (int) $r->memo_internal_id : null),
             'invoice_number' => $r->invoice_number,
             'invoice_date' => $r->invoice_date?->toDateString(),
             'receive_date' => $r->receive_date?->toDateString(),
@@ -459,6 +474,9 @@ class ApInvoiceController extends Controller
             'coaTanpaAnggaran' => array_map('strval', (array) config('business_support.budget.coa_tanpa_anggaran', [])),
             // Mode EDIT: isian lama untuk mengisi wizard. null = registrasi baru.
             'invoiceEdit' => $edit !== null ? $this->dataEdit($edit) : null,
+            // Memo Urgent yang sudah disetujui Direktur & belum dipakai invoice lain — tabel di
+            // bawah Struktur Jurnal, satu memo per invoice (opsional).
+            'memoUrgent' => app(\App\Domain\ApprovalInbox\Services\MemoUntukInvoice::class)->pilihan($edit?->id),
         ]);
     }
 
@@ -482,6 +500,34 @@ class ApInvoiceController extends Controller
         }
 
         return response()->json(['bulan' => \App\Domain\BusinessSupport\Models\BsBudget::MONTHS[\Illuminate\Support\Carbon::parse($v['date'])->month - 1].' '.\Illuminate\Support\Carbon::parse($v['date'])->year, 'sisa' => $out]);
+    }
+
+    /**
+     * Pilihan budget ASAL untuk Alokasi di langkah Struktur: anggaran approved tahun invoice yang
+     * masih punya sisa di BULAN invoice (anggaran bulan − realisasi bulan, aturan penjaga budget).
+     */
+    public function sumberAlokasi(Request $request, \App\Domain\BusinessSupport\Services\BudgetAllocationService $alokasi): \Illuminate\Http\JsonResponse
+    {
+        abort_unless($request->user()?->canAny(['ap.invoice.create', 'ap.invoice.update']), 403);
+        $v = $request->validate([
+            'date' => ['required', 'date'],
+            'kecuali' => ['array'],
+            'kecuali.*' => ['integer'],
+            'exclude_journal_id' => ['nullable', 'integer'],
+        ]);
+        $tgl = \Illuminate\Support\Carbon::parse($v['date']);
+        $out = \App\Domain\BusinessSupport\Models\BsBudget::with(['account:id,code,name', 'costCenter:id,code,name'])
+            ->where('year', $tgl->year)->where('status', 'approved')
+            ->whereNotIn('id', $v['kecuali'] ?? [0])
+            ->orderBy('doc_no')->get()
+            ->map(fn ($b) => [
+                'id' => $b->id, 'doc_no' => $b->doc_no,
+                'label' => trim(($b->costCenter?->name ?? 'Semua cost center').' — '.$b->account?->code.' '.$b->account?->name),
+                'sisa' => $alokasi->sisaBulan($b, (int) $tgl->month, $v['exclude_journal_id'] ?? null),
+            ])
+            ->filter(fn ($b) => $b['sisa'] > 0)->values();
+
+        return response()->json(['bulan' => \App\Domain\BusinessSupport\Models\BsBudget::MONTHS[$tgl->month - 1].' '.$tgl->year, 'budgets' => $out]);
     }
 
     /**
@@ -549,6 +595,7 @@ class ApInvoiceController extends Controller
             'journal_id' => $inv->journal_id,
             'data' => [
                 'supplier_id' => $inv->supplier_id,
+                'memo_internal_id' => $inv->memo_internal_id,
                 'category_id' => $inv->category_id,
                 'supplier_invoice_no' => (string) $inv->supplier_invoice_no,
                 'manual_no' => (string) $inv->manual_no,
@@ -789,28 +836,60 @@ class ApInvoiceController extends Controller
             'koreksi.*.keterangan' => ['nullable', 'string', 'max:200'],
             'koreksi.*.nilai' => ['required', 'numeric', 'min:1'],
         ], ['koreksi.*.nilai.min' => 'Nilai pengajuan koreksi budget wajib diisi.'], ['koreksi.*.nilai' => 'Nilai pengajuan'])['koreksi'] ?? [];
+        // ALOKASI (langkah Struktur): alternatif koreksi — kekurangan budget bulan invoice diambil
+        // dari sisa bulan yang sama di budget lain. Langsung berlaku (tanpa approval), dijalankan
+        // satu transaksi dengan invoice SEBELUM penjaga budget memeriksa.
+        $alokasi = $request->validate([
+            'alokasi' => ['nullable', 'array'],
+            'alokasi.*.budget_id' => ['required', 'integer', 'exists:bs_budgets,id'],
+            'alokasi.*.dari_budget_id' => ['required', 'integer', 'exists:bs_budgets,id'],
+            'alokasi.*.keterangan' => ['nullable', 'string', 'max:200'],
+            'alokasi.*.nilai' => ['required', 'numeric', 'min:1'],
+        ], ['alokasi.*.nilai.min' => 'Nilai alokasi wajib diisi.', 'alokasi.*.dari_budget_id.required' => 'Pilih budget asal alokasi.'],
+            ['alokasi.*.nilai' => 'Nilai alokasi', 'alokasi.*.dari_budget_id' => 'Budget asal'])['alokasi'] ?? [];
+        // MEMO URGENT (opsional): satu memo yang tahap Direktur-nya sudah menyetujui.
+        $memoId = $request->validate(['memo_internal_id' => ['nullable', 'integer']])['memo_internal_id'] ?? null;
+        if ($memoId && ! app(\App\Domain\ApprovalInbox\Services\MemoUntukInvoice::class)->boleh((int) $memoId, $lama?->id)) {
+            return back()->withInput()->with('error', 'Memo Urgent ini belum disetujui Direktur atau sudah dipakai invoice lain.');
+        }
+        $v['memo_internal_id'] = $memoId ? (int) $memoId : null;
+
         $tambahan = [];
-        if ($koreksi !== []) {
+        if ($koreksi !== [] || $alokasi !== []) {
             $dipakai = collect($v['journal_lines'] ?? [])
                 ->filter(fn ($l) => ! empty($l['account_id']))
                 ->map(fn ($l) => $budgetGuard->sisaBulan((int) $l['account_id'], ! empty($l['cost_center_id']) ? (int) $l['cost_center_id'] : null, $v['invoice_date'])['budget_id'] ?? null)
                 ->filter()->unique()->all();
-            foreach ($koreksi as $k) {
+            foreach ([...$koreksi, ...$alokasi] as $k) {
                 if (! in_array((int) $k['budget_id'], $dipakai, true)) {
-                    return back()->withInput()->with('error', 'Koreksi budget hanya untuk anggaran yang dipakai baris jurnal invoice ini.');
+                    return back()->withInput()->with('error', 'Koreksi / alokasi budget hanya untuk anggaran yang dipakai baris jurnal invoice ini.');
                 }
+            }
+            foreach ($koreksi as $k) {
                 $tambahan[(int) $k['budget_id']] = ($tambahan[(int) $k['budget_id']] ?? 0) + (float) $k['nilai'];
             }
         }
 
         try {
-            // Gerbang over-budget (BULANAN): tolak bila baris jurnal melewati sisa anggaran bulan invoice,
-            // kecuali tertutup koreksi yang diajukan bersama invoice ini.
-            // Edit: jurnal lama invoice ini dikecualikan supaya realisasinya tidak terhitung dua kali.
-            $budgetGuard->assertWithinBudget($v['journal_lines'] ?? [], null, $v['invoice_date'], $lama?->journal_id, $tambahan);
             $koreksiDiajukan = [];
-            $simpanInvoice = function () use ($action, $v, $jenis, $request, $lama, $berkas, $koreksi, &$koreksiDiajukan): array {
+            $alokasiDibuat = [];
+            $simpanInvoice = function () use ($action, $v, $jenis, $request, $lama, $berkas, $koreksi, $alokasi, $tambahan, $budgetGuard, &$koreksiDiajukan, &$alokasiDibuat): array {
+                // Alokasi dulu (budget tujuan bertambah), baru gerbang over-budget (BULANAN): tolak bila
+                // baris jurnal melewati sisa anggaran bulan invoice, kecuali tertutup koreksi yang
+                // diajukan bersama invoice ini. Edit: jurnal lama invoice ini dikecualikan supaya
+                // realisasinya tidak terhitung dua kali.
+                foreach ($alokasi as $a) {
+                    $bulan = (int) \Illuminate\Support\Carbon::parse($v['invoice_date'])->month;
+                    $alokasiDibuat[] = app(\App\Domain\BusinessSupport\Services\BudgetAllocationService::class)->pindah(
+                        (int) $a['dari_budget_id'], (int) $a['budget_id'], [$bulan => (float) $a['nilai']], $v['invoice_date'],
+                        $a['keterangan'] ?? null, $request->user()->id, null, $lama?->journal_id);
+                }
+                $budgetGuard->assertWithinBudget($v['journal_lines'] ?? [], null, $v['invoice_date'], $lama?->journal_id, $tambahan);
                 $inv = $action->execute($v + ['jenis' => $jenis], $request->user()->id, $lama);
+                foreach ($alokasiDibuat as $a) {
+                    $a->forceFill(['source_type' => \App\Domain\BusinessSupport\Models\BsBudgetAllocation::SOURCE_INVOICE, 'source_id' => $inv->id,
+                        'notes' => mb_substr(trim($a->notes.' · '.$inv->invoice_number, ' ·'), 0, 200)])->save();
+                }
                 // "Simpan & Buat Jurnal" sekaligus menerbitkan Purchase Order-nya, supaya pembelian
                 // yang tagihannya masuk lebih dulu tetap punya dokumen pesanan. Data yang tidak ada
                 // di invoice (no. PO, master barang) dibangkitkan sistem — lihat actionnya.
@@ -827,7 +906,7 @@ class ApInvoiceController extends Controller
             };
             // Dari berkas / dengan koreksi budget: invoice + pengajuan approval satu transaksi — tidak
             // pernah ada invoice berkas tersimpan tanpa approval, atau over budget tanpa koreksinya.
-            [$inv, $po] = ($berkas !== null || $koreksi !== []) ? DB::transaction($simpanInvoice) : $simpanInvoice();
+            [$inv, $po] = ($berkas !== null || $koreksi !== [] || $alokasi !== []) ? DB::transaction($simpanInvoice) : $simpanInvoice();
         } catch (BusinessRuleException $e) {
             // Penolakan anggaran disalurkan ke DIALOG; selebihnya tetap toast. Lihat trait.
             return $this->balikDenganGalat($e);

@@ -6,7 +6,6 @@ namespace App\Domain\BusinessSupport\Services;
 
 use App\Domain\BusinessSupport\Models\BsAccount;
 use App\Domain\BusinessSupport\Models\BsBudget;
-use App\Domain\BusinessSupport\Models\BsBudgetCorrection;
 use App\Domain\BusinessSupport\Models\BsCostCenter;
 use Carbon\Carbon;
 
@@ -19,19 +18,16 @@ use Carbon\Carbon;
  *                       — persis BudgetGuardService::anggaranBulan, jadi sama dengan penjaga budget)
  *   · Realisasi s.d.  = jurnal Jan..akhir bulan s.d. (BudgetRealizationService, aturan yang sama
  *                       dengan penjaga budget & Koreksi Budget)
- *   · Selisih         = positif berarti lebih baik: pendapatan realisasi − anggaran, beban
- *                       anggaran − realisasi
+ *   · Sisa s.d.       = anggaran s.d. − realisasi s.d. (Σ sisa per bulan)
  *   · %               = realisasi ÷ anggaran s.d.
  *   · Anggaran setahun = Σ anggaran 12 bulan
  *
- * Versi anggaran: "berlaku" = master budget saat ini (sudah termasuk Koreksi Budget yang disetujui);
- * "awal" = master budget dikurangi tambahan dari Koreksi Budget yang disetujui, dibalik dengan rumus
- * yang sama dengan BudgetCorrectionService::putuskan (selisih dibagi rata ke bulan periodenya).
+ * Anggaran = master budget yang BERLAKU, sudah termasuk Koreksi Budget yang disetujui & Alokasi
+ * (keputusan meeting 3 Nov 2026 — versi "sebelum koreksi" ditiadakan). Realisasi = sisi
+ * pengeluaran saja (lihat BudgetRealizationService).
  */
 final class BudgetAnnualReportService
 {
-    public const VERSI = ['berlaku' => 'Berlaku (setelah Koreksi Budget)', 'awal' => 'Awal (sebelum Koreksi Budget)'];
-
     public const BAGIAN = ['income' => 'Pendapatan', 'expense' => 'Beban', 'lainnya' => 'Lainnya (Aset / Kewajiban / Modal)'];
 
     public function __construct(private readonly BudgetRealizationService $realisasi) {}
@@ -43,51 +39,15 @@ final class BudgetAnnualReportService
     }
 
     /**
-     * Anggaran per bulan (1..12) satu budget pada versi terpilih.
+     * Anggaran per bulan (1..12) satu budget — sama dengan penjaga budget.
      *
-     * @param  array<int,array<int,float>>  $tambahanKoreksi  budget_id → bulan → tambahan dari koreksi disetujui
      * @return array<int,float>
      */
-    public static function bulanVersi(BsBudget $b, string $versi, array $tambahanKoreksi): array
+    public static function bulan(BsBudget $b): array
     {
-        $salin = clone $b;
-        if ($versi === 'awal') {
-            $total = 0.0;
-            foreach ($tambahanKoreksi[$b->id] ?? [] as $m => $v) {
-                $salin->{'m'.$m} = round((float) ($salin->{'m'.$m} ?? 0) - $v, 2);
-                $total += $v;
-            }
-            $salin->amount = round((float) $salin->amount - $total, 2);
-        }
         $out = [];
         for ($m = 1; $m <= 12; $m++) {
-            $out[$m] = BudgetGuardService::anggaranBulan($salin, $m);
-        }
-
-        return $out;
-    }
-
-    /**
-     * Tambahan per bulan dari Koreksi Budget yang SUDAH disetujui.
-     *
-     * @param  list<int>  $budgetIds
-     * @return array<int,array<int,float>>
-     */
-    public static function tambahanKoreksi(array $budgetIds): array
-    {
-        $out = [];
-        if (! $budgetIds) {
-            return $out;
-        }
-        $daftar = BsBudgetCorrection::whereIn('budget_id', $budgetIds)->where('status', 'approved')->get();
-        foreach ($daftar as $c) {
-            $delta = round((float) $c->new_amount - (float) $c->old_amount, 2);
-            $from = max(1, (int) $c->period_from);
-            $to = min(12, (int) $c->period_to);
-            $per = round($delta / max(1, $to - $from + 1), 2);
-            for ($m = $from; $m <= $to; $m++) {
-                $out[(int) $c->budget_id][$m] = round(($out[(int) $c->budget_id][$m] ?? 0.0) + $per, 2);
-            }
+            $out[$m] = BudgetGuardService::anggaranBulan($b, $m);
         }
 
         return $out;
@@ -96,7 +56,7 @@ final class BudgetAnnualReportService
     /**
      * @return array{bagian: list<array>, laba: array, tanpa_anggaran: bool}
      */
-    public function susun(int $year, string $status, string $versi, int $sd): array
+    public function susun(int $year, string $status, int $sd): array
     {
         [$from, $to] = self::rentang($year, $sd);
 
@@ -106,14 +66,13 @@ final class BudgetAnnualReportService
         $budgets = BsBudget::where('year', $year)
             ->when($status !== 'all', fn ($q) => $q->where('status', $status))
             ->orderBy('doc_no')->get();
-        $tambahan = self::tambahanKoreksi($budgets->pluck('id')->all());
 
         // Baris = akun × cost center ("semua" untuk anggaran lintas cost center, 0 = tanpa cost center).
         $baris = [];
         foreach ($budgets as $b) {
             $cc = $b->cost_center_id ? (string) (int) $b->cost_center_id : 'semua';
             $kunci = (int) $b->account_id.'|'.$cc;
-            $bulan = self::bulanVersi($b, $versi, $tambahan);
+            $bulan = self::bulan($b);
             $baris[$kunci] ??= ['acc' => (int) $b->account_id, 'cc' => $cc, 'anggaran' => 0.0, 'setahun' => 0.0, 'budgets' => []];
             $baris[$kunci]['anggaran'] += array_sum(array_slice($bulan, 0, $sd, true));
             $baris[$kunci]['setahun'] += array_sum($bulan);
@@ -214,7 +173,7 @@ final class BudgetAnnualReportService
         return ['kode' => (string) ($n?->code ?? '—'), 'nama' => (string) ($n?->name ?? 'Tanpa kelompok')];
     }
 
-    /** Lima angka satu baris; selisih positif = lebih baik. */
+    /** Lima angka satu baris; sisa = anggaran − realisasi. */
     private function angka(string $bagian, float $anggaran, float $realisasi, float $setahun): array
     {
         $anggaran = round($anggaran, 2);
@@ -223,7 +182,7 @@ final class BudgetAnnualReportService
         return [
             'anggaran'  => $anggaran,
             'realisasi' => $realisasi,
-            'selisih'   => round($bagian === 'income' ? $realisasi - $anggaran : $anggaran - $realisasi, 2),
+            'sisa'      => round($anggaran - $realisasi, 2),
             'persen'    => abs($anggaran) >= 0.005 ? round($realisasi / $anggaran * 100, 1) : null,
             'setahun'   => round($setahun, 2),
         ];

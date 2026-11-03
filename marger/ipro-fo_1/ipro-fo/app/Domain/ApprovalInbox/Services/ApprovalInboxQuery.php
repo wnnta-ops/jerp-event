@@ -217,15 +217,20 @@ final class ApprovalInboxQuery
                 $out['links'][] = ['label' => 'Buka berkas', 'url' => route('bs.ap.berkas.show', $berkas->id)];
             }
         } elseif ($m instanceof BsBudgetCorrection) {
-            $bulan = \App\Domain\BusinessSupport\Models\BsBudget::MONTHS[max(1, (int) $m->period_from) - 1].' '.$m->year;
+            $bulanLabel = \App\Domain\BusinessSupport\Models\BsBudget::MONTHS;
+            $tambahan = $m->tambahanBulan();
             $budget = $m->budget;
             $inv = $m->source_type === BsBudgetCorrection::SOURCE_INVOICE ? BsApInvoice::query()->find($m->source_id) : null;
+            // Rincian per bulan: anggaran bulan itu sebelum koreksi → tambahan.
+            $rinci = collect($tambahan)->map(fn ($v, $b) => $bulanLabel[$b - 1].': '
+                .($budget ? $rp(\App\Domain\BusinessSupport\Services\BudgetGuardService::anggaranBulan($budget, (int) $b)).' → ' : '')
+                .($v >= 0 ? '+' : '').$rp($v))->implode(' · ');
             $out['fields'] = [
-                ['label' => 'Periode', 'value' => $bulan],
+                ['label' => 'Tahun', 'value' => (string) $m->year],
                 ['label' => 'Account', 'value' => trim($m->account?->code.' - '.$m->account?->name, ' -')],
                 ['label' => 'Cost Center', 'value' => $m->costCenter ? trim($m->costCenter->code.' '.$m->costCenter->name) : 'Semua'],
-                ['label' => 'Anggaran bulan ini (sebelum koreksi)', 'value' => $budget ? $rp(\App\Domain\BusinessSupport\Services\BudgetGuardService::anggaranBulan($budget, (int) $m->period_from)) : null],
-                ['label' => 'Nilai pengajuan', 'value' => $rp((float) $m->new_amount - (float) $m->old_amount)],
+                ['label' => 'Per bulan (anggaran saat ini → tambahan)', 'value' => $rinci ?: null],
+                ['label' => 'Total tambahan', 'value' => $rp(array_sum($tambahan))],
                 ['label' => 'Invoice asal', 'value' => $inv?->invoice_number],
             ];
             $out['body'] = $m->note;
@@ -300,7 +305,9 @@ final class ApprovalInboxQuery
         }
 
         if ($approval->document_type === BsBudgetCorrection::DOCUMENT_TYPE) {
-            return [$stage('Pengaju', 'Koreksi dari invoice hutang', $submitter, $approval->submitted_at)];
+            $dariInvoice = $approval->approvable?->source_type === BsBudgetCorrection::SOURCE_INVOICE;
+
+            return [$stage('Pengaju', $dariInvoice ? 'Koreksi dari invoice hutang' : 'Koreksi Budget', $submitter, $approval->submitted_at)];
         }
 
         return [$stage('Dept. Head', 'Pengajuan', $submitter, $approval->submitted_at)];
