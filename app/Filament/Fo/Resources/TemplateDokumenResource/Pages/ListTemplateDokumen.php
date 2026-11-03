@@ -23,6 +23,6 @@ class ListTemplateDokumen extends ListRecords
 
     public function getSubheading(): ?string
     {
-        return 'Belum ada versi = SPR/SPRS dicetak dengan teks bawaan aplikasi. Versi yang sudah berlaku terkunci; ubah dengan membuat versi baru.';
+        return 'Belum ada versi = SPR/SPRS dicetak dengan teks bawaan aplikasi. Hapus versi terbaru = kembali ke versi sebelumnya; Edit untuk koreksi.';
     }
 }

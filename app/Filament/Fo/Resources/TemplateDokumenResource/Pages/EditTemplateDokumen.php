@@ -6,7 +6,6 @@ use App\Filament\Fo\Resources\TemplateDokumenResource;
 use Filament\Actions;
 use Filament\Resources\Pages\EditRecord;
 
-/** Hanya versi yang BELUM berlaku (canEdit di resource). */
 class EditTemplateDokumen extends EditRecord
 {
     protected static string $resource = TemplateDokumenResource::class;
