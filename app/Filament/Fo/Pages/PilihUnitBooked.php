@@ -8,6 +8,7 @@ use App\Modules\FO\Adminjual\Models\Skema;
 use App\Modules\FO\Booked\Services\BookedVerificationService;
 use App\Modules\FO\Launching\Models\NupRegistration;
 use App\Modules\FO\MarketingSales\Models\Unit;
+use App\Support\PesanGagal;
 use Filament\Actions\Action;
 use Filament\Actions\Concerns\InteractsWithActions;
 use Filament\Actions\Contracts\HasActions;
@@ -108,7 +109,7 @@ class PilihUnitBooked extends Page implements HasActions, HasForms
 
                     $this->redirect('/fo/verifikasi-booked');
                 } catch (\Throwable $e) {
-                    Notification::make()->danger()->title('Gagal pilih unit')->body($e->getMessage())->send();
+                    Notification::make()->danger()->title('Gagal pilih unit')->body(PesanGagal::dari($e))->send();
                 }
             });
     }
