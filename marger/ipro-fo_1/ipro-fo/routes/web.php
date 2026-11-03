@@ -1561,6 +1561,7 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
         Route::get('/', [$c, 'index'])->name('index');
         Route::get('/{approval}', [$c, 'show'])->whereNumber('approval')->name('show');
         Route::post('/{approval}/act', [$c, 'act'])->whereNumber('approval')->name('act');
+        Route::get('/{approval}/cetak', [$c, 'cetak'])->whereNumber('approval')->name('cetak'); // lembar Memo Urgent
     });
 
     // Exports (customers, bookings, kpr) — sudah PINDAH ke FO. Rutenya dimatikan lewat sakelar, bukan

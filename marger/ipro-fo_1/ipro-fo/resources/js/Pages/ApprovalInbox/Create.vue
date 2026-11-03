@@ -39,7 +39,7 @@ function submit() { form.post(route('approval-inbox.store')); }
 
 <template>
     <Head title="Memo Urgent" />
-    <div class="max-w-2xl mx-auto space-y-4">
+    <div class="mx-auto w-full max-w-5xl space-y-4">
         <Link :href="route('approval-inbox.index', { tab: 'pengajuan' })" class="text-sm text-neutral-500 hover:text-primary-600">← Kembali</Link>
         <div>
             <h1 class="text-2xl font-bold">Memo Urgent</h1>
@@ -61,8 +61,9 @@ function submit() { form.post(route('approval-inbox.store')); }
             </ul>
         </div>
 
-        <form @submit.prevent="submit" class="card p-6 space-y-4">
-            <div class="grid gap-4 sm:grid-cols-2">
+        <form @submit.prevent="submit" class="card space-y-4 p-4 sm:p-6">
+            <!-- Lebar & responsif: 1 kolom di HP, 2 di tablet, 3 di desktop. -->
+            <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                 <Input v-model="form.memo_date" label="Tanggal Memo" type="date" required :error="form.errors.memo_date" />
                 <div>
                     <label class="label-base" for="dept">Departemen <span class="text-red-500">*</span></label>
@@ -79,26 +80,28 @@ function submit() { form.post(route('approval-inbox.store')); }
                     <p class="mt-1 text-[11px] text-neutral-400">{{ semuaDept ? 'Super Admin — semua departemen.' : (terkunci ? 'Otomatis dari departemen Anda di Employee Center.' : 'Departemen Anda di Employee Center.') }}</p>
                     <p v-if="form.errors.cost_center_id" class="mt-1 text-xs text-red-600">{{ form.errors.cost_center_id }}</p>
                 </div>
+                <div class="sm:col-span-2 lg:col-span-1">
+                    <label class="label-base">Nominal <span class="text-red-500">*</span></label>
+                    <div class="relative">
+                        <span class="pointer-events-none absolute inset-y-0 left-3 flex items-center text-sm text-neutral-500">Rp</span>
+                        <MoneyInput v-model="form.amount" placeholder="0" class="!pl-10" />
+                    </div>
+                    <p v-if="form.errors.amount" class="mt-1 text-xs text-red-600">{{ form.errors.amount }}</p>
+                </div>
             </div>
-            <div>
-                <label class="label-base">Supplier <span class="text-red-500">*</span></label>
-                <SearchSelect v-model="form.supplier_id" :options="suppliers" placeholder="— cari nama / kode supplier —" :no-truncate="true" />
-                <p class="mt-1 text-[11px] text-neutral-400">Saat memo ditarik ke Registrasi Invoice Hutang, supplier invoice otomatis terisi dari sini.</p>
-                <p v-if="form.errors.supplier_id" class="mt-1 text-xs text-red-600">{{ form.errors.supplier_id }}</p>
+            <div class="grid gap-4 lg:grid-cols-2">
+                <div class="min-w-0">
+                    <label class="label-base">Supplier <span class="text-red-500">*</span></label>
+                    <SearchSelect v-model="form.supplier_id" :options="suppliers" placeholder="— cari nama / kode supplier —" :no-truncate="true" />
+                    <p class="mt-1 text-[11px] text-neutral-400">Saat memo ditarik ke Registrasi Invoice Hutang, supplier invoice otomatis terisi dari sini.</p>
+                    <p v-if="form.errors.supplier_id" class="mt-1 text-xs text-red-600">{{ form.errors.supplier_id }}</p>
+                </div>
+                <Input v-model="form.subject" label="Perihal" required :error="form.errors.subject" />
             </div>
-            <Input v-model="form.subject" label="Perihal" required :error="form.errors.subject" />
             <div>
                 <label class="label-base">Isi Memo <span class="text-red-500">*</span></label>
-                <textarea v-model="form.body" rows="6" class="input-base h-auto w-full py-2" placeholder="Uraikan kebutuhan, alasan, dan rincian biaya." />
+                <textarea v-model="form.body" rows="8" class="input-base h-auto w-full py-2" placeholder="Uraikan kebutuhan, alasan, dan rincian biaya." />
                 <p v-if="form.errors.body" class="mt-1 text-xs text-red-600">{{ form.errors.body }}</p>
-            </div>
-            <div>
-                <label class="label-base">Nominal <span class="text-red-500">*</span></label>
-                <div class="relative">
-                    <span class="pointer-events-none absolute inset-y-0 left-3 flex items-center text-sm text-neutral-500">Rp</span>
-                    <MoneyInput v-model="form.amount" placeholder="0" class="!pl-10" />
-                </div>
-                <p v-if="form.errors.amount" class="mt-1 text-xs text-red-600">{{ form.errors.amount }}</p>
             </div>
 
             <div class="flex gap-3 justify-end pt-4 border-t border-neutral-200 dark:border-neutral-800">

@@ -153,7 +153,49 @@ class ApprovalInboxController extends Controller
             'doc' => $this->inbox->detail($approval),
             'stages' => $this->inbox->stages($approval),
             'canAct' => $this->inbox->canAct($user, $approval),
+            // Memo Urgent: preview lembar memo + TTD tiap tahap yang sudah menyetujui.
+            'memo' => $this->lembarMemo($approval),
         ]);
+    }
+
+    /** Cetak lembar Memo Urgent (HTML siap-cetak) — TTD sesuai tahap approval yang sudah dilalui. */
+    public function cetak(Request $request, Approval $approval): \Illuminate\Http\Response
+    {
+        $user = $request->user();
+        abort_unless($user?->can('approvalinbox.view'), 403);
+        abort_unless($approval->document_type === \App\Domain\ApprovalInbox\Models\MemoInternal::DOCUMENT_TYPE, 404);
+        $approval->load('steps')->loadMorph('approvable', [\App\Domain\ApprovalInbox\Models\MemoInternal::class => ['supplier:id,name']]);
+        abort_unless($this->inbox->canView($user, $approval), 403);
+
+        return response(view('pdf.memo-urgent', [
+            'memo' => $this->lembarMemo($approval),
+            'stages' => $this->inbox->stages($approval),
+            'status' => $approval->status,
+            'dicetakOleh' => $user->name,
+        ])->render());
+    }
+
+    /** Isi lembar Memo Urgent untuk preview & cetak; null bila dokumennya bukan memo. */
+    private function lembarMemo(Approval $approval): ?array
+    {
+        $m = $approval->approvable;
+        if (! $m instanceof \App\Domain\ApprovalInbox\Models\MemoInternal) {
+            return null;
+        }
+
+        return [
+            'number' => $m->memo_number,
+            'date' => $m->memo_date?->toDateString(),
+            'department' => $m->department,
+            'pengaju' => \App\Models\User::query()->whereKey($m->created_by)->value('name'),
+            'supplier' => $m->supplier?->name,
+            'subject' => (string) $m->subject,
+            'body' => (string) $m->body,
+            'amount' => $m->amount !== null ? (float) $m->amount : null,
+            'perusahaan' => (string) (\Illuminate\Support\Facades\DB::table('parameters')->where('tenant_id', $m->tenant_id)
+                ->where('group', 'company')->where('key', 'name')->value('value') ?: 'PT MUP'),
+            'cetak_url' => route('approval-inbox.cetak', $approval->id),
+        ];
     }
 
     public function act(Request $request, Approval $approval, ActOnApproval $action): RedirectResponse
