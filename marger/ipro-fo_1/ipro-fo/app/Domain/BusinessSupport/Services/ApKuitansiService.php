@@ -110,7 +110,9 @@ final class ApKuitansiService
                 'journal_date' => $kui->kuitansi_date->toDateString(),
                 'source'       => 'ap',
                 'reference'    => 'KUI',
-                'description'  => 'Kuitansi Hutang — '.($kui->description ?? 'pembayaran supplier'),
+                // Keterangan kuitansi bisa > 255 (gabungan deskripsi banyak invoice); kolom
+                // deskripsi jurnal 255 → dipotong. Keterangan lengkap tetap di kuitansinya.
+                'description'  => mb_strimwidth('Kuitansi Hutang — '.($kui->description ?? 'pembayaran supplier'), 0, 255, '…'),
                 'created_by'   => $userId,
             ], $jl);
 

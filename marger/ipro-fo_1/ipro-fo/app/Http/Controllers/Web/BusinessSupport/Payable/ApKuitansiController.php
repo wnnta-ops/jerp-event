@@ -206,7 +206,7 @@ class ApKuitansiController extends Controller
             'kasir'               => ['nullable', 'string', 'max:150'],
             'manual_no'           => ['nullable', 'string', 'max:80'],
             'bg_number'           => ['nullable', 'string', 'max:80', 'required_if:alat_transaksi,giro'],
-            'description'         => ['nullable', 'string', 'max:255'],
+            'description'         => ['nullable', 'string', 'max:2000'],
             'lines'                  => ['required', 'array', 'min:1'],
             'lines.*.ap_invoice_id'  => ['required', 'integer', 'exists:bs_ap_invoices,id'],
             'lines.*.amount'         => ['required', 'numeric', 'min:0.01'],
