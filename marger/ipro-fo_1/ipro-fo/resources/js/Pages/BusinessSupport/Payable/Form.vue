@@ -305,7 +305,8 @@ const net = computed(() => form.pph_mode === 'borne' ? total.value : total.value
 const dueDate = computed(() => {
     const days = Number(form.term_days) || 0;
     const base = form.receive_date || form.invoice_date;
-    if (!base || days <= 0) return '';
+    // Memo Urgent: jatuh tempo hari itu juga (0 hari).
+    if (!base || days < 0 || (days === 0 && !form.memo_internal_id)) return '';
     return new Date(new Date(base).getTime() + days * 86400000).toISOString().slice(0, 10);
 });
 // Sinkron ke form.due_date agar nilai yang tersimpan = tampilan kotak Tgl. Jatuh Tempo.
@@ -897,6 +898,23 @@ watch(() => form.memo_internal_id, (id) => {
     const sup = memoDipilih.value?.supplier_id;
     if (memoSupplier && sup && !modeEdit && Number(form.supplier_id) !== sup) form.supplier_id = sup;
 });
+// Memo Urgent: jatuh tempo hari itu juga & Nilai Transaksi = nominal memo (masih bisa diubah).
+// Memo dilepas → jatuh tempo dikosongkan lagi; nilai hanya ikut dikosongkan bila belum diubah.
+let dppDariMemo: number | null = null;
+watch(memoDipilih, (m, lama) => {
+    if (modeEdit) return;
+    if (m) {
+        form.term_days = 0;
+        if (!Number(form.dpp) || Number(form.dpp) === dppDariMemo || (lama && Number(form.dpp) === lama.amount)) {
+            form.dpp = m.amount;
+            dppDariMemo = m.amount;
+        }
+    } else if (lama) {
+        if (Number(form.term_days) === 0) form.term_days = '';
+        if (dppDariMemo !== null && Number(form.dpp) === dppDariMemo) form.dpp = 0;
+        dppDariMemo = null;
+    }
+});
 // Supplier diganti ke supplier lain → memo yang suppliernya beda dilepas.
 watch(() => form.supplier_id, () => { if (memoDipilih.value && !memoCocok(memoDipilih.value)) form.memo_internal_id = null; });
 /** Ambil ulang daftar memo (mis. sesudah membuat / menyetujui memo di tab lain) tanpa mengganggu isian. */
@@ -907,7 +925,7 @@ function muatUlangMemo() {
 
 function canNext() {
     if (step.value === 1) return !!form[kolomPihak] && (props.jenis.kunci !== 'deposit' || rekeningLengkap.value);
-    if (step.value === 2) return !!form.category_id && !!form.supplier_invoice_no && Number(form.dpp) > 0 && !!form.description && Number(form.term_days) > 0;
+    if (step.value === 2) return !!form.category_id && !!form.supplier_invoice_no && Number(form.dpp) > 0 && !!form.description && (Number(form.term_days) > 0 || !!form.memo_internal_id);
     // Langkah Struktur: selain balance, cost center pada baris yang memerlukannya harus terisi.
     // Baris jurnal tanpa cost center tidak terhitung di Budget Control maupun laporan per cost
     // center — dan itu tidak muncul sebagai galat apa pun, hanya angka yang kurang. Karena itu
@@ -944,7 +962,7 @@ const pesan = computed(() => ({
     bank_account_name: pesanKolom(galatServer('bank_account_name'), kosong(form.bank_account_name)),
     category_id: pesanKolom(galatServer('category_id'), kosong(form.category_id)),
     supplier_invoice_no: pesanKolom(galatServer('supplier_invoice_no'), kosong(form.supplier_invoice_no)),
-    term_days: pesanKolom(galatServer('term_days'), ! (Number(form.term_days) > 0), 'Wajib diisi — tentukan jangka waktu jatuh tempo'),
+    term_days: pesanKolom(galatServer('term_days'), ! (Number(form.term_days) > 0 || !!form.memo_internal_id), 'Wajib diisi — tentukan jangka waktu jatuh tempo'),
     description: pesanKolom(galatServer('description'), kosong(form.description)),
     dpp: pesanKolom(galatServer('dpp'), ! (Number(form.dpp) > 0), 'Wajib diisi — lebih dari 0'),
     manual_no: pesanKolom(galatServer('manual_no'), false),
@@ -1121,13 +1139,15 @@ const cellArea = 'w-full rounded-md border border-neutral-300 bg-white px-2 py-1
                 <div><label class="mb-1 block text-xs font-medium text-neutral-500">{{ jenis.kunci === 'invoice' ? 'No. Invoice Supplier' : 'No. Bukti / Nota' }} *</label><input v-model="form.supplier_invoice_no" required :class="tandai(inputCls, !!pesan.supplier_invoice_no)" /><PesanWajib :pesan="pesan.supplier_invoice_no" /></div>
                 <div><label class="mb-1 block text-xs font-medium text-neutral-500">Tgl. Input *</label><input v-model="form.invoice_date" type="date" disabled title="Otomatis tanggal input, tidak bisa diubah" class="h-9 w-full cursor-not-allowed rounded-lg border border-neutral-300 bg-neutral-100 px-3 text-sm text-neutral-500 dark:border-neutral-700 dark:bg-neutral-800" /><p class="mt-1 text-[10px] text-neutral-400">Otomatis tanggal input — tidak bisa diubah.</p></div>
                 <div><label class="mb-1 block text-xs font-medium text-neutral-500">Tgl. Terima</label><input v-model="form.receive_date" type="date" :class="tandai(inputCls, !!pesan.receive_date)" /><PesanWajib :pesan="pesan.receive_date" /></div>
-                <div><label class="mb-1 block text-xs font-medium text-neutral-500">Jatuh Tempo (hari) <span class="text-danger-500">*</span></label><input v-model.number="form.term_days" type="number" min="1" required placeholder="mis. 30" :class="[tandai(inputCls, !!pesan.term_days),'text-right']" /><PesanWajib :pesan="pesan.term_days" /></div>
+                <div><label class="mb-1 block text-xs font-medium text-neutral-500">Jatuh Tempo (hari) <span class="text-danger-500">*</span></label><input v-model.number="form.term_days" type="number" :min="form.memo_internal_id ? 0 : 1" required placeholder="mis. 30" :disabled="!!form.memo_internal_id" :class="[tandai(inputCls, !!pesan.term_days),'text-right', form.memo_internal_id ? 'cursor-not-allowed bg-neutral-100 dark:bg-neutral-800' : '']" /><PesanWajib :pesan="pesan.term_days" />
+                    <p v-if="form.memo_internal_id" class="mt-1 text-[11px] text-primary-700 dark:text-primary-300">Memo Urgent — jatuh tempo hari itu juga.</p></div>
                 <div><label class="mb-1 block text-xs font-medium text-neutral-500">Tgl. Jatuh Tempo</label><input :value="dueDate" type="date" disabled title="Otomatis: Tgl. Terima + Jatuh Tempo (hari)" class="h-9 w-full cursor-not-allowed rounded-lg border border-neutral-300 bg-neutral-100 px-3 text-sm text-neutral-500 dark:border-neutral-700 dark:bg-neutral-800" /><p class="mt-1 text-[10px] text-neutral-400">Tgl. Terima + Jatuh Tempo (hari) — tidak bisa diubah.</p></div>
                 <div><label class="mb-1 block text-xs font-medium text-neutral-500">No. Manual</label><input v-model="form.manual_no" :class="tandai(inputCls, !!pesan.manual_no)" /><PesanWajib :pesan="pesan.manual_no" /></div>
                 <div class="md:col-span-3"><label class="mb-1 block text-xs font-medium text-neutral-500">Keterangan *</label><input v-model="form.description" required :class="tandai(inputCls, !!pesan.description)" /><PesanWajib :pesan="pesan.description" /></div>
             </div>
             <div class="card grid gap-4 p-5 md:grid-cols-3">
-                <div><label class="mb-1 block text-xs font-medium text-neutral-500">Nilai Transaksi *</label><div :class="pesan.dpp ? CINCIN_MERAH : ''"><MoneyInput v-model="form.dpp" placeholder="0" /></div><PesanWajib :pesan="pesan.dpp" /></div>
+                <div><label class="mb-1 block text-xs font-medium text-neutral-500">Nilai Transaksi *</label><div :class="pesan.dpp ? CINCIN_MERAH : ''"><MoneyInput v-model="form.dpp" placeholder="0" /></div><PesanWajib :pesan="pesan.dpp" />
+                    <p v-if="memoDipilih && !pesan.dpp" class="mt-1 text-[11px] text-primary-700 dark:text-primary-300">{{ Number(form.dpp) === memoDipilih.amount ? 'Terisi dari' : 'Nominal' }} Memo Urgent {{ memoDipilih.number }}: {{ fmtRp(memoDipilih.amount) }}</p></div>
                 <div><label class="mb-1 block text-xs font-medium text-neutral-500">Sifat PPN</label><div class="flex gap-2"><label class="flex flex-1 cursor-pointer items-center justify-center gap-1 rounded-lg border px-2 py-1.5 text-xs" :class="form.ppn_mode==='none' ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20' : 'border-neutral-300 dark:border-neutral-700'"><input v-model="form.ppn_mode" type="radio" value="none" class="sr-only" />Tanpa PPN</label><label class="flex flex-1 cursor-pointer items-center justify-center gap-1 rounded-lg border px-2 py-1.5 text-xs" :class="form.ppn_mode==='with' ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20' : 'border-neutral-300 dark:border-neutral-700'"><input v-model="form.ppn_mode" type="radio" value="with" class="sr-only" />Dengan PPN</label></div>
                     <div v-if="form.ppn_mode==='with'" class="mt-2 space-y-1.5">
                         <!-- #incl-ppn: Exclude = PPN di atas objek · Include = objek sudah termasuk PPN (÷ 1+tarif) -->

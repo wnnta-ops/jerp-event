@@ -279,6 +279,8 @@ try {
         $cek('alokasi tercatat dari invoice (Mar, 200 rb, catatan + no. invoice)', $alInv && $sama($alInv->months[3] ?? null, 200_000) && str_contains((string) $alInv->notes, (string) $inv->invoice_number), json_encode($alInv?->only(['months', 'notes'])));
         $cek('budget B Maret bertambah 200 rb, A berkurang', $sama($budgetB->fresh()->m3, 1_400_000) && $sama($budgetA->fresh()->m3, 900_000));
         $cek('memo tertaut ke invoice', (int) $inv?->memo_internal_id === $memo->id);
+        $cek('Memo Urgent → jatuh tempo hari itu juga (0 hari)', (int) $inv->term_days === 0 && $inv->due_date?->toDateString() === ($inv->receive_date ?? $inv->invoice_date)?->toDateString(),
+            $inv->term_days.' '.$inv->due_date?->toDateString());
         $cek('memo yang sudah dipakai tidak bisa ditarik invoice lain', ! $pilihan->boleh($memo->id));
         $cek('…tetapi tetap boleh untuk invoice itu sendiri (edit)', $pilihan->boleh($memo->id, $inv->id));
 

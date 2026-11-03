@@ -781,7 +781,8 @@ class ApInvoiceController extends Controller
             'invoice_date' => ['required', 'date'],
             'receive_date' => ['nullable', 'date'],
             'due_date' => ['nullable', 'date', 'after_or_equal:invoice_date'],
-            'term_days' => ['required', 'integer', 'min:1', 'max:3650'], // wajib: jatuh tempo (hari)
+            // wajib: jatuh tempo (hari). Dengan Memo Urgent = 0 (jatuh tempo hari itu juga, lihat di bawah).
+            'term_days' => ['required', 'integer', $request->filled('memo_internal_id') ? 'min:0' : 'min:1', 'max:3650'],
             'description' => ['required', 'string', 'max:255'],
             'transfer_detail' => ['nullable', 'string', 'max:255'],
             'kurs' => ['nullable', 'numeric', 'min:0'],
@@ -883,6 +884,11 @@ class ApInvoiceController extends Controller
             return back()->withInput()->with('error', 'Supplier invoice berbeda dengan supplier di Memo Urgent yang ditarik.');
         }
         $v['memo_internal_id'] = $memoId ? (int) $memoId : null;
+        // Memo Urgent: jatuh tempo hari itu juga (= Tgl. Terima / Tgl. Invoice).
+        if ($memoId) {
+            $v['term_days'] = 0;
+            $v['due_date'] = null;
+        }
         // Dari link berkas supplier: pakai nomor invoice yang sudah dipesan link itu.
         $linkBerkas = null;
         if ($lama === null && $jenis === 'invoice' && $request->integer('link_id')) {
