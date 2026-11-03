@@ -36,6 +36,8 @@ const form = useForm<any>({
     // sini hanya keadaan AWAL, dan tombol Simpan ikut dikunci sampai rekeningnya dipilih.
     kuitansi_date: today, supplier_id: '', cash_account_id: '',
     alat_transaksi: 'transfer', kasir: props.kasir, manual_no: '', bg_number: '', description: '', lines: [],
+    // Bayar Memo Urgent — harus ada sejak awal: useForm hanya mengirim kunci yang ada di nilai awalnya.
+    memo_internal_id: '', advance_account_id: '', memo_amount: null,
 });
 
 // #50: opsi kas/bank dikunci sesuai alat transaksi.
@@ -98,9 +100,6 @@ function submit() {
 }
 
 /* BAYAR MEMO URGENT — cari no. memo; supplier & nominal ikut memo, nominal boleh ≤ nominal memo (sekali bayar). */
-form.memo_internal_id = '';
-form.advance_account_id = '';
-form.memo_amount = null;
 const opsiMemo = computed(() => props.memoBayar.map((m) => ({ id: m.id, label: `${m.number} — ${m.subject} · ${m.supplier ?? ''} · ${fmtRp(m.amount)}` })));
 const memoDipilih = computed(() => props.memoBayar.find((m) => m.id === form.memo_internal_id) ?? null);
 watch(memoDipilih, (m) => {
@@ -149,6 +148,7 @@ const STATUS_KUI: Record<string, [string, string]> = {
             <div v-if="mode === 'memo'" class="card space-y-3 p-5">
                 <div class="flex items-center gap-2 font-semibold"><FileText class="h-4 w-4 text-primary-600" /> Memo Urgent</div>
                 <SearchSelect v-model="form.memo_internal_id" :options="opsiMemo" :placeholder="opsiMemo.length ? '— cari no. memo / perihal / supplier —' : '— belum ada memo yang bisa dibayar —'" :no-truncate="true" />
+                <p v-if="form.errors.memo_internal_id" class="text-xs text-danger-500">{{ form.errors.memo_internal_id }}</p>
                 <div v-if="memoDipilih" class="grid gap-2 rounded-lg bg-neutral-50 p-3 text-xs dark:bg-neutral-800/60 sm:grid-cols-4">
                     <div>Supplier<div class="font-medium">{{ memoDipilih.supplier }}</div></div>
                     <div>Tanggal / Dept<div class="font-medium">{{ memoDipilih.date }} · {{ memoDipilih.department || '—' }}</div></div>
@@ -160,11 +160,13 @@ const STATUS_KUI: Record<string, [string, string]> = {
                     <div>
                         <label class="mb-1 block text-xs font-medium text-neutral-500">Akun Uang Muka (Debit) *</label>
                         <SearchSelect v-model="form.advance_account_id" :options="akunUangMuka" placeholder="— pilih akun uang muka —" :no-truncate="true" />
+                        <p v-if="form.errors.advance_account_id" class="mt-1 text-xs text-danger-500">{{ form.errors.advance_account_id }}</p>
                     </div>
                     <div>
                         <label class="mb-1 block text-xs font-medium text-neutral-500">Nominal Dibayar *</label>
                         <MoneyInput v-model="form.memo_amount" :class="memoLebih ? '!border-danger-400' : ''" />
                         <p v-if="memoLebih" class="mt-1 text-xs text-danger-500">Melebihi nominal memo.</p>
+                        <p v-else-if="form.errors.amount" class="mt-1 text-xs text-danger-500">{{ form.errors.amount }}</p>
                     </div>
                 </div>
             </div>
@@ -227,7 +229,9 @@ const STATUS_KUI: Record<string, [string, string]> = {
                 <Button v-if="mode === 'memo'" type="submit" :disabled="!bisaBayarMemo"><template #icon-left><Save class="h-4 w-4" /></template>Bayar Memo &amp; Buat Jurnal</Button>
                 <Button v-else type="submit" :disabled="form.processing || (total <= 0 && totalUm <= 0) || adaKurangUm || !form.cash_account_id"><template #icon-left><Save class="h-4 w-4" /></template>Simpan &amp; Buat Jurnal</Button>
                 <Link :href="route('bs.ap.kuitansi.index')" class="rounded-lg border border-neutral-300 px-4 py-2 text-sm dark:border-neutral-700">Batal</Link>
-                <span v-if="!form.cash_account_id" class="self-center text-xs text-danger-500">Pilih Kas/Bank dulu.</span>
+                <!-- Galat validasi server yang tidak punya tempat di kolomnya — jangan sampai tombol terlihat "tidak terjadi apa-apa". -->
+                <span v-if="Object.keys(form.errors).length" class="self-center text-xs text-danger-500">{{ Object.values(form.errors)[0] }}</span>
+                <span v-else-if="!form.cash_account_id" class="self-center text-xs text-danger-500">Pilih Kas/Bank dulu.</span>
                 <span v-else-if="mode === 'memo' && !memoDipilih" class="self-center text-xs text-neutral-400">Pilih Memo Urgent dulu.</span>
                 <span v-else-if="mode === 'memo' && !form.advance_account_id" class="self-center text-xs text-neutral-400">Pilih akun uang muka.</span>
                 <span v-else-if="mode === 'invoice' && total <= 0 && totalUm <= 0" class="self-center text-xs text-neutral-400">Centang minimal satu invoice.</span>
