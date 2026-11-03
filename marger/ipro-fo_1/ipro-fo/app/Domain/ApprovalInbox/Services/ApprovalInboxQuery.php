@@ -190,6 +190,7 @@ final class ApprovalInboxQuery
             $out['fields'] = [
                 ['label' => 'Tanggal', 'value' => $m->memo_date?->toDateString()],
                 ['label' => 'Departemen', 'value' => $m->department],
+                ['label' => 'Supplier', 'value' => $m->supplier?->name ?? '—'],
                 ['label' => 'Nominal', 'value' => $rp($m->amount) ?? 'Tanpa nominal'],
             ];
             $out['body'] = $m->body;
@@ -252,6 +253,7 @@ final class ApprovalInboxQuery
                 BsApBerkasUpload::class => ['supplier:id,name', 'files.jenis:id,name'],
                 BsApInvoice::class => ['supplier:id,name'],
                 BsBudgetCorrection::class => ['account:id,code,name', 'costCenter:id,code,name', 'budget'],
+                MemoInternal::class => ['supplier:id,name'],
             ])]);
     }
 
@@ -261,7 +263,7 @@ final class ApprovalInboxQuery
         $m = $approval->approvable;
 
         return match (true) {
-            $m instanceof MemoInternal => ['number' => $m->memo_number, 'title' => $m->subject, 'sub' => $m->department,
+            $m instanceof MemoInternal => ['number' => $m->memo_number, 'title' => $m->subject, 'sub' => implode(' · ', array_filter([$m->department, $m->supplier?->name])),
                 'amount' => $m->amount !== null ? (float) $m->amount : null],
             $m instanceof BsApBerkasUpload => ['number' => $m->berkas_number, 'title' => $m->description, 'sub' => $m->supplier?->name ?? 'Upload Berkas',
                 'amount' => $m->amount !== null ? (float) $m->amount : null],

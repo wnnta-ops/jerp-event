@@ -60,7 +60,7 @@ const props = defineProps<{
     locations: Array<any>;
     units: Array<any>;
     /** Memo Urgent yang sudah disetujui Direktur & belum dipakai invoice lain (satu memo per invoice, opsional). */
-    memoUrgent?: Array<{ id: number; number: string; date: string | null; department: string | null; subject: string; amount: number; status: string; url: string | null }>;
+    memoUrgent?: Array<{ id: number; number: string; date: string | null; department: string | null; supplier_id: number | null; supplier: string | null; subject: string; amount: number; status: string; url: string | null }>;
     bisaBuatMemo?: boolean;
 }>();
 
@@ -783,22 +783,33 @@ const koreksiBelumCukup = computed(() => overBudget.value.filter((o) => {
     return !k || (Number(k.nilai) || 0) < o.kurang;
 }));
 
-/* MEMO URGENT — satu memo (sudah disetujui Direktur) boleh ditarik ke invoice ini. */
+/* MEMO URGENT — satu memo (sudah disetujui Direktur) boleh ditarik ke invoice ini.
+   Invoice Hutang: memo menyebut supplier-nya. Kalau supplier sudah dipilih, hanya memo supplier itu
+   (dan memo lama tanpa supplier) yang tampil; memilih memo mengisi supplier invoice dari memo. */
+const memoSupplier = props.jenis.kunci === 'invoice';
+const memoCocok = (m: { supplier_id: number | null }) => !memoSupplier || !m.supplier_id || !form.supplier_id || m.supplier_id === Number(form.supplier_id);
 const memoCari = ref('');
 const memoTampil = computed(() => {
     const q = memoCari.value.trim().toLowerCase();
-    const semua = props.memoUrgent ?? [];
-    return q ? semua.filter((m) => [m.number, m.subject, m.department].some((x) => String(x ?? '').toLowerCase().includes(q))) : semua;
+    const semua = (props.memoUrgent ?? []).filter(memoCocok);
+    return q ? semua.filter((m) => [m.number, m.subject, m.department, m.supplier].some((x) => String(x ?? '').toLowerCase().includes(q))) : semua;
 });
 const memoDipilih = computed(() => (props.memoUrgent ?? []).find((m) => m.id === form.memo_internal_id) ?? null);
 function pilihMemo(id: number) { form.memo_internal_id = form.memo_internal_id === id ? null : id; }
 /* Dropdown cari memo di langkah 1 — pilihannya sama dengan tabel di langkah Struktur. */
-const opsiMemo = computed(() => (props.memoUrgent ?? []).map((m) => ({
-    id: m.id, label: `${m.number} — ${m.subject} · ${fmtRp(m.amount)}${m.department ? ' · ' + m.department : ''}`,
+const opsiMemo = computed(() => (props.memoUrgent ?? []).filter(memoCocok).map((m) => ({
+    id: m.id, label: `${m.number} — ${m.subject} · ${fmtRp(m.amount)}${m.supplier ? ' · ' + m.supplier : ''}${m.department ? ' · ' + m.department : ''}`,
 })));
 const memuatMemo = ref(false);
 // Memo dipilih → barisnya dilipat lagi, ringkasannya tampil di judul baris.
-watch(() => form.memo_internal_id, (id) => { if (id && bukaLangkah1.value === 'memo') bukaLangkah1.value = null; });
+watch(() => form.memo_internal_id, (id) => {
+    if (id && bukaLangkah1.value === 'memo') bukaLangkah1.value = null;
+    // Supplier invoice ikut memo (registrasi baru saja — supplier invoice yang diedit terkunci).
+    const sup = memoDipilih.value?.supplier_id;
+    if (memoSupplier && sup && !modeEdit && Number(form.supplier_id) !== sup) form.supplier_id = sup;
+});
+// Supplier diganti ke supplier lain → memo yang suppliernya beda dilepas.
+watch(() => form.supplier_id, () => { if (memoDipilih.value && !memoCocok(memoDipilih.value)) form.memo_internal_id = null; });
 /** Ambil ulang daftar memo (mis. sesudah membuat / menyetujui memo di tab lain) tanpa mengganggu isian. */
 function muatUlangMemo() {
     memuatMemo.value = true;
@@ -959,7 +970,7 @@ const cellArea = 'w-full rounded-md border border-neutral-300 bg-white px-2 py-1
                             <a v-if="bisaBuatMemo" :href="route('approval-inbox.create')" target="_blank" rel="noopener" class="inline-flex items-center gap-1 font-medium text-primary-600 hover:underline"><Plus class="h-3.5 w-3.5" /> Buat Memo Urgent</a>
                         </div>
                         <SearchSelect v-model="form.memo_internal_id" :options="opsiMemo" :placeholder="opsiMemo.length ? '— cari no. memo / perihal —' : '— belum ada memo yang disetujui Direktur —'" :no-truncate="true" />
-                        <p v-if="memoDipilih" class="mt-1 text-[11px] text-neutral-500">{{ memoDipilih.date }} · {{ memoDipilih.department || '—' }} · <span class="text-amber-600">{{ memoDipilih.status }}</span>
+                        <p v-if="memoDipilih" class="mt-1 text-[11px] text-neutral-500">{{ memoDipilih.date }} · {{ memoDipilih.department || '—' }}<template v-if="memoDipilih.supplier"> · Supplier: <b>{{ memoDipilih.supplier }}</b> (terisi otomatis)</template> · <span class="text-amber-600">{{ memoDipilih.status }}</span>
                             <a v-if="memoDipilih.url" :href="memoDipilih.url" target="_blank" rel="noopener" class="ml-1 text-primary-600 hover:underline">lihat memo</a></p>
                         <p v-else class="mt-1 text-[11px] text-neutral-400">Memo baru dibuat di modul Memo Urgent (tab baru) dan muncul di sini setelah disetujui Direktur — klik "Muat ulang".</p>
                     </div>
@@ -1408,7 +1419,7 @@ const cellArea = 'w-full rounded-md border border-neutral-300 bg-white px-2 py-1
                 <div class="max-h-72 overflow-auto rounded-lg border border-neutral-200 dark:border-neutral-800">
                     <table class="w-full text-sm">
                         <thead class="sticky top-0 bg-neutral-50 text-left text-[11px] uppercase tracking-wide text-neutral-500 dark:bg-neutral-800">
-                            <tr><th class="w-8 px-2 py-2"></th><th class="px-2 py-2">No. Memo</th><th class="px-2 py-2">Tanggal</th><th class="px-2 py-2">Departemen</th><th class="px-2 py-2">Perihal</th><th class="px-2 py-2 text-right">Nominal</th><th class="px-2 py-2">Status</th></tr>
+                            <tr><th class="w-8 px-2 py-2"></th><th class="px-2 py-2">No. Memo</th><th class="px-2 py-2">Tanggal</th><th class="px-2 py-2">Departemen</th><th class="px-2 py-2">Supplier</th><th class="px-2 py-2">Perihal</th><th class="px-2 py-2 text-right">Nominal</th><th class="px-2 py-2">Status</th></tr>
                         </thead>
                         <tbody>
                             <tr v-for="m in memoTampil" :key="m.id" class="cursor-pointer border-t border-neutral-100 hover:bg-neutral-50 dark:border-neutral-800 dark:hover:bg-neutral-800/50" :class="form.memo_internal_id === m.id ? 'bg-primary-50/60 dark:bg-primary-900/20' : ''" @click="pilihMemo(m.id)">
@@ -1416,11 +1427,12 @@ const cellArea = 'w-full rounded-md border border-neutral-300 bg-white px-2 py-1
                                 <td class="whitespace-nowrap px-2 py-2 font-mono text-xs">{{ m.number }}</td>
                                 <td class="whitespace-nowrap px-2 py-2 text-xs">{{ m.date }}</td>
                                 <td class="px-2 py-2 text-xs">{{ m.department || '—' }}</td>
+                                <td class="px-2 py-2 text-xs">{{ m.supplier || '—' }}</td>
                                 <td class="px-2 py-2 text-xs">{{ m.subject }}</td>
                                 <td class="whitespace-nowrap px-2 py-2 text-right font-mono text-xs">{{ fmtRp(m.amount) }}</td>
                                 <td class="whitespace-nowrap px-2 py-2 text-xs"><span :class="m.status === 'Disetujui' ? 'text-success-700' : 'text-amber-600'">{{ m.status }}</span></td>
                             </tr>
-                            <tr v-if="!memoTampil.length"><td colspan="7" class="px-2 py-6 text-center text-xs text-neutral-400">{{ (memoUrgent ?? []).length ? 'Tidak ada memo yang cocok.' : 'Belum ada Memo Urgent yang disetujui Direktur.' }}</td></tr>
+                            <tr v-if="!memoTampil.length"><td colspan="8" class="px-2 py-6 text-center text-xs text-neutral-400">{{ (memoUrgent ?? []).length ? (memoSupplier ? 'Tidak ada memo untuk supplier ini.' : 'Tidak ada memo yang cocok.') : 'Belum ada Memo Urgent yang disetujui Direktur.' }}</td></tr>
                         </tbody>
                     </table>
                 </div>

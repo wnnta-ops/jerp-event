@@ -21,7 +21,7 @@ final class SubmitMemoInternal
     ) {}
 
     /**
-     * @param array{memo_date:string, department:string, subject:string, body:string, amount?:float|null} $data
+     * @param array{memo_date:string, department:string, supplier_id:int, subject:string, body:string, amount?:float|null} $data
      */
     public function execute(array $data): MemoInternal
     {
@@ -37,6 +37,7 @@ final class SubmitMemoInternal
                 'memo_number' => $memo->memo_number,
                 'subject' => $memo->subject,
                 'department' => $memo->department,
+                'supplier' => $memo->supplier?->name,
                 'amount' => $memo->amount !== null ? (float) $memo->amount : null,
             ]);
 

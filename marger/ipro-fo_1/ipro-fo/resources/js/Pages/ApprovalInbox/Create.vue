@@ -4,18 +4,22 @@ import { computed } from 'vue';
 import Button from '@/Components/UI/Button.vue';
 import Input from '@/Components/UI/Input.vue';
 import MoneyInput from '@/Components/UI/MoneyInput.vue';
+import SearchSelect from '@/Components/UI/SearchSelect.vue';
 
 const props = defineProps<{
     today: string;
     /** Departemen yang boleh dipilih: cost center user di Employee Center (utama dulu); SuperAdmin = semua. */
     departemen: Array<{ id: number; code: string; name: string }>;
     semuaDept: boolean;
+    /** Master supplier aktif (sama dengan pilihan Invoice Hutang) — memo nanti ditarik ke invoice supplier ini. */
+    suppliers: Array<{ id: number; code: string | null; name: string }>;
 }>();
 
 const form = useForm({
     memo_date: props.today,
     // Satu departemen → langsung terisi (dan terkunci); lebih dari satu → dipilih.
     cost_center_id: (props.departemen.length === 1 ? props.departemen[0].id : '') as number | '',
+    supplier_id: '' as number | '',
     subject: '',
     body: '',
     amount: null as number | null,
@@ -23,7 +27,7 @@ const form = useForm({
 
 const terkunci = computed(() => !props.semuaDept && props.departemen.length === 1);
 const tanpaDept = computed(() => props.departemen.length === 0);
-const bisaAjukan = computed(() => !tanpaDept.value && !!form.cost_center_id && !!form.subject.trim() && !!form.body.trim() && (Number(form.amount) || 0) > 0);
+const bisaAjukan = computed(() => !tanpaDept.value && !!form.cost_center_id && !!form.supplier_id && !!form.subject.trim() && !!form.body.trim() && (Number(form.amount) || 0) > 0);
 
 function submit() { form.post(route('approval-inbox.store')); }
 </script>
@@ -55,6 +59,12 @@ function submit() { form.post(route('approval-inbox.store')); }
                     <p class="mt-1 text-[11px] text-neutral-400">{{ semuaDept ? 'Super Admin — semua departemen.' : (terkunci ? 'Otomatis dari departemen Anda di Employee Center.' : 'Departemen Anda di Employee Center.') }}</p>
                     <p v-if="form.errors.cost_center_id" class="mt-1 text-xs text-red-600">{{ form.errors.cost_center_id }}</p>
                 </div>
+            </div>
+            <div>
+                <label class="label-base">Supplier <span class="text-red-500">*</span></label>
+                <SearchSelect v-model="form.supplier_id" :options="suppliers" placeholder="— cari nama / kode supplier —" :no-truncate="true" />
+                <p class="mt-1 text-[11px] text-neutral-400">Saat memo ditarik ke Registrasi Invoice Hutang, supplier invoice otomatis terisi dari sini.</p>
+                <p v-if="form.errors.supplier_id" class="mt-1 text-xs text-red-600">{{ form.errors.supplier_id }}</p>
             </div>
             <Input v-model="form.subject" label="Perihal" required :error="form.errors.subject" />
             <div>
