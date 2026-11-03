@@ -57,6 +57,10 @@ class ApprovalInboxController extends Controller
             'departemen' => $this->pilihanDepartemen($request->user()),
             'semuaDept' => $request->user()->hasRole('SuperAdmin'),
             'suppliers' => $this->pilihanSupplier()->get(['id', 'code', 'name']),
+            // Memo pengaju ini yang sudah dibayar di Kuitansi tapi invoice hutangnya belum masuk —
+            // tampil merah; lewat batas hari → tidak bisa mengajukan memo baru.
+            'belumInvoice' => ($bayar = app(\App\Domain\BusinessSupport\Services\PembayaranMemoUrgent::class))->outstanding($request->user()->id),
+            'batasHari' => $bayar->batasHari(),
         ]);
     }
 
@@ -97,6 +101,9 @@ class ApprovalInboxController extends Controller
     {
         abort_unless($request->user()?->can('approvalinbox.submit'), 403);
 
+        if (app(\App\Domain\BusinessSupport\Services\PembayaranMemoUrgent::class)->terblokir($request->user())) {
+            return back()->withInput()->with('error', 'Masih ada Memo Urgent Anda yang sudah dibayar tapi invoice hutangnya belum dibuat lewat batas hari — buat invoicenya dulu.');
+        }
         // Departemen dipilih dari daftar milik user (SuperAdmin: semua) — server menyimpan NAMANYA.
         $dept = collect($this->pilihanDepartemen($request->user()));
         if ($dept->isEmpty()) {

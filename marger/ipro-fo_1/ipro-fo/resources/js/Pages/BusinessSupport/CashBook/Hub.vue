@@ -51,6 +51,7 @@ const menu: Array<{ group: string; items: Array<{ label: string; route: string |
     { group: 'Transaksi Pengeluaran Bank', items: [
         { label: 'Registrasi Pengeluaran Kas & Bank', route: r('bs.cashbook.create', { type: 'out' }) },
         { label: 'Registrasi Pengeluaran Kas & Bank (AP)', route: r('bs.ap.kuitansi.create') },
+        { label: 'Memo Urgent Belum Invoice', route: r('bs.ap.kuitansi.memo-outstanding') },
         { label: 'Approval Pengeluaran Kas & Bank', route: r('bs.cashbook.approvals') },
     ]},
     { group: 'Transaksi Penerimaan Bank', items: [

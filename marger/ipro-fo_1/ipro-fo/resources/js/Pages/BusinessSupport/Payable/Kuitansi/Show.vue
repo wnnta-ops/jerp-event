@@ -1,11 +1,19 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import { router, Link } from '@inertiajs/vue3';
-import { ArrowLeft, ReceiptText, Ban, BookText, FileText, Banknote } from 'lucide-vue-next';
+import { ArrowLeft, ReceiptText, Ban, BookText, FileText, Banknote, Printer, PenLine } from 'lucide-vue-next';
 import Button from '@/Components/UI/Button.vue';
 import Badge from '@/Components/UI/Badge.vue';
 
-const props = defineProps<{ kuitansi: any; alat: Record<string, string> }>();
+const props = defineProps<{
+    kuitansi: any;
+    alat: Record<string, string>;
+    /** Kuitansi Memo Urgent: TTD Kasir / Direktur / MW / BA (digital, otomatis setelah disetujui). */
+    ttd: Array<{ title: string; name: string | null; signed: boolean; at: string | null }> | null;
+    /** Invoice hutang yang menyusul memo ini (null = belum dibuat). */
+    invoiceMemo: { id: number; invoice_number: string } | null;
+}>();
+const adaUm = computed(() => (props.kuitansi.lines ?? []).some((l: any) => Number(l.um_amount) > 0));
 function fmtRp(v: number) { return 'Rp ' + Number(v ?? 0).toLocaleString('id-ID'); }
 function fmtDate(d: string) { return d ? new Date(d).toLocaleDateString('id-ID', { day:'2-digit', month:'long', year:'numeric' }) : '—'; }
 // Nomer Invoice = nomor semua invoice yang dibayar (umumnya 1; bila >1 digabung).
@@ -32,7 +40,10 @@ function voidIt() { if (confirm('Void kuitansi ini? Pembayaran akan dibatalkan d
         <Link :href="route('bs.ap.kuitansi.index')" class="inline-flex items-center gap-2 text-sm text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200"><ArrowLeft class="h-4 w-4" /> Kuitansi Hutang</Link>
         <div class="flex items-center justify-between">
             <h1 class="flex items-center gap-2 font-mono text-xl font-bold"><ReceiptText class="h-6 w-6 text-danger-600" /> {{ kuitansi.kuitansi_number }}</h1>
-            <Badge :variant="stMeta(kuitansi.status).v">{{ stMeta(kuitansi.status).l }}</Badge>
+            <div class="flex items-center gap-2">
+                <a :href="route('bs.ap.kuitansi.print', kuitansi.id)" target="_blank" class="inline-flex items-center gap-1.5 rounded-lg border border-neutral-300 px-3 py-1.5 text-sm hover:bg-neutral-50 dark:border-neutral-700 dark:hover:bg-neutral-800"><Printer class="h-4 w-4" /> Cetak</a>
+                <Badge :variant="stMeta(kuitansi.status).v">{{ stMeta(kuitansi.status).l }}</Badge>
+            </div>
         </div>
 
         <div class="card grid gap-4 p-5 text-sm md:grid-cols-3">
@@ -44,6 +55,29 @@ function voidIt() { if (confirm('Void kuitansi ini? Pembayaran akan dibatalkan d
             <div v-if="kuitansi.bg_number"><div class="text-neutral-500">No. BG / Cek</div><div class="font-medium font-mono">{{ kuitansi.bg_number }}</div></div>
             <div><div class="text-neutral-500">No. Manual</div><div class="font-medium">{{ kuitansi.manual_no ?? '—' }}</div></div>
             <div class="md:col-span-3 flex items-center justify-between rounded-lg bg-neutral-50 px-4 py-3 dark:bg-neutral-800"><span class="font-semibold">Total Dibayar</span><span class="font-mono text-xl font-bold">{{ fmtRp(kuitansi.total) }}</span></div>
+        </div>
+
+        <!-- Kuitansi Memo Urgent (dibayar sebelum invoice) -->
+        <div v-if="kuitansi.memo" class="card space-y-3 p-5 text-sm">
+            <div class="flex items-center gap-2 font-semibold"><FileText class="h-4 w-4 text-primary-600" /> Pembayaran Memo Urgent</div>
+            <div class="grid gap-3 md:grid-cols-4">
+                <div><div class="text-neutral-500">No. Memo</div><div class="font-mono font-medium">{{ kuitansi.memo.memo_number }}</div></div>
+                <div class="md:col-span-2"><div class="text-neutral-500">Perihal</div><div class="font-medium">{{ kuitansi.memo.subject }}</div></div>
+                <div><div class="text-neutral-500">Nominal Memo</div><div class="font-mono font-medium">{{ fmtRp(kuitansi.memo.amount) }}</div></div>
+                <div class="md:col-span-2"><div class="text-neutral-500">Akun Uang Muka</div><div class="font-medium">{{ kuitansi.advance_account?.code }} {{ kuitansi.advance_account?.name }}</div></div>
+                <div class="md:col-span-2"><div class="text-neutral-500">Invoice Hutang Penyusul</div>
+                    <Link v-if="invoiceMemo" :href="route('bs.ap.show', invoiceMemo.id)" class="font-mono font-medium text-primary-600 hover:underline">{{ invoiceMemo.invoice_number }}</Link>
+                    <div v-else class="font-semibold text-red-600">Belum dibuat — wajib menyusul</div>
+                </div>
+            </div>
+            <div v-if="ttd" class="grid grid-cols-3 gap-2 border-t border-neutral-100 pt-3 dark:border-neutral-800">
+                <div v-for="t in ttd" :key="t.title" class="rounded-lg border border-neutral-200 p-2 text-center text-xs dark:border-neutral-800">
+                    <div class="font-semibold">{{ t.title }}</div>
+                    <PenLine class="mx-auto my-1 h-4 w-4" :class="t.signed ? 'text-success-600' : 'text-neutral-300'" />
+                    <div class="font-medium">{{ t.name ?? '—' }}</div>
+                    <div :class="t.signed ? 'text-neutral-500' : 'text-amber-600'">{{ t.signed ? t.at : 'Menunggu persetujuan' }}</div>
+                </div>
+            </div>
         </div>
 
         <!-- Referensi dokumen: Invoice (yang dibayar) · Pengajuan (kuitansi) · Pembayaran (jurnal JAP) -->
@@ -72,15 +106,16 @@ function voidIt() { if (confirm('Void kuitansi ini? Pembayaran akan dibatalkan d
             </div>
         </div>
 
-        <div class="card overflow-hidden">
+        <div v-if="!kuitansi.memo" class="card overflow-hidden">
             <div class="border-b border-neutral-200 px-4 py-3 font-semibold dark:border-neutral-800">Invoice yang Dibayar</div>
             <table class="w-full text-sm">
-                <thead class="bg-neutral-50 dark:bg-neutral-800"><tr class="text-left text-xs uppercase text-neutral-500"><th class="px-4 py-2.5">No. Invoice</th><th class="px-4 py-2.5">Keterangan</th><th class="px-4 py-2.5 text-right">Nominal</th></tr></thead>
+                <thead class="bg-neutral-50 dark:bg-neutral-800"><tr class="text-left text-xs uppercase text-neutral-500"><th class="px-4 py-2.5">No. Invoice</th><th class="px-4 py-2.5">Keterangan</th><th class="px-4 py-2.5 text-right">Nominal</th><th v-if="adaUm" class="px-4 py-2.5 text-right">Potong UM Memo</th></tr></thead>
                 <tbody class="divide-y divide-neutral-200 dark:divide-neutral-800">
                     <tr v-for="l in kuitansi.lines" :key="l.id">
                         <td class="px-4 py-2.5"><Link :href="route('bs.ap.show', l.ap_invoice_id)" class="font-mono text-xs text-primary-600 hover:underline">{{ l.invoice?.invoice_number }}</Link></td>
                         <td class="px-4 py-2.5 text-neutral-500">{{ l.invoice?.description }}</td>
                         <td class="px-4 py-2.5 text-right font-mono">{{ fmtRp(l.amount) }}</td>
+                        <td v-if="adaUm" class="px-4 py-2.5 text-right font-mono text-red-600">{{ Number(l.um_amount) > 0 ? '−' + fmtRp(l.um_amount) : '—' }}<div v-if="l.invoice?.memo" class="text-[11px] text-neutral-400">Memo {{ l.invoice.memo.memo_number }}</div></td>
                     </tr>
                 </tbody>
             </table>

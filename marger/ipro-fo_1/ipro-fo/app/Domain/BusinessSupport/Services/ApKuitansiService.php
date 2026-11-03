@@ -6,6 +6,7 @@ namespace App\Domain\BusinessSupport\Services;
 
 use App\Domain\BusinessSupport\Models\BsApInvoice;
 use App\Domain\BusinessSupport\Models\BsApKuitansi;
+use App\Domain\BusinessSupport\Models\BsApKuitansiLine;
 use App\Domain\BusinessSupport\Models\BsFiscalPeriod;
 use App\Domain\BusinessSupport\Models\BsJournal;
 use App\Exceptions\BusinessRuleException;
@@ -15,6 +16,8 @@ use Illuminate\Support\Facades\DB;
 /**
  * Kuitansi Hutang — voucher pembayaran hutang ke supplier (multi-invoice + void).
  *   Bayar : Dr Hutang Supplier (per invoice) / Cr Kas/Bank (total)
+ *           Invoice yang menarik Memo Urgent yang SUDAH DIBAYAR wajib memotong uang mukanya:
+ *           Dr Hutang / Cr Uang Muka (akun kuitansi memo) / Cr Kas/Bank (sisanya). `total` = kas saja.
  *   Void  : HAPUS jurnal pembayaran asli (bukan jurnal balik) + pulihkan saldo invoice & hapus payment.
  */
 final class ApKuitansiService
@@ -36,6 +39,8 @@ final class ApKuitansiService
         return DB::transaction(function () use ($data, $userId): BsApKuitansi {
             $valid = [];
             $total = 0.0;
+            $adaUm = false;
+            $memoBayar = app(PembayaranMemoUrgent::class);
             foreach ($data['lines'] as $l) {
                 $amount = round((float) $l['amount'], 2);
                 if ($amount <= 0) {
@@ -49,11 +54,23 @@ final class ApKuitansiService
                 if ($amount > (float) $inv->outstanding + 0.01) {
                     throw new BusinessRuleException("Nominal melebihi sisa hutang invoice {$inv->invoice_number}.", errorCode: 'KUI_OVER');
                 }
-                $valid[] = [(int) $inv->id, $amount];
-                $total += $amount;
+                // Uang muka Memo Urgent yang sudah dibayar WAJIB dipotong lebih dulu (cegah bayar dobel).
+                $um = 0.0;
+                $umKui = null;
+                if ($ada = $memoBayar->uangMukaInvoice($inv)) {
+                    [$umKui, $sisaUm] = $ada;
+                    $um = round(min($sisaUm, (float) $inv->outstanding), 2);
+                    if ($amount + 0.001 < $um) {
+                        throw new BusinessRuleException("Invoice {$inv->invoice_number}: uang muka Memo Urgent Rp ".number_format($um, 0, ',', '.')
+                            .' wajib dipotong — nilai pelunasan minimal sebesar itu.', errorCode: 'KUI_UM_WAJIB');
+                    }
+                    $adaUm = true;
+                }
+                $valid[] = [(int) $inv->id, $amount, $um, $umKui?->id];
+                $total += $amount - $um;
             }
             $total = round($total, 2);
-            if ($total <= 0) {
+            if ($total <= 0 && ! $adaUm) {
                 throw new BusinessRuleException('Tidak ada invoice yang dibayar.', errorCode: 'KUI_EMPTY');
             }
 
@@ -71,8 +88,8 @@ final class ApKuitansiService
                 'status'          => 'pending', // menunggu persetujuan — jurnal terbit saat disetujui
                 'created_by'      => $userId,
             ]);
-            foreach ($valid as [$invId, $amount]) {
-                $kui->lines()->create(['ap_invoice_id' => $invId, 'amount' => $amount, 'payment_id' => null]);
+            foreach ($valid as [$invId, $amount, $um, $umKuiId]) {
+                $kui->lines()->create(['ap_invoice_id' => $invId, 'amount' => $amount, 'um_amount' => $um, 'um_kuitansi_id' => $umKuiId, 'payment_id' => null]);
             }
 
             return $kui;
@@ -105,9 +122,20 @@ final class ApKuitansiService
                     throw new BusinessRuleException("Sisa hutang invoice {$inv->invoice_number} tidak cukup (mungkin sudah dibayar) — tolak & registrasi ulang.", errorCode: 'KUI_OVER');
                 }
                 $jl[]   = ['account_id' => $inv->payable_account_id, 'debit' => $amount, 'credit' => 0, 'description' => 'Pelunasan '.$inv->invoice_number];
+                if ((float) $line->um_amount > 0) {
+                    $umKui = BsApKuitansi::find($line->um_kuitansi_id);
+                    if (! $umKui || $umKui->status !== 'active'
+                        || app(PembayaranMemoUrgent::class)->sisaUangMuka($umKui, (int) $kui->id) + 0.001 < (float) $line->um_amount) {
+                        throw new BusinessRuleException("Uang muka Memo Urgent untuk invoice {$inv->invoice_number} sudah tidak tersedia — tolak & registrasi ulang.", errorCode: 'KUI_UM_HILANG');
+                    }
+                    $jl[] = ['account_id' => $umKui->advance_account_id, 'debit' => 0, 'credit' => (float) $line->um_amount,
+                        'description' => 'Potong uang muka '.$umKui->kuitansi_number.' — '.$inv->invoice_number];
+                }
                 $rows[] = [$line, $inv, $amount];
             }
-            $jl[] = ['account_id' => $kui->cash_account_id, 'debit' => 0, 'credit' => (float) $kui->total, 'description' => 'Pembayaran hutang supplier'];
+            if ((float) $kui->total > 0) {
+                $jl[] = ['account_id' => $kui->cash_account_id, 'debit' => 0, 'credit' => (float) $kui->total, 'description' => 'Pembayaran hutang supplier'];
+            }
 
             $journal = $this->journal->post([
                 'journal_date' => $kui->kuitansi_date->toDateString(),
@@ -158,6 +186,12 @@ final class ApKuitansiService
             if ($kui->status !== 'active') {
                 throw new BusinessRuleException('Kuitansi sudah void.', errorCode: 'KUI_VOID');
             }
+            // Kuitansi Memo Urgent yang uang mukanya sudah dipotong ke invoice: void kuitansi invoice itu dulu.
+            $dipotong = BsApKuitansiLine::query()->where('um_kuitansi_id', $kui->id)->where('um_amount', '>', 0)
+                ->whereIn('kuitansi_id', BsApKuitansi::query()->select('id')->whereIn('status', ['pending', 'active']))->exists();
+            if ($dipotong) {
+                throw new BusinessRuleException('Uang muka memo ini sudah dipotong ke kuitansi invoice — void/tolak kuitansi invoice itu dulu.', errorCode: 'KUI_UM_TERPAKAI');
+            }
             $kui->load('lines.invoice');
 
             // Pulihkan saldo invoice & hapus payment terkait.
@@ -192,8 +226,8 @@ final class ApKuitansiService
         });
     }
 
-    /** AP.KUI/MUP/yy/[bulan-romawi]/00001 */
-    private function nextNumber(string $date): string
+    /** AP.KUI/MUP/yy/[bulan-romawi]/00001 (juga dipakai kuitansi Memo Urgent). */
+    public function nextNumber(string $date): string
     {
         return app(\App\Domain\BusinessSupport\Services\BoNumberService::class)
             ->next('AP.KUI', \Illuminate\Support\Carbon::parse($date), [], fn () => $this->nextNumberLama($date));

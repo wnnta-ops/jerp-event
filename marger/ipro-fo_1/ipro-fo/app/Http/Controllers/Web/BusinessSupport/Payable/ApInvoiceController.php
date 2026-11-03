@@ -891,6 +891,8 @@ class ApInvoiceController extends Controller
                 }
                 $budgetGuard->assertWithinBudget($v['journal_lines'] ?? [], null, $v['invoice_date'], $lama?->journal_id, $tambahan);
                 $inv = $action->execute($v + ['jenis' => $jenis], $request->user()->id, $lama);
+                // Memo Urgent yang sudah dibayar di Kuitansi: invoice yang menyusul tidak boleh lebih kecil.
+                app(\App\Domain\BusinessSupport\Services\PembayaranMemoUrgent::class)->assertInvoiceCukup($inv->refresh());
                 foreach ($alokasiDibuat as $a) {
                     $a->forceFill(['source_type' => \App\Domain\BusinessSupport\Models\BsBudgetAllocation::SOURCE_INVOICE, 'source_id' => $inv->id,
                         'notes' => mb_substr(trim($a->notes.' · '.$inv->invoice_number, ' ·'), 0, 200)])->save();
@@ -911,7 +913,7 @@ class ApInvoiceController extends Controller
             };
             // Dari berkas / dengan koreksi budget: invoice + pengajuan approval satu transaksi — tidak
             // pernah ada invoice berkas tersimpan tanpa approval, atau over budget tanpa koreksinya.
-            [$inv, $po] = ($berkas !== null || $koreksi !== [] || $alokasi !== []) ? DB::transaction($simpanInvoice) : $simpanInvoice();
+            [$inv, $po] = ($berkas !== null || $koreksi !== [] || $alokasi !== [] || ! empty($v['memo_internal_id'])) ? DB::transaction($simpanInvoice) : $simpanInvoice();
         } catch (BusinessRuleException $e) {
             // Penolakan anggaran disalurkan ke DIALOG; selebihnya tetap toast. Lihat trait.
             return $this->balikDenganGalat($e);

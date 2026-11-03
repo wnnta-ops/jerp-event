@@ -753,6 +753,9 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::get('/business-support/payable-kuitansi/create', [BsApKuitansiController::class, 'create'])->name('bs.ap.kuitansi.create');
     Route::get('/business-support/payable-kuitansi/rincian-invoice/{invoice}', [BsApKuitansiController::class, 'rincianInvoice'])->name('bs.ap.kuitansi.rincian-invoice');
     Route::post('/business-support/payable-kuitansi', [BsApKuitansiController::class, 'store'])->name('bs.ap.kuitansi.store');
+    Route::post('/business-support/payable-kuitansi-memo', [BsApKuitansiController::class, 'storeMemo'])->name('bs.ap.kuitansi.store-memo'); // bayar Memo Urgent tanpa invoice
+    Route::get('/business-support/payable-kuitansi-memo-outstanding', [BsApKuitansiController::class, 'memoOutstanding'])->name('bs.ap.kuitansi.memo-outstanding');
+    Route::get('/business-support/payable-kuitansi/{kuitansi}/cetak', [BsApKuitansiController::class, 'print'])->name('bs.ap.kuitansi.print');
     Route::get('/business-support/payable-kuitansi/{kuitansi}', [BsApKuitansiController::class, 'show'])->name('bs.ap.kuitansi.show');
     Route::post('/business-support/payable-kuitansi/{kuitansi}/void', [BsApKuitansiController::class, 'void'])->name('bs.ap.kuitansi.void');
     Route::post('/business-support/payable-kuitansi/{kuitansi}/approve', [BsApKuitansiController::class, 'approve'])->name('bs.ap.kuitansi.approve'); // approval pengeluaran (AP)
