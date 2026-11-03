@@ -83,12 +83,14 @@ class NumeratorService implements NumeratorServiceInterface
             $next = (int) $row->last_seq + 1;
             $nomor = $this->render($row->format, $next, $now);
 
-            /* PENGAMAN NOMOR GANDA — nomor yang sudah dipakai dokumennya dilewati (penghitung
+            /* PENGAMAN NOMOR GANDA — nomor URUT yang sudah dipakai dokumennya dilewati (penghitung
                ikut naik). Mis. SPR: eProperty masih menerbitkan nomor sesudah cutoff, atau
-               "Seq terakhir" terisi terlalu kecil. Hanya untuk kode di NOMOR_TABEL. */
+               "Seq terakhir" terisi terlalu kecil. Dicek per nomor urut, bukan nomor utuh:
+               001690/SPR/JR/X/2026 sudah ada → 001690/SPR/JR/XI/2026 juga dilewati.
+               Hanya untuk kode di NOMOR_TABEL. */
             if (isset(self::NOMOR_TABEL[$code])) {
                 [$tabel, $kolom] = self::NOMOR_TABEL[$code];
-                for ($i = 0; $i < 5000 && DB::table($tabel)->where($kolom, $nomor)->exists(); $i++) {
+                for ($i = 0; $i < 5000 && self::nomorUrutDipakai($tabel, $kolom, $row->format, $next) !== null; $i++) {
                     $next++;
                     $nomor = $this->render($row->format, $next, $now);
                 }
@@ -169,7 +171,21 @@ class NumeratorService implements NumeratorServiceInterface
             return null;
         }
         [$tabel, $kolom] = self::NOMOR_TABEL[$code];
-        // Pecah format per token: literal di-quote, {seq…} ditangkap, token lain bebas.
+        $pola = self::polaRegex($format);
+
+        $max = 0;
+        foreach (DB::table($tabel)->whereNotNull($kolom)->pluck($kolom) as $nomor) {
+            if (preg_match($pola, (string) $nomor, $m)) {
+                $max = max($max, (int) $m['seq']);
+            }
+        }
+
+        return $max;
+    }
+
+    /** Pola regex sebuah format: literal di-quote (tanpa membedakan huruf), {seq…} ditangkap, token lain bebas. */
+    private static function polaRegex(string $format): string
+    {
         $pola = '';
         foreach (preg_split('/(\{[^}]+\})/', $format, -1, PREG_SPLIT_DELIM_CAPTURE | PREG_SPLIT_NO_EMPTY) as $bag) {
             if (preg_match('/^\{seq(:\d+)?\}$/', $bag)) {
@@ -180,17 +196,40 @@ class NumeratorService implements NumeratorServiceInterface
                 $pola .= preg_quote($bag, '#');
             }
         }
-        // Literal dibandingkan TANPA membedakan huruf.
-        $pola = '#^' . $pola . '$#i';
 
-        $max = 0;
-        foreach (DB::table($tabel)->whereNotNull($kolom)->pluck($kolom) as $nomor) {
-            if (preg_match($pola, (string) $nomor, $m)) {
-                $max = max($max, (int) $m['seq']);
+        return '#^' . $pola . '$#i';
+    }
+
+    /** Nomor urut di dalam sebuah nomor menurut format-nya; null bila nomornya tidak berpola format itu. */
+    public static function seqDari(string $format, string $nomor): ?int
+    {
+        return preg_match(self::polaRegex($format), $nomor, $m) ? (int) $m['seq'] : null;
+    }
+
+    /**
+     * Nomor dokumen lain yang sudah memakai nomor urut $seq (token tanggal diabaikan), atau null.
+     * Disaring dulu lewat LIKE, lalu dipastikan dengan pola format.
+     */
+    public static function nomorUrutDipakai(string $tabel, string $kolom, string $format, int $seq, ?string $kecuali = null, ?int $kecualiId = null): ?string
+    {
+        $like = '';
+        foreach (preg_split('/(\{[^}]+\})/', $format, -1, PREG_SPLIT_DELIM_CAPTURE | PREG_SPLIT_NO_EMPTY) as $bag) {
+            if (preg_match('/^\{seq:(\d+)\}$/', $bag, $m)) {
+                $like .= str_pad((string) $seq, (int) $m[1], '0', STR_PAD_LEFT);
+            } elseif ($bag === '{seq}') {
+                $like .= $seq;
+            } elseif (preg_match('/^\{[^}]+\}$/', $bag)) {
+                $like .= '%';
+            } else {
+                $like .= addcslashes($bag, '\\%_');
             }
         }
 
-        return $max;
+        return DB::table($tabel)->where($kolom, 'like', $like)
+            ->when($kecuali !== null, fn ($q) => $q->where($kolom, '!=', $kecuali))
+            ->when($kecualiId !== null, fn ($q) => $q->where('id', '!=', $kecualiId))
+            ->limit(50)->pluck($kolom)
+            ->first(fn ($nomor) => self::seqDari($format, (string) $nomor) === $seq);
     }
 
     /**
