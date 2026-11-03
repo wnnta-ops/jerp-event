@@ -22,16 +22,14 @@ use Illuminate\Support\Str;
  * Ubah/buat versi lewat editor visual (TemplateDokumenEditorController) — dokumen tampil per
  * halaman seperti hasil cetak. Formulir di resource ini tetap ada sebagai "Mode formulir".
  *
- * Versi yang sudah berlaku TIDAK bisa diubah/dihapus: kontrak dicetak dengan versi yang
- * berlaku pada tanggal kontraknya, jadi mengubahnya berarti mengubah surat yang sudah
- * ditandatangani customer. Perubahan dibuat sebagai versi baru dengan tanggal berlaku.
+ * Semua versi bisa diubah/dihapus (koreksi salah ketik, atau hapus versi terbaru untuk kembali
+ * ke versi sebelumnya). Hati-hati: kontrak dicetak dengan versi yang berlaku pada tanggal
+ * kontraknya, jadi mengubah/menghapus versi yang sudah berlaku ikut mengubah cetak ulang
+ * kontrak lama. Tanggal berlaku bebas, boleh mundur.
  */
 class TemplateDokumenResource extends Resource
 {
-    use MematuhiIzin {
-        canEdit as protected bolehUbah;
-        canDelete as protected bolehHapus;
-    }
+    use MematuhiIzin;
 
     protected static ?string $model = TemplateDokumen::class;
 
@@ -44,16 +42,6 @@ class TemplateDokumenResource extends Resource
     protected static ?string $modelLabel = 'Versi Template Dokumen';
 
     protected static ?string $pluralModelLabel = 'Template Dokumen SPR / SPRS';
-
-    public static function canEdit(mixed $record): bool
-    {
-        return ! $record->sudahBerlaku() && static::bolehUbah($record);
-    }
-
-    public static function canDelete(mixed $record): bool
-    {
-        return ! $record->sudahBerlaku() && static::bolehHapus($record);
-    }
 
     public static function form(Form $form): Form
     {
@@ -86,9 +74,8 @@ class TemplateDokumenResource extends Resource
                     ->afterStateUpdated($isiAwal)
                     ->helperText('Pilih cluster dulu. Versi khusus tahap dipakai lebih dulu dari versi cluster.'),
                 Forms\Components\DatePicker::make('berlaku_mulai')->label('Berlaku mulai')->required()
-                    ->native(false)->displayFormat('d M Y')->minDate(today())->default(today()->addDay())
-                    ->rule('after_or_equal:today')->validationMessages(['after_or_equal' => 'Tanggal berlaku tidak boleh mundur — versi baru hanya berlaku ke depan.'])
-                    ->helperText('Kontrak bertanggal sejak hari ini memakai teks versi ini. Setelah berlaku, versi terkunci.'),
+                    ->native(false)->displayFormat('d M Y')->default(today()->addDay())
+                    ->helperText('Kontrak bertanggal sejak tanggal ini memakai teks versi ini. Tanggal mundur / mengubah versi yang sudah berlaku ikut mengubah cetak ulang kontrak lama.'),
                 Forms\Components\Textarea::make('catatan')->label('Catatan perubahan')->rows(2)->columnSpanFull()
                     ->placeholder('mis. Pasal VIII denda diubah jadi 1,5‰ — memo direksi 12/10/2026'),
             ]),
@@ -177,7 +164,9 @@ class TemplateDokumenResource extends Resource
                     ->url(fn (TemplateDokumen $r) => route('fo.template-dokumen.editor', ['dari' => $r->id])),
                 // Ubah = editor visual; formulir lama tetap bisa dibuka dari editor ("Mode formulir").
                 Tables\Actions\EditAction::make()->url(fn (TemplateDokumen $r) => route('fo.template-dokumen.editor', $r)),
-                Tables\Actions\DeleteAction::make(),
+                Tables\Actions\DeleteAction::make()->modalDescription(fn (TemplateDokumen $r) => $r->sudahBerlaku()
+                    ? 'Versi ini sudah berlaku. Setelah dihapus, kontrak pada periodenya dicetak dengan versi sebelumnya (atau teks bawaan bila tidak ada). Lanjutkan?'
+                    : 'Versi terjadwal ini akan dihapus. Lanjutkan?'),
             ])
             ->defaultSort('berlaku_mulai', 'desc');
     }

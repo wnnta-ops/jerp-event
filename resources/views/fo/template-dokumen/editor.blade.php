@@ -78,7 +78,7 @@
             </select>
         </label>
         <label>Berlaku mulai
-            <input type="date" name="berlaku_mulai" value="{{ $editor['berlaku_mulai'] }}" min="{{ today()->toDateString() }}" required>
+            <input type="date" name="berlaku_mulai" value="{{ $editor['berlaku_mulai'] }}" required>
         </label>
         <label style="flex:1; min-width:220px;">Catatan
             <input type="text" name="catatan" value="{{ $editor['catatan'] }}" style="flex:1;" placeholder="mis. Pasal VIII denda jadi 1,5‰ — memo direksi 12/10/2026">

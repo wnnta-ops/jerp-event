@@ -43,7 +43,7 @@ class TemplateDokumen extends TenantAwareModel
         return $this->belongsTo(User::class, 'created_by');
     }
 
-    /** Sudah berlaku (tanggal berlaku ≤ hari ini) → terkunci dari perubahan & penghapusan. */
+    /** Sudah berlaku (tanggal berlaku ≤ hari ini). */
     public function sudahBerlaku(): bool
     {
         return $this->berlaku_mulai !== null && $this->berlaku_mulai->lte(today());

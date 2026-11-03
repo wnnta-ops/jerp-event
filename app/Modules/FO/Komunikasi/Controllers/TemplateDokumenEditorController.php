@@ -20,8 +20,8 @@ use Illuminate\Support\Facades\DB;
  * Editor visual Template Dokumen SPR/SPRS — dokumen dirender per halaman dengan template
  * cetak yang sama, teks aturannya diedit langsung di halaman. Data customer/unit = contoh.
  *
- * Tanpa {templateDokumen} = membuat versi baru; dengan = mengubah versi yang BELUM berlaku
- * (versi yang sudah berlaku terkunci, sama dengan formulir Filament).
+ * Tanpa {templateDokumen} = membuat versi baru; dengan = mengubah versi tersebut (termasuk
+ * yang sudah berlaku — untuk koreksi).
  */
 class TemplateDokumenEditorController extends Controller
 {
@@ -69,10 +69,10 @@ class TemplateDokumenEditorController extends Controller
             return $this->render($t, $meta, $isi, gulir: $request->integer('gulir'));
         }
 
-        // Versi baru hanya berlaku ke depan — dokumen yang sudah ditandatangani tak ikut berubah.
+        // Tanggal berlaku bebas (boleh mundur) — tanggung jawab pengguna.
         $tgl = rescue(fn () => \Illuminate\Support\Carbon::parse($meta['berlaku_mulai'])->startOfDay(), null, false);
-        if (! $tgl || $tgl->lt(today())) {
-            return $this->render($t, $meta, $isi, 'Tanggal berlaku wajib diisi dan tidak boleh mundur — versi baru hanya berlaku ke depan.', $request->integer('gulir'));
+        if (! $tgl) {
+            return $this->render($t, $meta, $isi, 'Tanggal berlaku wajib diisi.', $request->integer('gulir'));
         }
 
         DB::transaction(function () use (&$t, $meta, $isi, $tgl) {
@@ -97,7 +97,7 @@ class TemplateDokumenEditorController extends Controller
     private function izinkan(?TemplateDokumen $t): void
     {
         abort_unless($t ? TemplateDokumenResource::canEdit($t) : TemplateDokumenResource::canCreate(), 403,
-            $t ? 'Versi ini sudah berlaku (terkunci) atau Anda tidak berhak mengubahnya.' : 'Anda tidak berhak membuat versi Template Dokumen.');
+            $t ? 'Anda tidak berhak mengubah versi Template Dokumen.' :'Anda tidak berhak membuat versi Template Dokumen.');
     }
 
     /** Render dokumen cetak dalam mode editor dengan data contoh dari cluster/tahap yang sama. */
