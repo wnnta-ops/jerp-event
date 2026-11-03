@@ -54,7 +54,32 @@ class SipController extends Controller
                 'approved' => BsSip::where('status', 'approved')->count(),
                 'total' => (float) BsSip::whereIn('status', ['submitted', 'printed', 'approved'])->sum('total'),
             ],
+            'ttd' => BsSip::ttdNames(),
+            'signers' => BsSip::SIGNERS,
+            'canSetupTtd' => (bool) $request->user()?->can('bs.sip.ttd-setup'),
         ]);
+    }
+
+    /** Setup TTD SIP — nama di bawah tanda tangan cetak SIP; berlaku untuk cetakan berikutnya. */
+    public function simpanTtd(Request $request): RedirectResponse
+    {
+        abort_unless($request->user()?->can('bs.sip.ttd-setup'), 403);
+
+        $aturan = [];
+        foreach (array_keys(BsSip::TTD_DEFAULT) as $slot) {
+            $aturan["ttd.$slot"] = ['required', 'string', 'max:60'];
+        }
+        $v = $request->validate($aturan, [], ['ttd.*' => 'nama TTD']);
+
+        foreach ($v['ttd'] as $slot => $nama) {
+            DB::table('parameters')->updateOrInsert(
+                ['tenant_id' => tenant_id() ?? default_tenant_id(), 'group' => BsSip::TTD_GROUP, 'key' => $slot],
+                ['value' => trim($nama), 'data_type' => 'string', 'label' => 'TTD SIP — '.BsSip::SIGNERS[$slot],
+                    'updated_at' => now(), 'created_at' => now()],
+            );
+        }
+
+        return back()->with('success', 'Setup TTD SIP disimpan. Berlaku pada cetakan SIP berikutnya.');
     }
 
     /**
@@ -533,15 +558,17 @@ class SipController extends Controller
             };
         }
 
-        // Inisial penyetuju (Boy Arifin → BA). Slot belum disetujui: slot bernama orang memakai
-        // namanya sendiri, slot jabatan dibiarkan kosong.
-        $approvals = $sip->approvals ?? [];
-        $orang = fn (string $slot) => (string) ($approvals[$slot]['name']
-            ?? (in_array($slot, ['moch_winarto', 'boy_arifin'], true) ? BsSip::SIGNERS[$slot] : ''));
-        $inisial = fn (string $slot) => implode('', array_map(
-            fn ($w) => mb_strtoupper(mb_substr($w, 0, 1)),
-            preg_split('/\s+/', trim($orang($slot)), -1, PREG_SPLIT_NO_EMPTY),
-        ));
+        // Nama di bawah TTD dari Setup TTD SIP (bukan akun penyetuju). Inisial: nama satu kata
+        // (mis. "BA") dipakai apa adanya; nama lengkap diambil huruf depannya (Ainur Rofiq → AR).
+        $namaTtd = BsSip::ttdNames();
+        $orang = fn (string $slot) => $namaTtd[$slot] ?? '';
+        $inisial = function (string $slot) use ($orang): string {
+            $kata = preg_split('/\s+/', trim($orang($slot)), -1, PREG_SPLIT_NO_EMPTY);
+
+            return count($kata) === 1
+                ? mb_strtoupper($kata[0])
+                : implode('', array_map(fn ($w) => mb_strtoupper(mb_substr($w, 0, 1)), $kata));
+        };
 
         $departemen = $this->departemenPerBaris($sip);
 
@@ -586,23 +613,18 @@ class SipController extends Controller
                 .'<tbody>'.$rows.'<tr class="tot"><td colspan="3" class="nb"></td><td class="r b">'.$rp($sub).'</td><td colspan="3" class="nb"></td></tr></tbody></table>';
         }
 
-        // Tanda tangan per kelompok; slot yang sudah disetujui memakai barcode penyetujunya.
+        // Tanda tangan 7 kolom rata (format Finance): baris judul kelompok, ruang TTD, baris nama.
+        // Judul "Diketahui" di atas kolom tengahnya (GM), "Disetujui" di atas Moch Winarto.
+        // Slot yang sudah disetujui di sistem menampilkan barcode penyetujunya di ruang TTD.
         $barcodes = $this->approvalBarcodes($sip, 2);
-        $ttd = fn (string $slot) => '<div class="ttd"><div class="ttd-space">'.($barcodes[$slot] ?? '').'</div>'
-            .'<div class="ttd-name">'.$e($orang($slot)).'</div>'
-            .(isset($approvals[$slot]) ? '<div class="muted">'.$e(substr((string) $approvals[$slot]['approved_at'], 0, 10)).'</div>' : '')
-            .'</div>';
-        $kelompok = [
-            'Dibuat' => ['staf_finance'],
-            'Diperiksa' => ['spv_finance'],
-            'Diketahui' => ['manager_finance', 'gm', 'direksi'],
-            'Disetujui' => ['moch_winarto', 'boy_arifin'],
-        ];
-        $signs = '';
-        foreach ($kelompok as $judul => $slots) {
-            $signs .= '<div class="grp" style="flex:'.count($slots).'"><div>'.$judul.'</div><div class="row">'
-                .implode('', array_map($ttd, $slots)).'</div></div>';
+        $judul = ['staf_finance' => 'Dibuat', 'spv_finance' => 'Diperiksa', 'gm' => 'Diketahui', 'moch_winarto' => 'Disetujui'];
+        $baris = ['', '', ''];
+        foreach (array_keys(BsSip::SIGNERS) as $slot) {
+            $baris[0] .= '<td>'.($judul[$slot] ?? '').'</td>';
+            $baris[1] .= '<td class="ttd-space">'.($barcodes[$slot] ?? '').'</td>';
+            $baris[2] .= '<td>'.$e($orang($slot)).'</td>';
         }
+        $signs = '<table class="signs"><tr>'.implode('</tr><tr>', $baris).'</tr></table>';
 
         $kepada = implode(', ', array_filter([$inisial('boy_arifin'), $inisial('moch_winarto')]));
 
@@ -615,9 +637,8 @@ class SipController extends Controller
             .meta{border-bottom:2px solid #000;padding:8px 0 10px;margin-bottom:10px}
             .grid{border-collapse:collapse;width:100%;margin:4px 0 10px;font-size:9.5px}.grid th,.grid td{border:1px solid #000;padding:1px 4px}
             .grid th{text-align:center}.grid td.nb{border:none}.grid tr.tot td.r{border-bottom:2px solid #000}
-            .signs{display:flex;gap:16px;margin-top:18px;page-break-inside:avoid}.grp .row{display:flex;gap:10px}
-            .ttd{flex:1;min-width:90px}.ttd-space{height:56px;display:flex;align-items:flex-end}.ttd-space svg{max-height:54px;max-width:100%;width:auto;height:auto}
-            .ttd-name{min-height:12px}
+            .signs{width:100%;table-layout:fixed;border-collapse:collapse;margin-top:18px;page-break-inside:avoid}.signs td{padding:0 4px 0 0;vertical-align:bottom}
+            .signs td.ttd-space{height:56px}.ttd-space svg{max-height:54px;max-width:100%;width:auto;height:auto}
             @media print{.noprint{display:none}}</style></head><body>
             <div class="head"><img src="'.$logo.'" alt="MUP"><div class="t">STANDING INSTRUCTION PAYMENT<br>Periode : '.$e($periode).'<br>No : '.$e($nomor).$noDokumen.'</div></div>
             <div class="meta"><table class="info">
@@ -630,7 +651,7 @@ class SipController extends Controller
             '.$blok.'
             <div>*) Mohon untuk diberikan keterangan Y (Untuk payment yang diapprove untuk dibayar) atau N (Untuk payment yang ditunda/didiscuss lebih lanjut), jika ada.</div>
             <div>Demikian permohonan pembayaran ini kami sampaikan, Terima Kasih</div>
-            <div class="signs">'.$signs.'</div>
+            '.$signs.'
             <button class="noprint" onclick="window.print()" style="margin-top:12px;padding:6px 14px">Cetak</button>
             <script>window.onload=function(){setTimeout(function(){window.print()},300)}</script></body></html>';
     }

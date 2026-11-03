@@ -84,6 +84,37 @@ class BsSip extends Model
         'boy_arifin'      => 'Boy Arifin',
     ];
 
+    /**
+     * Nama di bawah TTD cetak SIP per slot — bawaan bila belum diatur di Setup TTD SIP
+     * (tabel parameters, grup TTD_GROUP). Teks bebas: nama lengkap atau inisial.
+     */
+    public const TTD_GROUP = 'sip_ttd';
+
+    public const TTD_DEFAULT = [
+        'staf_finance'    => 'Ainur Rofiq',
+        'spv_finance'     => 'Irfan Prasetya',
+        'manager_finance' => 'PS',
+        'gm'              => 'RZ',
+        'direksi'         => 'RS',
+        'moch_winarto'    => 'MW',
+        'boy_arifin'      => 'BA',
+    ];
+
+    /** @return array<string,string> slot → nama TTD (Setup TTD SIP, jatuh ke TTD_DEFAULT) */
+    public static function ttdNames(): array
+    {
+        $isi = \Illuminate\Support\Facades\DB::table('parameters')
+            ->where('tenant_id', tenant_id() ?? default_tenant_id())
+            ->where('group', self::TTD_GROUP)->pluck('value', 'key')->all();
+
+        $hasil = [];
+        foreach (self::TTD_DEFAULT as $slot => $bawaan) {
+            $hasil[$slot] = trim((string) ($isi[$slot] ?? '')) !== '' ? trim((string) $isi[$slot]) : $bawaan;
+        }
+
+        return $hasil;
+    }
+
     public function cashAccount(): BelongsTo { return $this->belongsTo(BsAccount::class, 'cash_account_id'); }
 
     public function lines(): HasMany { return $this->hasMany(BsSipLine::class, 'sip_id'); }

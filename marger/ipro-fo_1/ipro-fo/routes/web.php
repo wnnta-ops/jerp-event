@@ -1043,6 +1043,7 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     // ── SIP (Standing Instruction Payment) #98 ──
     Route::get('/business-support/sip', [BsSipController::class, 'index'])->name('bs.sip.index');
     Route::get('/business-support/sip/create', [BsSipController::class, 'create'])->name('bs.sip.create');
+    Route::put('/business-support/sip/setup-ttd', [BsSipController::class, 'simpanTtd'])->name('bs.sip.ttd');
     Route::post('/business-support/sip', [BsSipController::class, 'store'])->name('bs.sip.store');
     Route::get('/business-support/sip/{sip}/edit', [BsSipController::class, 'edit'])->name('bs.sip.edit');     // #124
     Route::put('/business-support/sip/{sip}', [BsSipController::class, 'update'])->name('bs.sip.update'); // #124
