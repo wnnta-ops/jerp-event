@@ -16,7 +16,7 @@ class BsApKuitansi extends Model
 
     protected $table = 'bs_ap_kuitansis';
     protected $fillable = [
-        'tenant_id', 'kuitansi_number', 'kuitansi_date', 'supplier_id', 'cash_account_id',
+        'tenant_id', 'kuitansi_number', 'kuitansi_date', 'supplier_id', 'memo_internal_id', 'cash_account_id', 'advance_account_id',
         'alat_transaksi', 'kasir', 'manual_no', 'bg_number', 'description', 'total', 'status',
         'journal_id', 'void_journal_id', 'voided_at', 'created_by', 'approved_by', 'approved_at',
     ];
@@ -29,4 +29,7 @@ class BsApKuitansi extends Model
     public function lines(): HasMany { return $this->hasMany(BsApKuitansiLine::class, 'kuitansi_id'); }
     public function journal(): BelongsTo { return $this->belongsTo(BsJournal::class, 'journal_id'); }
     public function voidJournal(): BelongsTo { return $this->belongsTo(BsJournal::class, 'void_journal_id'); }
+    /** Kuitansi pembayaran Memo Urgent (tanpa invoice) — uang keluar didebit ke akun uang muka. */
+    public function memo(): BelongsTo { return $this->belongsTo(\App\Domain\ApprovalInbox\Models\MemoInternal::class, 'memo_internal_id'); }
+    public function advanceAccount(): BelongsTo { return $this->belongsTo(BsAccount::class, 'advance_account_id'); }
 }

@@ -9,6 +9,7 @@ use App\Domain\BusinessSupport\Models\BsApInvoice;
 use App\Domain\BusinessSupport\Models\BsApKuitansi;
 use App\Domain\BusinessSupport\Models\BsSupplier;
 use App\Domain\BusinessSupport\Services\ApKuitansiService;
+use App\Domain\BusinessSupport\Services\PembayaranMemoUrgent;
 use App\Exceptions\BusinessRuleException;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\RedirectResponse;
@@ -120,12 +121,20 @@ class ApKuitansiController extends Controller
             ->whereIn('status', ['pending', 'in_review', 'rejected'])
             ->pluck('approvable_id');
 
+        $memoBayar = app(PembayaranMemoUrgent::class);
         $open = BsApInvoice::where('status', 'open')->whereNotIn('id', $tertahan)->with('supplier:id,code,name')->get()
-            ->map(fn ($i) => [
-                'id' => $i->id, 'invoice_number' => $i->invoice_number, 'supplier_id' => $i->supplier_id,
-                'description' => $i->description, 'outstanding' => (float) $i->outstanding,
-                'due_date' => $i->due_date?->format('Y-m-d'),
-            ])->filter(fn ($i) => $i['outstanding'] > 0.009)->values();
+            ->map(function ($i) use ($memoBayar) {
+                // Uang muka Memo Urgent yang sudah dibayar — wajib dipotong saat invoice ini dibayar.
+                $um = $i->memo_internal_id ? $memoBayar->uangMukaInvoice($i) : null;
+
+                return [
+                    'id' => $i->id, 'invoice_number' => $i->invoice_number, 'supplier_id' => $i->supplier_id,
+                    'description' => $i->description, 'outstanding' => (float) $i->outstanding,
+                    'due_date' => $i->due_date?->format('Y-m-d'),
+                    'um' => $um ? ['kuitansi_number' => $um[0]->kuitansi_number, 'memo_number' => $um[0]->memo?->memo_number,
+                        'nilai' => round(min($um[1], (float) $i->outstanding), 2)] : null,
+                ];
+            })->filter(fn ($i) => $i['outstanding'] > 0.009)->values();
 
         return Inertia::render('BusinessSupport/Payable/Kuitansi/Form', [
             // Hanya supplier yang PUNYA invoice open — pelunasan memang hanya untuk itu. Kode & jenisnya
@@ -142,6 +151,15 @@ class ApKuitansiController extends Controller
             // rekening sumbernya selalu dipilih sadar. Lihat komentar di Kuitansi/Form.vue.
             'alat'         => BsApKuitansi::ALAT,
             'kasir'        => $request->user()->name,
+            // Bayar Memo Urgent (tanpa invoice): memo yang sudah disetujui Direktur & belum dibayar.
+            'memoBayar'    => $memoBayar->bisaDibayar()->map(fn ($m) => [
+                'id' => $m->id, 'number' => $m->memo_number, 'subject' => (string) $m->subject, 'date' => $m->memo_date?->toDateString(),
+                'department' => $m->department, 'supplier' => $m->supplier?->name, 'amount' => (float) $m->amount,
+                'status' => \App\Domain\ApprovalInbox\Services\MemoUntukInvoice::status($m),
+                'url' => $m->approval_id ? route('approval-inbox.show', $m->approval_id) : null,
+            ])->values(),
+            'akunUangMuka' => $memoBayar->akunUangMuka(),
+            'mode'         => $request->input('mode') === 'memo' ? 'memo' : 'invoice',
         ]);
     }
 
@@ -222,14 +240,8 @@ class ApKuitansiController extends Controller
         // #50: kasir dikunci ke user login (tidak dipercaya dari client).
         $v['kasir'] = $request->user()->name;
 
-        // #50: rekening kas/bank harus sesuai alat transaksi.
-        $code  = (string) BsAccount::where('id', $v['cash_account_id'])->value('code');
-        $isKas = in_array($code, self::KAS_CODES, true);
-        if ($v['alat_transaksi'] === 'tunai' && ! $isKas) {
-            return back()->withInput()->with('error', 'Alat transaksi Tunai hanya boleh dari Kas Operasional atau Kas Kecil.');
-        }
-        if (in_array($v['alat_transaksi'], ['transfer', 'giro'], true) && $isKas) {
-            return back()->withInput()->with('error', 'Alat transaksi Transfer / Cek-Giro harus dari rekening bank (bukan Kas Operasional/Kas Kecil).');
+        if ($galat = $this->galatAlatKas($v)) {
+            return back()->withInput()->with('error', $galat);
         }
 
         try {
@@ -241,17 +253,102 @@ class ApKuitansiController extends Controller
         return redirect()->route('bs.ap.kuitansi.show', $kui)->with('success', "Kuitansi {$kui->kuitansi_number} dibuat — menunggu persetujuan di Approval Pengeluaran Kas & Bank.");
     }
 
+    /**
+     * Bayar Memo Urgent tanpa invoice — kuitansi langsung aktif (memo sudah disetujui Direktur),
+     * jurnal Dr Uang Muka / Cr Kas/Bank. Invoice hutangnya wajib menyusul.
+     */
+    public function storeMemo(Request $request, PembayaranMemoUrgent $svc): RedirectResponse
+    {
+        abort_unless($request->user()?->can('ap.kuitansi.store'), 403);
+
+        $v = $request->validate([
+            'memo_internal_id'   => ['required', 'integer', 'exists:memo_internals,id'],
+            'kuitansi_date'      => ['required', 'date'],
+            'cash_account_id'    => ['required', 'integer', 'exists:bs_accounts,id'],
+            'advance_account_id' => ['required', 'integer', 'exists:bs_accounts,id'],
+            'amount'             => ['required', 'numeric', 'min:1'],
+            'alat_transaksi'     => ['required', 'in:tunai,transfer,giro'],
+            'manual_no'          => ['nullable', 'string', 'max:80'],
+            'bg_number'          => ['nullable', 'string', 'max:80', 'required_if:alat_transaksi,giro'],
+            'description'        => ['nullable', 'string', 'max:255'],
+        ], [
+            'memo_internal_id.required' => 'Pilih Memo Urgent yang dibayar.',
+            'advance_account_id.required' => 'Pilih akun uang muka.',
+            'bg_number.required_if' => 'Nomor BG/Cek wajib diisi untuk alat transaksi Cek/Giro.',
+        ]);
+        $v['kasir'] = $request->user()->name;
+        if ($galat = $this->galatAlatKas($v)) {
+            return back()->withInput()->with('error', $galat);
+        }
+
+        try {
+            $kui = $svc->bayar($v, $request->user()->id);
+        } catch (BusinessRuleException $e) {
+            return back()->withInput()->with('error', $e->getMessage());
+        }
+
+        return redirect()->route('bs.ap.kuitansi.show', $kui)
+            ->with('success', "Kuitansi {$kui->kuitansi_number} untuk Memo Urgent tersimpan & jurnal terbentuk. Invoice hutangnya wajib menyusul.");
+    }
+
+    /** Daftar Memo Urgent yang sudah dibayar tapi invoice hutangnya belum masuk (umur hari + lewat batas). */
+    public function memoOutstanding(Request $request, PembayaranMemoUrgent $svc): Response
+    {
+        abort_unless($request->user()?->canAny(['ap.kuitansi.create', 'ap.kuitansi.show']), 403);
+
+        return Inertia::render('BusinessSupport/Payable/Kuitansi/MemoOutstanding', [
+            'rows' => $svc->outstanding(),
+            'batasHari' => $svc->batasHari(),
+        ]);
+    }
+
+    /** #50: rekening kas/bank harus sesuai alat transaksi. Null = cocok. */
+    private function galatAlatKas(array $v): ?string
+    {
+        $code  = (string) BsAccount::where('id', $v['cash_account_id'])->value('code');
+        $isKas = in_array($code, self::KAS_CODES, true);
+        if ($v['alat_transaksi'] === 'tunai' && ! $isKas) {
+            return 'Alat transaksi Tunai hanya boleh dari Kas Operasional atau Kas Kecil.';
+        }
+        if (in_array($v['alat_transaksi'], ['transfer', 'giro'], true) && $isKas) {
+            return 'Alat transaksi Transfer / Cek-Giro harus dari rekening bank (bukan Kas Operasional/Kas Kecil).';
+        }
+
+        return null;
+    }
+
+    /** Cetak kuitansi (HTML siap-cetak). Kuitansi Memo Urgent: no. memo + TTD Direktur & MW / BA otomatis. */
+    public function print(Request $request, BsApKuitansi $kuitansi, PembayaranMemoUrgent $svc): \Illuminate\Http\Response
+    {
+        abort_unless($request->user()?->can('ap.kuitansi.show'), 403);
+        $kuitansi->load(['supplier:id,code,name', 'cashAccount:id,code,name', 'advanceAccount:id,code,name', 'lines.invoice:id,invoice_number,description,memo_internal_id',
+            'lines.invoice.memo:id,memo_number', 'memo.approval.steps', 'journal:id,journal_number']);
+
+        return response(view('pdf.kuitansi-hutang', [
+            'k' => $kuitansi,
+            'alat' => BsApKuitansi::ALAT,
+            'ttd' => $kuitansi->memo_internal_id ? $svc->kotakTtd($kuitansi) : null,
+            'dicetakOleh' => $request->user()?->name,
+        ])->render());
+    }
+
     public function show(Request $request, BsApKuitansi $kuitansi): Response
     {
         abort_unless($request->user()?->can('ap.kuitansi.show'), 403);
 
         return Inertia::render('BusinessSupport/Payable/Kuitansi/Show', [
             'kuitansi' => $kuitansi->load([
-                'supplier:id,code,name', 'cashAccount:id,code,name', 'lines.invoice:id,invoice_number,description',
+                'supplier:id,code,name', 'cashAccount:id,code,name', 'lines.invoice:id,invoice_number,description,memo_internal_id',
                 'journal:id,journal_number', 'journal.lines:id,journal_id,account_id,debit,credit,description', 'journal.lines.account:id,code,name',
-                'voidJournal:id,journal_number',
+                'voidJournal:id,journal_number', 'advanceAccount:id,code,name', 'lines.invoice.memo:id,memo_number',
+                'memo:id,memo_number,subject,amount,approval_id', 'memo.approval.steps',
             ]),
             'alat'     => BsApKuitansi::ALAT,
+            // Kuitansi Memo Urgent: TTD Kasir / Direktur / MW / BA (digital, otomatis setelah disetujui) + invoice penyusulnya.
+            'ttd'      => $kuitansi->memo_internal_id ? collect(app(PembayaranMemoUrgent::class)->kotakTtd($kuitansi))->map(fn ($t) => array_diff_key($t, ['img' => 1]))->all() : null,
+            'invoiceMemo' => $kuitansi->memo_internal_id
+                ? BsApInvoice::where('memo_internal_id', $kuitansi->memo_internal_id)->where('status', '!=', BsApInvoice::STATUS_BATAL)->first(['id', 'invoice_number'])
+                : null,
         ]);
     }
 

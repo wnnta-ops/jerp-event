@@ -479,6 +479,8 @@ export function navGroups(foUrl: string): NavGroup[] {
             { label: 'Transaksi Pengeluaran Bank', icon: Banknote, permission: ['ap.kuitansi.create', 'bs.sip.*', 'cashbook.transaction.approve', 'cashbook.transaction.create'], children: [
                 { label: 'Registrasi Pengeluaran Kas & Bank', href: 'bs.cashbook.create', params: { type: 'out' } , permission: ['cashbook.transaction.create'] , tampil: 'menu.bs.cashbook.create.out' },
                 { label: 'Registrasi Pengeluaran Kas & Bank (AP)', href: 'bs.ap.kuitansi.create' , permission: ['ap.kuitansi.create'] , tampil: 'menu.bs.ap.kuitansi.create' },
+                // Memo Urgent dibayar tanpa invoice — tampil bagi yang bisa membuat Kuitansi AP (izin tampil yang sama).
+                { label: 'Memo Urgent Belum Invoice', href: 'bs.ap.kuitansi.memo-outstanding' , permission: ['ap.kuitansi.create'] , tampil: 'menu.bs.ap.kuitansi.create' },
                 { label: 'Approval Pengeluaran Kas & Bank', href: 'bs.cashbook.approvals' , permission: ['cashbook.transaction.approve'] , tampil: 'menu.bs.cashbook.approvals' },
                 { label: 'SIP (Instruksi Bayar)', href: 'bs.sip.index', permission: ['bs.sip.*'] , tampil: 'menu.bs.sip.index' },
             ]},

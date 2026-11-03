@@ -13,7 +13,12 @@ const props = defineProps<{
     semuaDept: boolean;
     /** Master supplier aktif (sama dengan pilihan Invoice Hutang) — memo nanti ditarik ke invoice supplier ini. */
     suppliers: Array<{ id: number; code: string | null; name: string }>;
+    /** Memo saya yang sudah dibayar di Kuitansi tapi invoice hutangnya belum dibuat. */
+    belumInvoice: Array<{ memo_id: number; memo_number: string; subject: string; supplier: string | null; kuitansi_number: string; tanggal_bayar: string; nilai: number; umur: number; lewat: boolean; approval_url: string | null }>;
+    batasHari: number;
 }>();
+const terblokir = computed(() => props.belumInvoice.some((m) => m.lewat));
+const fmtRp = (v: number) => 'Rp ' + Math.round(Number(v ?? 0)).toLocaleString('id-ID');
 
 const form = useForm({
     memo_date: props.today,
@@ -27,7 +32,7 @@ const form = useForm({
 
 const terkunci = computed(() => !props.semuaDept && props.departemen.length === 1);
 const tanpaDept = computed(() => props.departemen.length === 0);
-const bisaAjukan = computed(() => !tanpaDept.value && !!form.cost_center_id && !!form.supplier_id && !!form.subject.trim() && !!form.body.trim() && (Number(form.amount) || 0) > 0);
+const bisaAjukan = computed(() => !terblokir.value && !tanpaDept.value && !!form.cost_center_id && !!form.supplier_id && !!form.subject.trim() && !!form.body.trim() && (Number(form.amount) || 0) > 0);
 
 function submit() { form.post(route('approval-inbox.store')); }
 </script>
@@ -39,6 +44,21 @@ function submit() { form.post(route('approval-inbox.store')); }
         <div>
             <h1 class="text-2xl font-bold">Memo Urgent</h1>
             <p class="text-sm text-neutral-500">Begitu diajukan, memo langsung masuk Approval Inbox: Accounting → Finance → GM → Direktur → MW / BA.</p>
+        </div>
+
+        <!-- Memo yang sudah dibayar tapi invoice hutangnya belum dibuat: wajib dibuat; lewat batas hari → diblok. -->
+        <div v-if="belumInvoice.length" class="rounded-lg border border-red-300 bg-red-50 p-4 text-sm text-red-800 dark:border-red-800 dark:bg-red-950/40 dark:text-red-200">
+            <p class="font-semibold">
+                {{ terblokir ? 'Tidak bisa mengajukan memo baru' : 'Peringatan' }} — {{ belumInvoice.length }} Memo Urgent Anda sudah dibayar tapi invoice hutangnya belum dibuat.
+            </p>
+            <p class="mt-0.5 text-xs">Invoice hutang wajib dibuat (menarik memo tersebut) paling lambat {{ batasHari }} hari setelah dibayar. {{ terblokir ? 'Ada yang sudah lewat batas — buat invoicenya dulu.' : 'Lewat batas, Anda tidak bisa mengajukan memo baru.' }}</p>
+            <ul class="mt-2 space-y-1 text-xs">
+                <li v-for="m in belumInvoice" :key="m.memo_id" class="flex flex-wrap items-center gap-x-2">
+                    <a v-if="m.approval_url" :href="m.approval_url" class="font-mono font-semibold underline">{{ m.memo_number }}</a><span v-else class="font-mono font-semibold">{{ m.memo_number }}</span>
+                    <span>{{ m.subject }}<template v-if="m.supplier"> · {{ m.supplier }}</template> · {{ fmtRp(m.nilai) }}</span>
+                    <span :class="m.lewat ? 'font-bold' : ''">dibayar {{ m.tanggal_bayar }} ({{ m.umur }} hari{{ m.lewat ? ' — lewat batas' : '' }})</span>
+                </li>
+            </ul>
         </div>
 
         <form @submit.prevent="submit" class="card p-6 space-y-4">
