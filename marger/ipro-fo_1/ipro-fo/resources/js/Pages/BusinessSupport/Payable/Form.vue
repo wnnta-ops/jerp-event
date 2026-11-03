@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue';
 import { useForm, Link, router } from '@inertiajs/vue3';
-import { ArrowLeft, ArrowRight, Save, HandCoins, Plus, Trash2, Check, Search, Copy, ClipboardPaste, Files, Pencil, FileText, ChevronDown, Building2 } from 'lucide-vue-next';
+import { ArrowLeft, ArrowRight, Save, HandCoins, Plus, Trash2, Check, Search, Copy, ClipboardPaste, Files, Pencil, FileText, ChevronDown, Building2, Upload, Link2, RefreshCw } from 'lucide-vue-next';
 import Button from '@/Components/UI/Button.vue';
 import MoneyInput from '@/Components/UI/MoneyInput.vue';
 import SearchSelect from '@/Components/UI/SearchSelect.vue';
@@ -62,6 +62,10 @@ const props = defineProps<{
     /** Memo Urgent yang sudah disetujui Direktur & belum dipakai invoice lain (satu memo per invoice, opsional). */
     memoUrgent?: Array<{ id: number; number: string; date: string | null; department: string | null; supplier_id: number | null; supplier: string | null; subject: string; amount: number; status: string; url: string | null }>;
     bisaBuatMemo?: boolean;
+    /** Link berkas supplier yang sedang dilanjutkan (?link=) — nomor invoice sudah dipesan. */
+    linkBerkas?: { id: number; url: string; invoice_number: string; status: string; filled_at: string | null; berkas_upload_id: number | null } | null;
+    /** Jenis dokumen untuk Upload File di Detil Tagihan. */
+    jenisBerkas?: Array<{ id: number; name: string; is_mandatory: boolean }>;
 }>();
 
 const steps = ['Pilih ' + props.jenis.penerima, 'Input Transaksi', 'Detil Tagihan', 'Struktur', 'Selesai'];
@@ -92,6 +96,8 @@ const form = useForm<any>({
     // Dari Upload Berkas: isian awal diambil dari berkas; berkas_upload_id membuat server
     // mengajukan invoice ini ke approval begitu tersimpan.
     berkas_upload_id: props.dariBerkas?.id ?? '',
+    // Link berkas supplier (Generate Link) — invoice memakai nomor yang dipesan link ini.
+    link_id: '' as number | '',
     ...(props.dariBerkas ? {
         supplier_id: props.dariBerkas.supplier_id ?? '',
         supplier_invoice_no: props.dariBerkas.supplier_invoice_no ?? '',
@@ -610,6 +616,82 @@ const supplierBeda = computed(() => !!berkasDipilih.value?.supplier_id && !!form
 /** Invoice baru bisa disimpan bila berkasnya sudah di-TTD Dept Head. */
 const berkasBelumSiap = computed(() => wajibBerkas && !!berkasDipilih.value && !berkasDipilih.value.bisa_diinvoice);
 
+/* Dua jalan berkas di Detil Tagihan:
+   - Upload File  : unggah di sini → jadi Upload Berkas Anda + langsung diajukan ke TTD Dept Head.
+   - Generate Link: link tanpa login untuk supplier. Nomor invoice dipesan & isian wizard disimpan di
+     link; tidak bisa lanjut sampai supplier mengunggah. Begitu masuk: notifikasi + titik di daftar. */
+type LinkInfo = { id: number; url: string; invoice_number: string; status: string; filled_at: string | null; berkas_upload_id: number | null; berkas_number?: string | null };
+const linkAktif = ref<LinkInfo | null>(props.linkBerkas ?? null);
+const modeBerkas = ref<'upload' | 'link'>(linkAktif.value || form.link_id ? 'link' : 'upload');
+const pesanLink = ref('');
+const galatLink = ref('');
+const memprosesLink = ref(false);
+async function buatLink() {
+    memprosesLink.value = true; galatLink.value = '';
+    try {
+        const { data } = await (window as any).axios.post(route('bs.ap.berkas-link.store'), { data: form.data(), step: step.value });
+        linkAktif.value = data;
+        form.link_id = data.id;
+        form.berkas_upload_id = '';
+        pesanLink.value = `Link dibuat — nomor invoice ${data.invoice_number} dipesan dan isian ini tersimpan sebagai draft.`;
+    } catch (e: any) {
+        galatLink.value = e?.response?.data?.message ?? 'Link gagal dibuat — coba lagi.';
+    } finally { memprosesLink.value = false; }
+}
+async function cekLink() {
+    if (!linkAktif.value) return;
+    memprosesLink.value = true; galatLink.value = '';
+    try {
+        const { data } = await (window as any).axios.get(route('bs.ap.berkas-link.status', linkAktif.value.id));
+        const baruTerisi = data.status === 'terisi' && linkAktif.value.status !== 'terisi';
+        linkAktif.value = data;
+        if (data.berkas_upload_id && (baruTerisi || !berkasDipilih.value)) {
+            router.reload({ only: ['berkasSaya'], onSuccess: () => { form.berkas_upload_id = data.berkas_upload_id; } });
+        }
+    } catch { galatLink.value = 'Status link gagal dimuat.'; } finally { memprosesLink.value = false; }
+}
+async function batalLink() {
+    if (!linkAktif.value || !confirm(`Batalkan link ini? Nomor ${linkAktif.value.invoice_number} hangus dan supplier tidak bisa mengunggah lagi.`)) return;
+    await (window as any).axios.post(route('bs.ap.berkas-link.batal', linkAktif.value.id));
+    linkAktif.value = null; form.link_id = ''; form.berkas_upload_id = ''; pesanLink.value = '';
+}
+const tersalin = ref(false);
+function salinLink() {
+    if (!linkAktif.value) return;
+    navigator.clipboard?.writeText(linkAktif.value.url);
+    tersalin.value = true; setTimeout(() => { tersalin.value = false; }, 1500);
+}
+// Selagi menunggu supplier & berada di Detil Tagihan, status dicek berkala.
+let pantau: ReturnType<typeof setInterval> | null = null;
+watch([step, () => linkAktif.value?.status], ([s, st]) => {
+    if (pantau) { clearInterval(pantau); pantau = null; }
+    if (s === 3 && st === 'menunggu') pantau = setInterval(cekLink, 15000);
+}, { immediate: true });
+onBeforeUnmount(() => { if (pantau) clearInterval(pantau); });
+// Dibuka dari link yang sudah terisi → berkasnya langsung terpilih.
+if (linkAktif.value?.berkas_upload_id && !form.berkas_upload_id) form.berkas_upload_id = linkAktif.value.berkas_upload_id;
+
+const unggahan = ref<Array<{ file: File | null; berkas_id: number | '' }>>(
+    (props.jenisBerkas ?? []).filter((j) => j.is_mandatory).map((j) => ({ file: null, berkas_id: j.id as number | '' })));
+if (!unggahan.value.length) unggahan.value.push({ file: null, berkas_id: '' });
+const mengunggah = ref(false);
+const galatUnggah = ref('');
+const bisaUnggah = computed(() => unggahan.value.length > 0 && unggahan.value.every((u) => u.file && u.berkas_id) && !mengunggah.value);
+async function unggahBerkas() {
+    mengunggah.value = true; galatUnggah.value = '';
+    const fd = new FormData();
+    fd.append('data', JSON.stringify(form.data()));
+    unggahan.value.forEach((u, i) => { fd.append(`files[${i}][file]`, u.file as File); fd.append(`files[${i}][berkas_id]`, String(u.berkas_id)); });
+    try {
+        const { data } = await (window as any).axios.post(route('bs.ap.berkas-langsung.upload'), fd);
+        router.reload({ only: ['berkasSaya'], onSuccess: () => { form.berkas_upload_id = data.id; } });
+        unggahan.value = unggahan.value.map((u) => ({ ...u, file: null }));
+    } catch (e: any) {
+        const r = e?.response?.data;
+        galatUnggah.value = r?.message && !r?.errors ? r.message : (r?.errors ? String(Object.values(r.errors)[0]) : 'Upload gagal — coba lagi.');
+    } finally { mengunggah.value = false; }
+}
+
 // "Lihat semua": semua file berkas → satu PDF (sama dengan halaman Upload Berkas).
 const semua = ref<{ url: string; nama: string } | null>(null);
 const menggabung = ref(false);
@@ -640,6 +722,13 @@ const dialogEdit = ref(false);
 const menyimpanDraft = ref(false);
 function simpanDraft(editBerkas: number | null = null) {
     menyimpanDraft.value = true;
+    // Menunggu supplier: draft disimpan di link-nya sendiri (satu user bisa menunggu beberapa link).
+    if (form.link_id && editBerkas === null) {
+        (window as any).axios.put(route('bs.ap.berkas-link.draft', form.link_id), { data: form.data(), step: step.value })
+            .then(() => { pesanLink.value = 'Draft tersimpan di link ' + (linkAktif.value?.invoice_number ?? '') + '.'; })
+            .finally(() => { menyimpanDraft.value = false; });
+        return;
+    }
     router.post(route('bs.ap.draft.store'), { data: form.data(), step: step.value, edit_berkas: editBerkas }, {
         replace: editBerkas !== null,
         preserveScroll: true,
@@ -823,7 +912,8 @@ function canNext() {
     // Baris jurnal tanpa cost center tidak terhitung di Budget Control maupun laporan per cost
     // center — dan itu tidak muncul sebagai galat apa pun, hanya angka yang kurang. Karena itu
     // ditahan di sini, bukan diperbaiki belakangan.
-    if (step.value === 3) return !wajibBerkas || !!berkasDipilih.value;
+    // Generate Link: tidak bisa lanjut sampai supplier mengunggah dokumen di link itu.
+    if (step.value === 3) return !wajibBerkas || (!!berkasDipilih.value && (modeBerkas.value !== 'link' || linkAktif.value?.status === 'terisi'));
     if (step.value === 4) return jurnalBalanced.value && kurangCc.value.length === 0 && koreksiBelumCukup.value.length === 0;
     return true;
 }
@@ -1106,7 +1196,52 @@ const cellArea = 'w-full rounded-md border border-neutral-300 bg-white px-2 py-1
             <!-- Berkas dari Upload Berkas — WAJIB, hanya unggahan user sendiri. -->
             <div v-if="wajibBerkas" class="mt-5 border-t border-neutral-100 pt-4 dark:border-neutral-800">
                 <label for="berkas-pilih" class="mb-1 block text-sm font-semibold">Berkas Tagihan <span class="text-danger-500">*</span></label>
-                <p class="mb-2 text-xs text-neutral-500">Pilih berkas yang Anda unggah lewat <Link :href="route('bs.ap.berkas.index', { tab: 'saya' })" class="text-primary-600 hover:underline">Upload Berkas</Link>. Hanya berkas Anda sendiri yang tampil.</p>
+                <!-- Dua jalan: unggah sendiri, atau link untuk supplier. Link yang sudah dibuat mengunci pilihan ini. -->
+                <div class="mb-3 grid gap-2 sm:grid-cols-2">
+                    <button type="button" :disabled="!!linkAktif" class="flex items-start gap-2 rounded-lg border p-3 text-left disabled:cursor-not-allowed disabled:opacity-50"
+                        :class="modeBerkas === 'upload' ? 'border-primary-500 bg-primary-50/60 dark:bg-primary-900/20' : 'border-neutral-200 hover:bg-neutral-50 dark:border-neutral-700 dark:hover:bg-neutral-800'"
+                        @click="modeBerkas = 'upload'">
+                        <Upload class="mt-0.5 h-4 w-4 shrink-0 text-primary-600" />
+                        <span><span class="block text-sm font-medium">Upload File</span><span class="block text-xs text-neutral-500">Unggah sendiri / pilih berkas Anda — diajukan ke TTD Dept Head.</span></span>
+                    </button>
+                    <button type="button" class="flex items-start gap-2 rounded-lg border p-3 text-left"
+                        :class="modeBerkas === 'link' ? 'border-primary-500 bg-primary-50/60 dark:bg-primary-900/20' : 'border-neutral-200 hover:bg-neutral-50 dark:border-neutral-700 dark:hover:bg-neutral-800'"
+                        @click="modeBerkas = 'link'">
+                        <Link2 class="mt-0.5 h-4 w-4 shrink-0 text-primary-600" />
+                        <span><span class="block text-sm font-medium">Generate Link</span><span class="block text-xs text-neutral-500">Link tanpa login untuk supplier mengunggah dokumennya sendiri.</span></span>
+                    </button>
+                </div>
+
+                <!-- GENERATE LINK -->
+                <div v-if="modeBerkas === 'link'" class="mb-3 rounded-lg border border-neutral-200 p-3 dark:border-neutral-700">
+                    <template v-if="!linkAktif">
+                        <p class="text-sm">Sistem membuat link untuk <b>{{ supplier?.name ?? 'supplier' }}</b>. Nomor invoice langsung dipesan (belum aktif ke mana-mana) dan isian ini tersimpan sebagai draft. Anda tidak bisa lanjut dari langkah ini sampai supplier mengunggah dokumennya.</p>
+                        <Button class="mt-3" :disabled="memprosesLink" @click="buatLink"><template #icon-left><Link2 class="h-4 w-4" /></template>{{ memprosesLink ? 'Membuat…' : 'Generate Link' }}</Button>
+                    </template>
+                    <template v-else>
+                        <div class="flex flex-wrap items-center justify-between gap-2">
+                            <div class="text-xs text-neutral-500">No. invoice dipesan <span class="font-mono font-semibold text-neutral-800 dark:text-neutral-100">{{ linkAktif.invoice_number }}</span></div>
+                            <span :class="['rounded-full px-2 py-0.5 text-[11px] font-medium', linkAktif.status === 'terisi' ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300' : 'bg-amber-50 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300']">
+                                {{ linkAktif.status === 'terisi' ? 'Supplier sudah mengunggah' : 'Menunggu supplier' }}</span>
+                        </div>
+                        <div class="mt-2 flex items-center gap-2">
+                            <input :value="linkAktif.url" readonly class="h-9 min-w-0 flex-1 rounded-lg border border-neutral-300 bg-neutral-50 px-3 font-mono text-xs dark:border-neutral-700 dark:bg-neutral-800" @focus="($event.target as HTMLInputElement).select()" />
+                            <button type="button" class="inline-flex h-9 items-center gap-1 rounded-lg border border-neutral-300 px-3 text-xs hover:bg-neutral-50 dark:border-neutral-700 dark:hover:bg-neutral-800" @click="salinLink"><Copy class="h-3.5 w-3.5" />{{ tersalin ? 'Tersalin' : 'Salin' }}</button>
+                            <a :href="linkAktif.url" target="_blank" rel="noopener" class="inline-flex h-9 items-center rounded-lg border border-neutral-300 px-3 text-xs hover:bg-neutral-50 dark:border-neutral-700 dark:hover:bg-neutral-800">Buka</a>
+                        </div>
+                        <div class="mt-2 flex flex-wrap items-center gap-3 text-xs">
+                            <button type="button" class="inline-flex items-center gap-1 text-primary-600 hover:underline disabled:opacity-50" :disabled="memprosesLink" @click="cekLink"><RefreshCw class="h-3.5 w-3.5" /> Cek status</button>
+                            <span v-if="linkAktif.status === 'menunggu'" class="text-neutral-400">dicek otomatis tiap 15 detik · Anda juga dapat notifikasi saat supplier mengunggah</span>
+                            <span v-else-if="linkAktif.berkas_number" class="text-neutral-500">Berkas {{ linkAktif.berkas_number }} — diajukan ke TTD Dept Head</span>
+                            <button v-if="linkAktif.status === 'menunggu'" type="button" class="ml-auto text-danger-500 hover:underline" @click="batalLink">Batalkan link</button>
+                        </div>
+                    </template>
+                    <p v-if="pesanLink" class="mt-2 text-xs text-emerald-700 dark:text-emerald-300">{{ pesanLink }}</p>
+                    <p v-if="galatLink" class="mt-2 text-xs text-danger-500">{{ galatLink }}</p>
+                </div>
+
+                <template v-if="modeBerkas === 'upload'">
+                <p class="mb-2 text-xs text-neutral-500">Pilih berkas yang Anda unggah lewat <Link :href="route('bs.ap.berkas.index', { tab: 'saya' })" class="text-primary-600 hover:underline">Upload Berkas</Link>, atau unggah file baru di bawah. Hanya berkas Anda sendiri yang tampil.</p>
                 <template v-if="berkasSaya!.length">
                     <select id="berkas-pilih" v-model="form.berkas_upload_id" :class="tandai(inputCls, !!pesan.berkas)">
                         <option value="">— Pilih berkas —</option>
@@ -1115,8 +1250,27 @@ const cellArea = 'w-full rounded-md border border-neutral-300 bg-white px-2 py-1
                     <PesanWajib :pesan="pesan.berkas" />
                 </template>
                 <div v-else class="rounded-lg border border-dashed border-amber-300 bg-amber-50 px-3 py-3 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
-                    Anda belum punya berkas aktif. <Link :href="route('bs.ap.berkas.create')" class="font-medium underline">Unggah berkas dulu</Link>, lalu kembali ke sini.
+                    Anda belum punya berkas aktif — unggah file baru di bawah.
                 </div>
+
+                <!-- Upload file baru: jadi Upload Berkas Anda (supplier, no. tagihan, nilai & keterangan dari isian ini) + diajukan ke TTD Dept Head. -->
+                <div class="mt-3 rounded-lg border border-neutral-200 p-3 dark:border-neutral-700">
+                    <div class="mb-2 text-xs font-medium text-neutral-500">Upload file baru <span class="font-normal">(PDF/JPG/PNG · maks. 10 MB)</span></div>
+                    <div v-for="(u, i) in unggahan" :key="i" class="mb-2 grid items-center gap-2 sm:grid-cols-[1fr_14rem_auto]">
+                        <input type="file" accept=".pdf,.jpg,.jpeg,.png" class="text-xs" @change="u.file = (($event.target as HTMLInputElement).files ?? [])[0] ?? null" />
+                        <select v-model="u.berkas_id" :class="inputCls">
+                            <option value="">— jenis dokumen —</option>
+                            <option v-for="j in jenisBerkas" :key="j.id" :value="j.id">{{ j.name }}{{ j.is_mandatory ? ' (wajib)' : '' }}</option>
+                        </select>
+                        <button type="button" class="text-neutral-400 hover:text-danger-500 disabled:opacity-40" :disabled="unggahan.length < 2" @click="unggahan.splice(i, 1)"><Trash2 class="h-4 w-4" /></button>
+                    </div>
+                    <div class="flex flex-wrap items-center gap-3">
+                        <button type="button" class="text-xs text-primary-600 hover:underline" @click="unggahan.push({ file: null, berkas_id: '' })">+ Tambah file</button>
+                        <Button size="sm" :disabled="!bisaUnggah" @click="unggahBerkas"><template #icon-left><Upload class="h-4 w-4" /></template>{{ mengunggah ? 'Mengunggah…' : 'Upload & Ajukan TTD' }}</Button>
+                        <span v-if="galatUnggah" class="text-xs text-danger-500">{{ galatUnggah }}</span>
+                    </div>
+                </div>
+                </template>
 
                 <!-- Rincian berkas terpilih + semua filenya -->
                 <div v-if="berkasDipilih" class="mt-3 rounded-lg border border-neutral-200 p-3 dark:border-neutral-700">

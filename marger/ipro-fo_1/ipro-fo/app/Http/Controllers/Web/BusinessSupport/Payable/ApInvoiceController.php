@@ -154,6 +154,14 @@ class ApInvoiceController extends Controller
             ],
             // Hanya Finance yang boleh mengisi tanggal berkas diterima Finance.
             'canBerkasFinance' => $this->isFinance($request),
+            // Invoice yang menunggu berkas supplier (link) — nomor sudah dipesan, belum aktif. Titik = berkas sudah masuk.
+            'menungguSupplier' => $jenis === 'invoice'
+                ? app(\App\Domain\BusinessSupport\Services\LinkBerkasSupplier::class)->aktifUntuk($request->user())->map(fn ($l) => [
+                    'id' => $l->id, 'invoice_number' => $l->invoice_number, 'supplier' => $l->supplier?->name, 'status' => $l->status,
+                    'baru' => $l->status === 'terisi' && ! $l->seen_at, 'berkas_number' => $l->berkas?->berkas_number,
+                    'description' => $l->data['description'] ?? null, 'url' => $l->url(), 'created_at' => $l->created_at?->toDateString(),
+                ])->values()
+                : [],
         ]);
     }
 
@@ -392,12 +400,29 @@ class ApInvoiceController extends Controller
         $draft = $wajibBerkas && $dariBerkas === null
             ? BsApInvoiceDraft::query()->where('user_id', $request->user()->id)->where('jenis', $jenis)->first()
             : null;
+        // ?link= — lanjutkan draft yang dibawa link berkas supplier (bisa banyak per user, terpisah dari draft biasa).
+        $link = $wajibBerkas && $request->integer('link')
+            ? \App\Domain\BusinessSupport\Models\BsApBerkasLink::query()->whereKey($request->integer('link'))
+                ->where('user_id', $request->user()->id)->whereIn('status', ['menunggu', 'terisi'])->first()
+            : null;
+        if ($link) {
+            if ($link->status === 'terisi' && ! $link->seen_at) {
+                $link->update(['seen_at' => now()]);
+            }
+            $draft = (object) ['data' => array_merge($link->data ?? [], ['link_id' => $link->id,
+                'berkas_upload_id' => $link->berkas_upload_id ?? ($link->data['berkas_upload_id'] ?? '')]), 'step' => $link->step, 'updated_at' => $link->updated_at];
+        }
 
         return Inertia::render('BusinessSupport/Payable/Form', [
             'jenis' => $info,
             'dariBerkas' => $dariBerkas,
             'berkasSaya' => $wajibBerkas ? app(\App\Domain\BusinessSupport\Services\ApBerkasService::class)->pilihanInvoice($request->user()) : null,
             'draftInvoice' => $draft ? ['data' => $draft->data, 'step' => $draft->step, 'updated_at' => $draft->updated_at?->toIso8601String()] : null,
+            // Detil Tagihan › Upload File / Generate Link.
+            'linkBerkas' => $link ? ['id' => $link->id, 'url' => $link->url(), 'invoice_number' => $link->invoice_number, 'status' => $link->status,
+                'filled_at' => $link->filled_at?->toIso8601String(), 'berkas_upload_id' => $link->berkas_upload_id] : null,
+            'jenisBerkas' => $wajibBerkas ? \App\Domain\BusinessSupport\Models\BsApBerkas::query()->where('is_active', true)
+                ->orderByDesc('is_mandatory')->orderBy('id')->get(['id', 'name', 'is_mandatory']) : [],
             // Penerima Reimburse/Deposit tercatat sebagai supplier berkategori khusus
             // (PenerimaHutang) — mereka bukan pilihan pada Invoice Hutang ke supplier.
             'suppliers' => $jenis === 'invoice'
@@ -858,6 +883,15 @@ class ApInvoiceController extends Controller
             return back()->withInput()->with('error', 'Supplier invoice berbeda dengan supplier di Memo Urgent yang ditarik.');
         }
         $v['memo_internal_id'] = $memoId ? (int) $memoId : null;
+        // Dari link berkas supplier: pakai nomor invoice yang sudah dipesan link itu.
+        $linkBerkas = null;
+        if ($lama === null && $jenis === 'invoice' && $request->integer('link_id')) {
+            $linkBerkas = \App\Domain\BusinessSupport\Models\BsApBerkasLink::query()->whereKey($request->integer('link_id'))
+                ->where('user_id', $request->user()->id)->whereIn('status', ['menunggu', 'terisi'])->first();
+            if ($linkBerkas) {
+                $v['nomor_dipesan'] = $linkBerkas->invoice_number;
+            }
+        }
 
         $tambahan = [];
         if ($koreksi !== [] || $alokasi !== []) {
@@ -878,7 +912,7 @@ class ApInvoiceController extends Controller
         try {
             $koreksiDiajukan = [];
             $alokasiDibuat = [];
-            $simpanInvoice = function () use ($action, $v, $jenis, $request, $lama, $berkas, $koreksi, $alokasi, $tambahan, $budgetGuard, &$koreksiDiajukan, &$alokasiDibuat): array {
+            $simpanInvoice = function () use ($action, $v, $jenis, $request, $lama, $berkas, $linkBerkas, $koreksi, $alokasi, $tambahan, $budgetGuard, &$koreksiDiajukan, &$alokasiDibuat): array {
                 // Alokasi dulu (budget tujuan bertambah), baru gerbang over-budget (BULANAN): tolak bila
                 // baris jurnal melewati sisa anggaran bulan invoice, kecuali tertutup koreksi yang
                 // diajukan bersama invoice ini. Edit: jurnal lama invoice ini dikecualikan supaya
@@ -891,6 +925,9 @@ class ApInvoiceController extends Controller
                 }
                 $budgetGuard->assertWithinBudget($v['journal_lines'] ?? [], null, $v['invoice_date'], $lama?->journal_id, $tambahan);
                 $inv = $action->execute($v + ['jenis' => $jenis], $request->user()->id, $lama);
+                if ($linkBerkas) {
+                    app(\App\Domain\BusinessSupport\Services\LinkBerkasSupplier::class)->pakai($linkBerkas, $inv);
+                }
                 // Memo Urgent yang sudah dibayar di Kuitansi: invoice yang menyusul tidak boleh lebih kecil.
                 app(\App\Domain\BusinessSupport\Services\PembayaranMemoUrgent::class)->assertInvoiceCukup($inv->refresh());
                 foreach ($alokasiDibuat as $a) {

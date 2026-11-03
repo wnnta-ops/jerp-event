@@ -153,6 +153,12 @@ Route::middleware('set-tenant')->group(function (): void {
 
     // Wilayah (cascading dropdown) — dipakai halaman internal, tetap hidup.
     Route::get('/regions', [App\Http\Controllers\Web\RegionController::class, 'children'])->name('regions.children');
+
+    // Link berkas supplier (tanpa login) — dibuat di Registrasi Invoice Hutang › Detil Tagihan.
+    Route::get('/berkas-supplier/{token}', [App\Http\Controllers\Web\Public\BerkasSupplierController::class, 'show'])
+        ->where('token', '[A-Za-z0-9]{48}')->middleware('throttle:60,1')->name('berkas-supplier.show');
+    Route::post('/berkas-supplier/{token}', [App\Http\Controllers\Web\Public\BerkasSupplierController::class, 'store'])
+        ->where('token', '[A-Za-z0-9]{48}')->middleware('throttle:10,1')->name('berkas-supplier.store');
 });
 
 Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): void {
@@ -704,6 +710,12 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::post('/business-support/payable', [BsApController::class, 'store'])->name('bs.ap.store');
     // Draft Registrasi Invoice Hutang (dipakai tombol "Edit" berkas di langkah Detil Tagihan).
     Route::post('/business-support/payable/draft', [BsApController::class, 'simpanDraft'])->name('bs.ap.draft.store');
+    // Detil Tagihan: berkas langsung dari wizard — Upload File / Generate Link supplier.
+    Route::post('/business-support/payable/berkas-upload', [App\Http\Controllers\Web\BusinessSupport\Payable\ApInvoiceBerkasController::class, 'upload'])->name('bs.ap.berkas-langsung.upload');
+    Route::post('/business-support/payable/berkas-link', [App\Http\Controllers\Web\BusinessSupport\Payable\ApInvoiceBerkasController::class, 'buatLink'])->name('bs.ap.berkas-link.store');
+    Route::get('/business-support/payable/berkas-link/{link}', [App\Http\Controllers\Web\BusinessSupport\Payable\ApInvoiceBerkasController::class, 'status'])->name('bs.ap.berkas-link.status');
+    Route::put('/business-support/payable/berkas-link/{link}/draft', [App\Http\Controllers\Web\BusinessSupport\Payable\ApInvoiceBerkasController::class, 'simpanDraft'])->name('bs.ap.berkas-link.draft');
+    Route::post('/business-support/payable/berkas-link/{link}/batal', [App\Http\Controllers\Web\BusinessSupport\Payable\ApInvoiceBerkasController::class, 'batal'])->name('bs.ap.berkas-link.batal');
     Route::get('/business-support/payable/sisa-budget', [BsApController::class, 'sisaBudget'])->name('bs.ap.sisa-budget'); // kolom Sisa Budget di langkah Struktur
     Route::get('/business-support/payable/sumber-alokasi', [BsApController::class, 'sumberAlokasi'])->name('bs.ap.sumber-alokasi'); // pilihan budget asal Alokasi di langkah Struktur
     Route::delete('/business-support/payable/draft', [BsApController::class, 'buangDraft'])->name('bs.ap.draft.destroy');

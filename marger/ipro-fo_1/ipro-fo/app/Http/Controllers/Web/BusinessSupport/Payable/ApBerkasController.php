@@ -477,7 +477,7 @@ class ApBerkasController extends Controller
             'created' => 'Dibuat', 'updated' => 'Isian diubah', 'soft_deleted' => 'Dihapus', 'deleted' => 'Dihapus',
             'berkas.diajukan' => 'Diajukan ke Dept Head', 'berkas.diajukan_ulang' => 'Diajukan ulang (revisi)',
             'berkas.dibatalkan' => 'Dibatalkan', 'berkas.ditutup' => 'Ditutup parsial', 'berkas.dihapus' => 'Dihapus',
-            'berkas.file_ditambah' => 'File ditambah', 'berkas.file_dihapus' => 'File dihapus', 'berkas.diinvoice' => 'Dibuat invoice',
+            'berkas.file_ditambah' => 'File ditambah', 'berkas.file_dihapus' => 'File dihapus', 'berkas.diinvoice' => 'Dibuat invoice', 'berkas.diunggah_supplier' => 'Diunggah supplier lewat link',
         ];
         $abaikan = ['updated_at', 'created_at', 'approval_id', 'ap_invoice_id', 'submitted_at', 'status', 'ppn_amount'];
         $logs = AuditLog::query()->where('auditable_type', $b->getMorphClass())->where('auditable_id', $b->id)

@@ -186,7 +186,8 @@ final class RegisterApInvoice
                 $inv = $lama;
             } else {
                 $inv = BsApInvoice::create($atribut + [
-                    'invoice_number' => $this->nextNumber($data['invoice_date'], $category?->code, $data['jenis'] ?? 'invoice'),
+                    // Nomor yang sudah dipesan link berkas supplier (lihat LinkBerkasSupplier) dipakai apa adanya.
+                    'invoice_number' => $data['nomor_dipesan'] ?? $this->nextNumber($data['invoice_date'], $category?->code, $data['jenis'] ?? 'invoice'),
                     'jenis'          => $data['jenis'] ?? 'invoice',
                     'created_by'     => $userId,
                 ]);
@@ -294,6 +295,12 @@ final class RegisterApInvoice
         });
     }
 
+    /** Pesan nomor invoice lebih dulu (link berkas supplier) — urutannya ikut terpakai. */
+    public function pesanNomor(string $date, ?string $catCode = null, string $jenis = 'invoice'): string
+    {
+        return $this->nextNumber($date, $catCode, $jenis);
+    }
+
     /** Format eProperty: AP.INV/{KATEGORI}/MUP/{yy}/{bulan-romawi}/{seq} — AP.RMB / AP.DEP untuk jenis lain. */
     private function nextNumber(string $date, ?string $catCode = null, string $jenis = 'invoice'): string
     {
@@ -316,7 +323,8 @@ final class RegisterApInvoice
         do {
             $number = sprintf('%s/%s/MUP/%s/%s/%05d', $kode, $cat, $d->format('y'), $roman, $seq);
             $seq++;
-        } while (BsApInvoice::withTrashed()->where('invoice_number', $number)->exists());
+        } while (BsApInvoice::withTrashed()->where('invoice_number', $number)->exists()
+            || \App\Domain\BusinessSupport\Models\BsApBerkasLink::withoutGlobalScopes()->where('invoice_number', $number)->exists());
 
         return $number;
     }
