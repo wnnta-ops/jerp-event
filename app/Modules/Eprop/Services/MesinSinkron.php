@@ -3,6 +3,7 @@
 namespace App\Modules\Eprop\Services;
 
 use App\Modules\Eprop\Support\DaftarTabel;
+use App\Services\Numerator\NumeratorService;
 use Illuminate\Database\Connection;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -255,6 +256,12 @@ class MesinSinkron
                 $this->tambahHasil($tabel, $cfg, $kunci, 'ditahan', $rowB,
                     implode(' | ', array_map(fn ($x) => $this->labelNyata($tabel, $cfg, $x), array_slice($calon, 0, 3))),
                     'Ada input J-ERP bernominal sama tetapi keterangan/pihaknya berbeda — dicek manual (tautkan atau masukkan).');
+            } elseif ($tabel === 'fo_kontrak' && ($dobel = $this->nomorUrutSprDipakai((string) $kunci)) !== null) {
+                // Nomor urutnya sudah dipakai SPR lain (mis. 001690/X vs 001690/XI) → jangan jadi nomor ganda.
+                $this->lewatiNomor[$kunci] = true;
+                $r['ditahan'][$kunci] = $idB;
+                $this->tambahHasil($tabel, $cfg, $kunci, 'ditahan', $rowB, $dobel,
+                    "Nomor urut SPR ini sudah dipakai SPR {$dobel} — dicek manual (tautkan, atau ganti nomor salah satunya).");
             } else {
                 $r['masuk'][$kunci] = $idB;
             }
@@ -458,10 +465,11 @@ class MesinSinkron
         if ($lama === '' || $lama === $nomorEprop) {
             return;
         }
-        $bentrok = $this->c->table($this->n('fo_kontrak'))->where('no_kontrak', $nomorEprop)->where('id', '!=', $idN)->exists();
-        if ($bentrok) {
+        $bentrok = $this->c->table($this->n('fo_kontrak'))->where('no_kontrak', $nomorEprop)->where('id', '!=', $idN)->exists()
+            ? $nomorEprop : $this->nomorUrutSprDipakai($nomorEprop, $idN);
+        if ($bentrok !== null) {
             $this->tambahHasil('fo_kontrak', $cfg, $nomorEprop, 'konflik', $rowB, $lama,
-                "Nomor eProperty {$nomorEprop} sudah dipakai SPR J-ERP lain — nomor {$lama} TIDAK diganti. Periksa manual.");
+                "Nomor eProperty {$nomorEprop} sudah dipakai SPR J-ERP lain ({$bentrok}) — nomor {$lama} TIDAK diganti. Periksa manual.");
 
             return;
         }
@@ -496,6 +504,25 @@ class MesinSinkron
             }
         }
         $this->tambahHasil('fo_kontrak', $cfg, $nomorEprop, 'diperbarui', $rowB, $lama, $alasan);
+    }
+
+    private ?string $formatSpr = null;
+
+    /**
+     * SPR J-ERP lain yang sudah memakai NOMOR URUT yang sama dengan $nomor (bulan/tahun boleh beda),
+     * menurut format numerator SPR. Null bila tidak ada, atau $nomor tidak berpola format itu.
+     */
+    private function nomorUrutSprDipakai(string $nomor, ?int $kecualiId = null): ?string
+    {
+        $this->formatSpr ??= (string) $this->c->table($this->db['fo'] . '.numerators')
+            ->where('code', 'SPR')->whereNull('deleted_at')->where('is_active', true)
+            ->when($this->c->table('information_schema.columns')->where('table_schema', $this->db['fo'])
+                ->where('table_name', 'numerators')->where('column_name', 'reset')->exists(), fn ($q) => $q->orderByRaw("CASE WHEN reset = 'tidak' THEN 0 ELSE 1 END"))
+            ->value('format');
+        $seq = $this->formatSpr === '' ? null : NumeratorService::seqDari($this->formatSpr, $nomor);
+
+        return $seq === null ? null
+            : NumeratorService::nomorUrutDipakai($this->n('fo_kontrak'), 'no_kontrak', $this->formatSpr, $seq, $nomor, $kecualiId);
     }
 
     /**

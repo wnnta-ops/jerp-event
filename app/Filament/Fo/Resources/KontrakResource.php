@@ -371,7 +371,14 @@ class KontrakResource extends Resource
     {
         return $table
             ->columns([
-                Tables\Columns\TextColumn::make('no_kontrak')->label('No kontrak')->searchable()->sortable()->badge(),
+                // Urut menurut nomor urut di depan (001690/SPR/…); nomor format lama (2024/XII/PPU.KR/…)
+                // dikelompokkan terpisah & diurutkan per tanggal — urutan teks biasa menaikkannya ke atas.
+                Tables\Columns\TextColumn::make('no_kontrak')->label('No kontrak')->searchable()->badge()
+                    ->sortable(query: fn (Builder $query, string $direction) => $query
+                        ->orderByRaw("no_kontrak REGEXP '^[0-9]+/SPR/' {$direction}")
+                        ->orderByRaw("CASE WHEN no_kontrak REGEXP '^[0-9]+/SPR/' THEN CAST(SUBSTRING_INDEX(no_kontrak, '/', 1) AS UNSIGNED) END {$direction}")
+                        ->orderBy('tgl_kontrak', $direction)
+                        ->orderBy('id', $direction)),
                 Tables\Columns\TextColumn::make('tgl_kontrak')->label('Tgl')->date('d M Y')->sortable(),
                 Tables\Columns\TextColumn::make('customer.full_name')->label('Customer')->searchable(),
                 Tables\Columns\TextColumn::make('unit.kode_unit')
@@ -452,7 +459,7 @@ class KontrakResource extends Resource
                     Tables\Actions\DeleteBulkAction::make(),
                 ]),
             ])
-            ->defaultSort('tgl_kontrak', 'desc');
+            ->defaultSort('no_kontrak', 'desc');
     }
 
     /** Ringkasan hasil akhir kontrak (read-only, seperti SPR) untuk tab Edit Kontrak saat edit. */
