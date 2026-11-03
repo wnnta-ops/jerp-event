@@ -68,7 +68,7 @@ class NumeratorService implements NumeratorServiceInterface
                     'is_active' => true,
                     'created_at' => $now,
                     'updated_at' => $now,
-                ]);
+                ] + ($period === '' && self::adaKolomReset() ? ['reset' => 'tidak'] : []));
 
                 $row = DB::table('numerators')
                     ->where('tenant_id', $tenantId)
@@ -109,7 +109,16 @@ class NumeratorService implements NumeratorServiceInterface
     /** Dokumen yang nomornya dijaga dari nomor ganda: kode => [tabel, kolom]. */
     public const NOMOR_TABEL = [
         'SPR' => ['fo_kontrak', 'no_kontrak'],
+        'SPRS' => ['fo_kontrak', 'no_kontrak'],
     ];
+
+    /** Apakah $nomor berpola format kode $code yang sedang dipakai (mis. nomor SPR, bukan SPRS)? */
+    public function cocokFormat(string $code, string $nomor, ?int $companyId = null): bool
+    {
+        [$format] = $this->lookupFormat($this->tenant->id(), $code, $companyId);
+
+        return self::seqDari($format, $nomor) !== null;
+    }
 
     /**
      * Read the format template for a code. Prefers a company-scoped definition,
@@ -135,6 +144,14 @@ class NumeratorService implements NumeratorServiceInterface
                 ?? (clone $query)->whereNull('company_id')->first();
         } else {
             $row = (clone $query)->whereNull('company_id')->first();
+        }
+
+        if ($row === null && $code === 'SPRS') {
+            // SPRS belum terdaftar → ikut format & reset SPR, kata "SPR" diganti "SPRS"
+            // (001693/SPR/JR/XI/2026 → 000001/SPRS/JR/XI/2026), dengan nomor urut sendiri.
+            [$formatSpr, $tanpaReset] = $this->lookupFormat($tenantId, 'SPR', $companyId);
+
+            return [preg_replace('/(?<![A-Z])SPR(?![A-Z])/i', 'SPRS', $formatSpr), $tanpaReset];
         }
 
         if ($row === null) {
