@@ -12,7 +12,7 @@ class BsApBerkasUploadFile extends Model
 {
     protected $table = 'bs_ap_berkas_upload_files';
 
-    protected $fillable = ['berkas_upload_id', 'berkas_id', 'original_name', 'path', 'mime', 'size'];
+    protected $fillable = ['berkas_upload_id', 'berkas_id', 'keterangan', 'original_name', 'path', 'mime', 'size'];
 
     protected $hidden = ['path'];
 
@@ -24,5 +24,13 @@ class BsApBerkasUploadFile extends Model
     public function jenis(): BelongsTo
     {
         return $this->belongsTo(BsApBerkas::class, 'berkas_id');
+    }
+
+    /** Nama jenis untuk tampilan; jenis "Lainnya" ikut isi dokumennya, mis. "Lainnya — Surat Kuasa". */
+    public function labelJenis(): ?string
+    {
+        $nama = $this->jenis?->name;
+
+        return $nama !== null && $this->keterangan ? $nama.' — '.$this->keterangan : $nama;
     }
 }

@@ -31,9 +31,9 @@ class BsApBerkasLink extends Model
     protected $table = 'bs_ap_berkas_links';
 
     protected $fillable = ['tenant_id', 'token', 'user_id', 'supplier_id', 'invoice_number', 'data', 'step', 'berkas_upload_id',
-        'status', 'filled_at', 'seen_at', 'ap_invoice_id'];
+        'status', 'filled_at', 'riwayat', 'seen_at', 'ap_invoice_id'];
 
-    protected $casts = ['data' => 'array', 'step' => 'integer', 'filled_at' => 'datetime', 'seen_at' => 'datetime'];
+    protected $casts = ['data' => 'array', 'riwayat' => 'array', 'step' => 'integer', 'filled_at' => 'datetime', 'seen_at' => 'datetime'];
 
     protected $hidden = ['token'];
 

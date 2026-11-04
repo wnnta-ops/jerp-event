@@ -39,10 +39,38 @@ class ApprovalInboxController extends Controller
             $tab = $lists['perlu']->isNotEmpty() ? 'perlu' : 'pengajuan';
         }
 
+        // Cari (no. dokumen / perihal / keterangan / pengaju) & filter jenis dokumen, status, tanggal
+        // diajukan — berlaku untuk ketiga tab, jumlah di tab ikut hasil saringan.
+        $f = [
+            'q' => trim((string) $request->input('q', '')),
+            'jenis' => (string) $request->input('jenis', ''),
+            'status' => (string) $request->input('status', ''),
+            'dari' => (string) $request->input('dari', ''),
+            'sampai' => (string) $request->input('sampai', ''),
+        ];
+        $kelompok = ['diproses' => ['pending', 'in_review'], 'disetujui' => ['approved'], 'ditolak' => ['rejected'], 'dibatalkan' => ['cancelled']];
+        $cocok = function (array $r) use ($f, $kelompok): bool {
+            if ($f['q'] !== '' && ! str_contains(mb_strtolower(implode(' ', [$r['number'], $r['subject'], $r['department'], $r['submitter'], $r['type']])), mb_strtolower($f['q']))) {
+                return false;
+            }
+            if ($f['jenis'] !== '' && $r['document_type'] !== $f['jenis']) {
+                return false;
+            }
+            if ($f['status'] !== '' && ! in_array($r['status'], $kelompok[$f['status']] ?? [], true)) {
+                return false;
+            }
+            $tgl = $r['submitted_at'] ? substr((string) \Illuminate\Support\Carbon::parse($r['submitted_at'])->timezone(config('app.timezone'))->toDateString(), 0, 10) : null;
+
+            return ($f['dari'] === '' || ($tgl && $tgl >= $f['dari'])) && ($f['sampai'] === '' || ($tgl && $tgl <= $f['sampai']));
+        };
+        $baris = array_map(fn ($l) => $l->map(fn (Approval $a) => $this->inbox->row($a))->filter($cocok)->values(), $lists);
+
         return Inertia::render('ApprovalInbox/Index', [
             'tab' => $tab,
-            'counts' => array_map(fn ($l) => $l->count(), $lists),
-            'rows' => $lists[$tab]->map(fn (Approval $a) => $this->inbox->row($a))->values(),
+            'counts' => array_map(fn ($l) => $l->count(), $baris),
+            'rows' => $baris[$tab],
+            'filters' => $f,
+            'pilihanJenis' => \App\Domain\ApprovalInbox\Services\ApprovalInboxQuery::TYPE_LABELS,
             'canSubmit' => $user->can('approvalinbox.submit'),
         ]);
     }
@@ -54,6 +82,17 @@ class ApprovalInboxController extends Controller
 
         return Inertia::render('ApprovalInbox/Create', [
             'today' => now()->toDateString(),
+            'jenisMemo' => \App\Domain\ApprovalInbox\Models\MemoInternal::JENIS,
+            // Alur yang AKAN dipakai per jenis = chain aktif di System › Approval Chain saat ini.
+            'alur' => collect(\App\Domain\ApprovalInbox\Models\MemoInternal::JENIS)->map(function ($l, $jenis) {
+                try {
+                    return app(\App\Domain\Approval\Engine\ApprovalChainResolver::class)
+                        ->resolve(\App\Domain\ApprovalInbox\Models\MemoInternal::DOCUMENT_TYPE, ['jenis' => $jenis])
+                        ->load('steps')->steps->map(fn ($s) => $s->label ?: $s->approver_value)->values();
+                } catch (BusinessRuleException) {
+                    return [];
+                }
+            }),
             'departemen' => $this->pilihanDepartemen($request->user()),
             'semuaDept' => $request->user()->hasRole('SuperAdmin'),
             'suppliers' => $this->pilihanSupplier()->get(['id', 'code', 'name']),
@@ -111,17 +150,31 @@ class ApprovalInboxController extends Controller
         }
         $data = $request->validate([
             'memo_date' => 'required|date',
+            // Form ini khusus Memo Urgent; jenis lain (Reguler) hanya bila dikirim eksplisit.
+            'jenis' => ['nullable', \Illuminate\Validation\Rule::in(array_keys(\App\Domain\ApprovalInbox\Models\MemoInternal::JENIS))],
             'cost_center_id' => ['required', 'integer', \Illuminate\Validation\Rule::in($dept->pluck('id')->all())],
             'supplier_id' => ['required', 'integer', fn ($a, $v, $fail) => $this->pilihanSupplier()->whereKey($v)->exists() || $fail('Supplier tidak ditemukan atau tidak aktif.')],
             'subject' => 'required|string|max:200',
             'body' => 'required|string|max:5000',
-            'amount' => 'required|numeric|min:1',
+            // Rincian pajak (sama dengan tahap 2 invoice); nominal = Dibayar (net), dihitung server.
+            'dpp' => 'required|numeric|min:1',
+            'ppn_mode' => 'required|in:none,with',
+            'ppn_pct' => 'nullable|numeric|min:0|max:100',
+            'ppn_incl' => 'nullable|boolean',
+            'ppn_base' => 'nullable|numeric|min:0',
+            'pph_mode' => 'required|in:none,withheld,borne',
+            'pph_type' => 'nullable|required_unless:pph_mode,none|in:pph21,pph23,pph4_2',
+            'pph_pct' => 'nullable|numeric|min:0|max:100',
+            'pph_base' => 'nullable|numeric|min:0',
         ], [
+            'dpp.required' => 'Nilai Transaksi wajib diisi.',
+            'dpp.min' => 'Nilai Transaksi wajib diisi.',
+            'pph_type.required_unless' => 'Pilih jenis PPh.',
             'cost_center_id.in' => 'Departemen ini bukan departemen Anda.',
-            'amount.required' => 'Nominal wajib diisi.',
-            'amount.min' => 'Nominal wajib diisi.',
             'supplier_id.required' => 'Pilih supplier.',
-        ], ['cost_center_id' => 'Departemen', 'supplier_id' => 'Supplier', 'amount' => 'Nominal']);
+        ], ['cost_center_id' => 'Departemen', 'supplier_id' => 'Supplier', 'dpp' => 'Nilai Transaksi']);
+        $data['ppn_incl'] = (bool) ($data['ppn_incl'] ?? false);
+        $data['jenis'] ??= 'urgent';
         $data['department'] = $dept->firstWhere('id', (int) $data['cost_center_id'])['name'];
         unset($data['cost_center_id']);
 
@@ -131,8 +184,12 @@ class ApprovalInboxController extends Controller
             return back()->withInput()->with('error', $e->getMessage());
         }
 
-        return redirect()->route('approval-inbox.show', $memo->approval_id)
-            ->with('success', "Memo Urgent {$memo->memo_number} diajukan — menunggu Accounting.");
+        $jenis = \App\Domain\ApprovalInbox\Models\MemoInternal::JENIS[$memo->jenis];
+        $pertama = \App\Domain\ApprovalInbox\Models\MemoInternal::labelTahap(
+            \App\Domain\Approval\Models\ApprovalStep::query()->where('approval_id', $memo->approval_id)->orderBy('level')->first());
+
+        return redirect()->route('approval-inbox.memo')
+            ->with('success', "{$jenis} {$memo->memo_number} berhasil diajukan — menunggu ".($pertama ?? 'approval').'.');
     }
 
     public function show(Request $request, Approval $approval): Response
@@ -158,6 +215,68 @@ class ApprovalInboxController extends Controller
         ]);
     }
 
+    /** Tutup pop-up pengingat Memo Urgent dibayar tanpa invoice — muncul lagi di login berikutnya. */
+    public function tutupPengingat(Request $request): RedirectResponse
+    {
+        $request->session()->forget(\App\Domain\BusinessSupport\Services\PembayaranMemoUrgent::SESI_PENGINGAT);
+
+        return back();
+    }
+
+    /** Pilihan filter Pembayaran di daftar Memo Urgent. */
+    private const FILTER_BAYAR = ['belum' => 'Belum dibayar', 'dibayar' => 'Dibayar, belum diinvoice', 'diinvoice' => 'Sudah diinvoice'];
+
+    /**
+     * Daftar Memo Urgent yang diajukan user ini: cari (no. memo / perihal / supplier / departemen),
+     * filter status approval, pembayaran (Kuitansi / Invoice Hutang) & rentang tanggal memo.
+     */
+    public function memoSaya(Request $request): Response
+    {
+        $user = $request->user();
+        abort_unless($user?->can('approvalinbox.submit'), 403);
+        $f = [
+            'q' => trim((string) $request->input('q', '')),
+            'status' => (string) $request->input('status', ''),
+            'bayar' => (string) $request->input('bayar', ''),
+            'dari' => (string) $request->input('dari', ''),
+            'sampai' => (string) $request->input('sampai', ''),
+        ];
+        $dibayar = \App\Domain\BusinessSupport\Models\BsApKuitansi::query()->select('memo_internal_id')->whereNotNull('memo_internal_id')->where('status', 'active');
+        $diinvoice = \App\Domain\BusinessSupport\Models\BsApInvoice::query()->select('memo_internal_id')->whereNotNull('memo_internal_id')
+            ->where('status', '!=', \App\Domain\BusinessSupport\Models\BsApInvoice::STATUS_BATAL);
+
+        $dasar = \App\Domain\ApprovalInbox\Models\MemoInternal::query()->where('created_by', $user->id)
+            ->when($f['q'] !== '', fn ($q) => $q->where(fn ($w) => $w->where('memo_number', 'like', "%{$f['q']}%")->orWhere('subject', 'like', "%{$f['q']}%")
+                ->orWhere('department', 'like', "%{$f['q']}%")->orWhereHas('supplier', fn ($s) => $s->where('name', 'like', "%{$f['q']}%"))))
+            ->when($f['bayar'] === 'belum', fn ($q) => $q->whereNotIn('id', $dibayar)->whereNotIn('id', $diinvoice))
+            ->when($f['bayar'] === 'dibayar', fn ($q) => $q->whereIn('id', $dibayar)->whereNotIn('id', $diinvoice))
+            ->when($f['bayar'] === 'diinvoice', fn ($q) => $q->whereIn('id', $diinvoice))
+            ->when($f['dari'] !== '', fn ($q) => $q->whereDate('memo_date', '>=', $f['dari']))
+            ->when($f['sampai'] !== '', fn ($q) => $q->whereDate('memo_date', '<=', $f['sampai']));
+        // Jumlah per status (setelah filter lain) untuk tab Semua / Diproses / Disetujui / Ditolak.
+        $jumlah = (clone $dasar)->selectRaw('status, count(*) as n')->groupBy('status')->pluck('n', 'status');
+
+        $idDibayar = (clone $dibayar)->pluck('memo_internal_id')->flip();
+        $idInvoice = (clone $diinvoice)->pluck('memo_internal_id')->flip();
+        $memos = (clone $dasar)->when($f['status'] !== '', fn ($q) => $q->where('status', $f['status']))
+            ->with(['approval.steps', 'supplier:id,name'])->orderByDesc('memo_date')->orderByDesc('id')
+            ->paginate(25)->withQueryString()
+            ->through(fn ($m) => [
+                'id' => $m->id, 'number' => $m->memo_number, 'date' => $m->memo_date?->toDateString(), 'jenis' => \App\Domain\ApprovalInbox\Models\MemoInternal::JENIS[$m->jenis] ?? 'Memo',
+                'subject' => $m->subject, 'department' => $m->department, 'supplier' => $m->supplier?->name, 'amount' => (float) $m->amount,
+                'status' => $m->status, 'posisi' => \App\Domain\ApprovalInbox\Services\MemoUntukInvoice::status($m),
+                'bayar' => isset($idInvoice[$m->id]) ? 'diinvoice' : (isset($idDibayar[$m->id]) ? 'dibayar' : 'belum'),
+                'url' => $m->approval_id ? route('approval-inbox.show', $m->approval_id) : null,
+                'cetak' => $m->approval_id ? route('approval-inbox.cetak', $m->approval_id) : null,
+            ]);
+
+        return Inertia::render('ApprovalInbox/MemoSaya', [
+            'memos' => $memos, 'filters' => $f, 'pilihanBayar' => self::FILTER_BAYAR,
+            'jumlah' => ['semua' => (int) $jumlah->sum(), 'diajukan' => (int) ($jumlah['diajukan'] ?? 0),
+                'disetujui' => (int) ($jumlah['disetujui'] ?? 0), 'ditolak' => (int) ($jumlah['ditolak'] ?? 0)],
+        ]);
+    }
+
     /** Cetak lembar Memo Urgent (HTML siap-cetak) — TTD sesuai tahap approval yang sudah dilalui. */
     public function cetak(Request $request, Approval $approval): \Illuminate\Http\Response
     {
@@ -172,7 +291,31 @@ class ApprovalInboxController extends Controller
             'stages' => $this->inbox->stages($approval),
             'status' => $approval->status,
             'dicetakOleh' => $user->name,
+            // ?preview=1 — ditampilkan di halaman detail (iframe), tanpa membuka dialog cetak.
+            'preview' => $request->boolean('preview'),
         ])->render());
+    }
+
+    /** "Nilai Transaksi Rp … · PPN 11% Rp … · PPh 23 dipotong Rp …" — null untuk memo lama tanpa rincian. */
+    private function rincianPajak(\App\Domain\ApprovalInbox\Models\MemoInternal $m): ?string
+    {
+        $p = $m->pajak();
+        if (! $p) {
+            return null;
+        }
+        $h = \App\Domain\BusinessSupport\Support\PajakHutang::hitung($p);
+        $rp = fn ($v) => 'Rp '.number_format((float) $v, 0, ',', '.');
+        $pct = fn ($v) => rtrim(rtrim(number_format((float) $v, 2, ',', ''), '0'), ',').'%';
+        $bag = ['DPP '.$rp($h['dpp'])];
+        if ($p['ppn_mode'] === 'with') {
+            $bag[] = 'PPN '.$pct($h['ppn_pct']).($p['ppn_incl'] ? ' (include)' : '').' '.$rp($h['ppn']);
+        }
+        if ($p['pph_mode'] !== 'none') {
+            $jenis = ['pph21' => 'PPh 21', 'pph23' => 'PPh 23', 'pph4_2' => 'PPh 4(2)'][$p['pph_type']] ?? 'PPh';
+            $bag[] = $jenis.' '.$pct($h['pph_pct']).($p['pph_mode'] === 'borne' ? ' ditanggung ' : ' dipotong ').$rp($h['pph_journal']);
+        }
+
+        return implode(' · ', $bag);
     }
 
     /** Isi lembar Memo Urgent untuk preview & cetak; null bila dokumennya bukan memo. */
@@ -185,6 +328,7 @@ class ApprovalInboxController extends Controller
 
         return [
             'number' => $m->memo_number,
+            'jenis' => \App\Domain\ApprovalInbox\Models\MemoInternal::JENIS[$m->jenis] ?? 'Memo Internal',
             'date' => $m->memo_date?->toDateString(),
             'department' => $m->department,
             'pengaju' => \App\Models\User::query()->whereKey($m->created_by)->value('name'),
@@ -192,6 +336,13 @@ class ApprovalInboxController extends Controller
             'subject' => (string) $m->subject,
             'body' => (string) $m->body,
             'amount' => $m->amount !== null ? (float) $m->amount : null,
+            'rincian' => $this->rincianPajak($m),
+            // Rincian lengkap untuk lembar cetak: Nilai Transaksi, PPN, PPh, Total Bayar (= nominal memo).
+            'pajak' => ($p = $m->pajak()) ? \App\Domain\BusinessSupport\Support\PajakHutang::hitung($p) + [
+                'ppn_mode' => $p['ppn_mode'], 'pph_mode' => $p['pph_mode'], 'pph_type' => $p['pph_type'],
+                'nilai_transaksi' => (float) $p['dpp'],
+            ] : null,
+            'terbilang' => $m->amount !== null ? mb_strtoupper(trim(preg_replace('/\s+/', ' ', terbilang((int) round((float) $m->amount))))).' RUPIAH' : null,
             'perusahaan' => (string) (\Illuminate\Support\Facades\DB::table('parameters')->where('tenant_id', $m->tenant_id)
                 ->where('group', 'company')->where('key', 'name')->value('value') ?: 'PT MUP'),
             'cetak_url' => route('approval-inbox.cetak', $approval->id),

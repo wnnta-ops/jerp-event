@@ -27,10 +27,14 @@ function toggle(id: number) {
     i >= 0 ? sel.value.splice(i, 1) : sel.value.push(id);
 }
 function allChecked() {
-    return props.rows.length > 0 && sel.value.length === props.rows.length;
+    return bisaDipilih().length > 0 && sel.value.length === bisaDipilih().length;
 }
 function toggleAll() {
-    sel.value = allChecked() ? [] : props.rows.map((r: any) => r.id);
+    sel.value = allChecked() ? [] : bisaDipilih().map((r: any) => r.id);
+}
+/** Hanya koreksi yang tahapnya giliran saya (atau koreksi lama tanpa Approval Inbox) yang bisa dicentang. */
+function bisaDipilih() {
+    return props.rows.filter((r: any) => r.bisa);
 }
 function decide(decision: 'approve' | 'reject') {
     if (!sel.value.length) return;
@@ -45,7 +49,7 @@ function decide(decision: 'approve' | 'reject') {
         <div class="flex flex-wrap items-start justify-between gap-3">
             <div>
                 <h1 class="flex items-center gap-2 text-2xl font-bold"><ShieldCheck class="h-6 w-6 text-primary-600" /> Approval Koreksi Budget</h1>
-                <p class="mt-1 text-sm text-neutral-500">Menyetujui koreksi akan menerapkan Nilai Baru ke master budget.</p>
+                <p class="mt-1 text-sm text-neutral-500">Termasuk koreksi dari Registrasi Invoice Hutang. Setujui di sini = menyetujui tahap Anda di Approval Inbox; setelah tahap terakhir, tambahannya diterapkan ke master budget.</p>
                 <p class="text-sm text-neutral-500">{{ summary.count }} koreksi menunggu persetujuan</p>
             </div>
             <div v-if="canApprove" class="flex items-center gap-2">
@@ -66,20 +70,26 @@ function decide(decision: 'approve' | 'reject') {
                         <th class="px-3 py-2">Akun</th>
                         <th class="px-3 py-2">Cost Center</th>
                         <th class="px-3 py-2">Periode</th>
+                        <th class="px-3 py-2">Sumber</th>
+                        <th class="px-3 py-2 text-right">Tambahan</th>
                         <th class="px-3 py-2 text-right">Nilai Lama</th>
                         <th class="px-3 py-2 text-right">Nilai Baru</th>
+                        <th class="px-3 py-2">Tahap</th>
                     </tr>
                 </thead>
                 <tbody class="divide-y divide-neutral-200 dark:divide-neutral-800">
                     <tr v-for="r in rows" :key="r.id">
-                        <td class="px-3 py-2"><input type="checkbox" :checked="sel.includes(r.id)" @change="toggle(r.id)" /></td>
-                        <td class="px-3 py-2 font-medium">{{ r.doc_no }}</td>
+                        <td class="px-3 py-2"><input type="checkbox" :disabled="!r.bisa" :checked="sel.includes(r.id)" @change="toggle(r.id)" /></td>
+                        <td class="px-3 py-2 font-medium"><a v-if="r.approval_url" :href="r.approval_url" class="text-primary-600 hover:underline">{{ r.doc_no }}</a><template v-else>{{ r.doc_no }}</template></td>
                         <td class="px-3 py-2">{{ fmtDate(r.date) }}</td>
                         <td class="px-3 py-2">{{ r.account }}</td>
                         <td class="px-3 py-2">{{ r.cost_center }}</td>
                         <td class="px-3 py-2">{{ r.period }}</td>
+                        <td class="px-3 py-2"><span v-if="r.invoice" class="rounded bg-primary-50 px-1.5 py-0.5 text-xs font-medium text-primary-700 dark:bg-primary-900/30 dark:text-primary-300">Invoice {{ r.invoice }}</span><span v-else class="text-xs text-neutral-500">Koreksi Budget</span></td>
+                        <td class="px-3 py-2 text-right">{{ fmtRp(r.tambahan) }}</td>
                         <td class="px-3 py-2 text-right">{{ fmtRp(r.old_amount) }}</td>
                         <td class="px-3 py-2 text-right">{{ fmtRp(r.new_amount) }}</td>
+                        <td class="px-3 py-2 text-xs"><template v-if="r.tahap">{{ r.tahap }}</template><span v-else class="text-neutral-400">—</span><div v-if="!r.bisa" class="text-[11px] text-neutral-400">bukan giliran Anda</div></td>
                     </tr>
                 </tbody>
             </table>

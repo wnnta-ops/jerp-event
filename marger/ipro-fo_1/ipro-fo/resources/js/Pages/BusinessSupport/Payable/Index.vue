@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { router, Link } from '@inertiajs/vue3';
 import { ref, reactive, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue';
-import { Plus, ArrowLeft, HandCoins, Search, CalendarClock, CalendarCheck, BookText, Tags, FileInput, ReceiptText, Eraser, FileSpreadsheet, FilterX, Printer } from 'lucide-vue-next';
+import { Plus, ArrowLeft, HandCoins, Search, ChevronDown, CalendarClock, CalendarCheck, BookText, Tags, FileInput, ReceiptText, Eraser, FileSpreadsheet, FilterX, Printer } from 'lucide-vue-next';
 import Button from '@/Components/UI/Button.vue';
 import Badge from '@/Components/UI/Badge.vue';
 import EmptyState from '@/Components/UI/EmptyState.vue';
@@ -36,10 +36,16 @@ const props = defineProps<{
     filters: { search?: string; t?: Partial<Record<Kolom, string>>; c?: Partial<Record<Kolom, string[]>> };
     canBerkasFinance?: boolean;
     /** Invoice yang menunggu berkas supplier (link) — nomor sudah dipesan, belum aktif. baru = berkas supplier masuk & belum dibuka. */
+    pengajuanBudget?: Array<{ id: number; invoice_number: string | null; status: 'menunggu' | 'disetujui' | 'ditolak'; baru: boolean; catatan: string | null; description: string | null; url: string; diajukan: string | null }>;
     menungguSupplier?: Array<{ id: number; invoice_number: string; supplier: string | null; status: string; baru: boolean; berkas_number: string | null; description: string | null; url: string; created_at: string | null }>;
     /** Modul yang sedang dibuka: Invoice Hutang / Reimburse Karyawan / Deposit Renovasi. */
     jenis: { kunci: string; judul: string; penerima: string; rute: string; izin: string };
 }>();
+
+/* Panel Draft (pengajuan budget Finance + menunggu berkas supplier) — diciutkan bawaannya. */
+const draftTerbuka = ref(false);
+const jumlahDraft = computed(() => (props.pengajuanBudget?.length ?? 0) + (props.menungguSupplier?.length ?? 0));
+const adaDraftBaru = computed(() => (props.pengajuanBudget ?? []).some((p) => p.baru) || (props.menungguSupplier ?? []).some((l) => l.baru));
 const modulInvoice = props.jenis.kunci === 'invoice';
 
 function fmtRp(v: number) { return 'Rp ' + Number(v ?? 0).toLocaleString('id-ID'); }
@@ -217,29 +223,6 @@ watch(rows, () => nextTick(measure));
             </div>
         </div>
 
-        <!-- Invoice yang menunggu berkas supplier (Generate Link di Detil Tagihan). Titik merah = supplier sudah mengunggah. -->
-        <div v-if="menungguSupplier?.length" class="card overflow-hidden">
-            <div class="border-b border-neutral-200 px-4 py-2.5 text-sm font-semibold dark:border-neutral-800">Draft menunggu berkas supplier <span class="font-normal text-neutral-400">({{ menungguSupplier.length }})</span></div>
-            <table class="w-full text-sm">
-                <tbody>
-                    <tr v-for="l in menungguSupplier" :key="l.id" class="border-t border-neutral-100 first:border-t-0 dark:border-neutral-800">
-                        <td class="whitespace-nowrap px-4 py-2 font-mono text-xs">
-                            <span class="inline-flex items-center gap-1.5">
-                                <span v-if="l.baru" class="h-2 w-2 rounded-full bg-danger-500" title="Supplier sudah mengunggah dokumen"></span>
-                                <Link :href="route('bs.ap.create', { link: l.id })" class="text-primary-600 hover:underline">{{ l.invoice_number }}</Link>
-                            </span>
-                        </td>
-                        <td class="px-4 py-2">{{ l.supplier ?? '—' }}<div v-if="l.description" class="truncate text-xs text-neutral-400">{{ l.description }}</div></td>
-                        <td class="whitespace-nowrap px-4 py-2 text-xs">
-                            <span v-if="l.status === 'terisi'" class="font-medium text-emerald-700 dark:text-emerald-300">Berkas supplier masuk{{ l.berkas_number ? ' · ' + l.berkas_number : '' }}</span>
-                            <span v-else class="text-amber-600">Menunggu supplier sejak {{ l.created_at }}</span>
-                        </td>
-                        <td class="whitespace-nowrap px-4 py-2 text-right"><Link :href="route('bs.ap.create', { link: l.id })" class="text-xs font-medium text-primary-600 hover:underline">Lanjutkan →</Link></td>
-                    </tr>
-                </tbody>
-            </table>
-        </div>
-
         <!-- Ringkasan mengikuti hasil filter checklist (Total & Sisa = nett, setelah PPN & PPh). -->
         <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
             <div class="card border-l-4 border-danger-500 p-4">
@@ -272,6 +255,66 @@ watch(rows, () => nextTick(measure));
                 <input v-model="search" placeholder="Cari semua kolom…" class="h-9 w-full rounded-lg border border-neutral-300 bg-white pl-9 pr-3 text-sm dark:border-neutral-700 dark:bg-neutral-900" />
             </div>
             <button v-if="hasFilter" type="button" @click="resetFilter" class="inline-flex h-9 items-center gap-1.5 rounded-lg border border-neutral-300 px-3 text-sm font-medium text-neutral-600 hover:bg-neutral-50 dark:border-neutral-700 dark:text-neutral-300"><FilterX class="h-4 w-4" /> Reset filter</button>
+        </div>
+
+        <!-- Draft: invoice tertahan (menunggu Finance / menunggu berkas supplier). Diciutkan bawaannya; klik judul untuk membuka. -->
+        <div v-if="jumlahDraft" class="card overflow-hidden">
+            <button type="button" class="flex w-full items-center justify-between gap-2 px-4 py-2.5 text-left text-sm font-semibold hover:bg-neutral-50 dark:hover:bg-neutral-800/40" @click="draftTerbuka = !draftTerbuka">
+                <span class="inline-flex items-center gap-2">
+                    <span v-if="adaDraftBaru" class="h-2 w-2 rounded-full bg-danger-500" title="Ada yang sudah diputuskan Finance / berkas supplier masuk"></span>
+                    Draft <span class="font-normal text-neutral-400">({{ jumlahDraft }})</span>
+                    <span class="text-xs font-normal text-neutral-500">
+                        <template v-if="pengajuanBudget?.length">· {{ pengajuanBudget.length }} pengajuan budget Finance</template>
+                        <template v-if="menungguSupplier?.length"> · {{ menungguSupplier.length }} menunggu berkas supplier</template>
+                    </span>
+                </span>
+                <ChevronDown :class="['h-4 w-4 text-neutral-400 transition-transform', draftTerbuka ? 'rotate-180' : '']" />
+            </button>
+            <div v-show="draftTerbuka">
+            <!-- Invoice tertahan Pengajuan Budget: alokasi / koreksi langkah Struktur menunggu Finance. -->
+            <div v-if="pengajuanBudget?.length">
+            <div class="border-y border-neutral-200 bg-neutral-50 px-4 py-1.5 text-xs font-semibold uppercase tracking-wide text-neutral-500 dark:border-neutral-800 dark:bg-neutral-800/40">Menunggu persetujuan budget Finance ({{ pengajuanBudget.length }})</div>
+            <table class="w-full text-sm">
+                <tbody>
+                    <tr v-for="p in pengajuanBudget" :key="p.id" class="border-t border-neutral-100 first:border-t-0 dark:border-neutral-800">
+                        <td class="whitespace-nowrap px-4 py-2 font-mono text-xs">
+                            <span class="inline-flex items-center gap-1.5"><span v-if="p.baru" class="h-2 w-2 rounded-full bg-danger-500" title="Sudah diputuskan Finance"></span>{{ p.invoice_number ?? '—' }}</span>
+                        </td>
+                        <td class="px-4 py-2">{{ p.description ?? '—' }}<div v-if="p.status === 'ditolak' && p.catatan" class="text-[11px] text-danger-600">{{ p.catatan }}</div></td>
+                        <td class="whitespace-nowrap px-4 py-2 text-xs text-neutral-500">{{ p.diajukan }}</td>
+                        <td class="whitespace-nowrap px-4 py-2">
+                            <span :class="['rounded-full px-2 py-0.5 text-[11px] font-medium', p.status === 'disetujui' ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300' : p.status === 'ditolak' ? 'bg-danger-50 text-danger-700 dark:bg-danger-950/40 dark:text-danger-300' : 'bg-amber-50 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300']">
+                                {{ p.status === 'disetujui' ? 'Disetujui — lanjutkan' : p.status === 'ditolak' ? 'Ditolak' : 'Menunggu Finance' }}</span>
+                        </td>
+                        <td class="whitespace-nowrap px-4 py-2 text-right"><a :href="p.url" class="text-xs font-medium text-primary-600 hover:underline">Buka</a></td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+            <!-- Invoice yang menunggu berkas supplier (Generate Link). Titik merah = supplier sudah mengunggah. -->
+            <div v-if="menungguSupplier?.length">
+            <div class="border-y border-neutral-200 bg-neutral-50 px-4 py-1.5 text-xs font-semibold uppercase tracking-wide text-neutral-500 dark:border-neutral-800 dark:bg-neutral-800/40">Menunggu berkas supplier ({{ menungguSupplier.length }})</div>
+            <table class="w-full text-sm">
+                <tbody>
+                    <tr v-for="l in menungguSupplier" :key="l.id" class="border-t border-neutral-100 first:border-t-0 dark:border-neutral-800">
+                        <td class="whitespace-nowrap px-4 py-2 font-mono text-xs">
+                            <span class="inline-flex items-center gap-1.5">
+                                <span v-if="l.baru" class="h-2 w-2 rounded-full bg-danger-500" title="Supplier sudah mengunggah dokumen"></span>
+                                <Link :href="route('bs.ap.create', { link: l.id })" class="text-primary-600 hover:underline">{{ l.invoice_number }}</Link>
+                            </span>
+                        </td>
+                        <td class="px-4 py-2">{{ l.supplier ?? '—' }}<div v-if="l.description" class="truncate text-xs text-neutral-400">{{ l.description }}</div></td>
+                        <td class="whitespace-nowrap px-4 py-2 text-xs">
+                            <span v-if="l.status === 'terisi'" class="font-medium text-emerald-700 dark:text-emerald-300">Berkas supplier masuk{{ l.berkas_number ? ' · ' + l.berkas_number : '' }}</span>
+                            <span v-else class="text-amber-600">Menunggu supplier sejak {{ l.created_at }}</span>
+                        </td>
+                        <td class="whitespace-nowrap px-4 py-2 text-right"><Link :href="route('bs.ap.create', { link: l.id })" class="text-xs font-medium text-primary-600 hover:underline">Lanjutkan →</Link></td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+            </div>
         </div>
 
         <!-- Info baris terpilih: berapa yang bisa dicetak sebagai PO, berapa yang bukan dari PO. -->

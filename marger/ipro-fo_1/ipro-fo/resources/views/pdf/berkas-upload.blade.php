@@ -62,7 +62,7 @@
     <table>
         <tr><th style="width:28px">No</th><th>Jenis</th><th>Nama file</th></tr>
         @foreach ($b->files as $i => $f)
-            <tr><td>{{ $i + 1 }}</td><td>{{ $f->jenis?->name ?? 'Jenis lain' }}</td><td>{{ $f->original_name }}</td></tr>
+            <tr><td>{{ $i + 1 }}</td><td>{{ $f->labelJenis() ?? 'Jenis lain' }}</td><td>{{ $f->original_name }}</td></tr>
         @endforeach
     </table>
 

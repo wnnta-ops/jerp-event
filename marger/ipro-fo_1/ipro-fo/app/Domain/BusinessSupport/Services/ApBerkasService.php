@@ -55,7 +55,7 @@ final class ApBerkasService
      * Buat berkas (draft). $ajukan = langsung minta TTD Dept Head.
      *
      * @param  array<string, mixed>  $data  isian form (lihat ApBerkasController::rules)
-     * @param  list<array{file:UploadedFile, berkas_id:?int}>  $files
+     * @param  list<array{file:UploadedFile, berkas_id:?int, keterangan?:?string}>  $files
      */
     public function create(array $data, array $files, User $uploader, bool $ajukan = false): BsApBerkasUpload
     {
@@ -112,7 +112,7 @@ final class ApBerkasService
         });
     }
 
-    /** @param list<array{file:UploadedFile, berkas_id:?int}> $files */
+    /** @param list<array{file:UploadedFile, berkas_id:?int, keterangan?:?string}> $files */
     public function addFiles(BsApBerkasUpload $berkas, array $files, User $user): void
     {
         $this->assertBisaDiubah($berkas);
@@ -279,7 +279,7 @@ final class ApBerkasService
                     ->map(fn (BsApBerkasUploadFile $f) => [
                         'id' => $f->id,
                         'name' => $f->original_name,
-                        'jenis' => $f->jenis?->name,
+                        'jenis' => $f->labelJenis(),
                         'mime' => $f->mime,
                         'url' => route('bs.ap.berkas.file', [$b->id, $f->id]),
                     ])->values()->all(),
@@ -436,6 +436,7 @@ final class ApBerkasService
             $stored[] = $path;
             $berkas->files()->create([
                 'berkas_id' => $f['berkas_id'] ?? null,
+                'keterangan' => isset($f['keterangan']) && trim((string) $f['keterangan']) !== '' ? mb_substr(trim((string) $f['keterangan']), 0, 100) : null,
                 'original_name' => mb_substr($file->getClientOriginalName(), 0, 250),
                 'path' => $path,
                 'mime' => (string) $file->getMimeType(),

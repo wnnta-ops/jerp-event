@@ -11,7 +11,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 /**
  * Alokasi Budget (dok BC.AL/...) — memindah anggaran dari budget asal (budget_id, COA lama) ke
- * budget tujuan (to_budget_id, COA baru) per bulan (`months`), langsung berlaku tanpa approval.
+ * budget tujuan (to_budget_id, COA baru) per bulan (`months`). Dari layar Alokasi langsung berlaku;
+ * dari invoice hutang 'baru' sampai disetujui di Approval Alokasi Budget (BudgetAllocationService).
  * Baris lama tanpa to_budget_id = alokasi model lama (penyisihan dalam satu budget).
  */
 class BsBudgetAllocation extends Model
@@ -21,7 +22,7 @@ class BsBudgetAllocation extends Model
     protected $table = 'bs_budget_allocations';
     protected $fillable = [
         'tenant_id', 'doc_no', 'year', 'project', 'budget_id', 'to_budget_id', 'cost_center_id', 'account_id',
-        'alloc_date', 'period_from', 'period_to', 'amount', 'months', 'total_budget', 'status', 'notes', 'source_type', 'source_id',
+        'alloc_date', 'period_from', 'period_to', 'amount', 'months', 'total_budget', 'status', 'approval_id', 'notes', 'source_type', 'source_id',
         'approved_at', 'approved_by', 'created_by',
     ];
     protected $casts = [
@@ -33,6 +34,11 @@ class BsBudgetAllocation extends Model
     public const STATUSES = ['baru' => 'Baru', 'approved' => 'Approved', 'rejected' => 'Not Approved'];
 
     public const SOURCE_INVOICE = 'ap_invoice';
+
+    /** document_type approval alokasi budget di Approval Inbox (chain AL-DEFAULT, satu tahap Finance). */
+    public const DOCUMENT_TYPE = 'budget_allocation';
+
+    public function approval(): BelongsTo { return $this->belongsTo(\App\Domain\Approval\Models\Approval::class, 'approval_id'); }
 
     public function budget(): BelongsTo { return $this->belongsTo(BsBudget::class, 'budget_id'); }
     public function toBudget(): BelongsTo { return $this->belongsTo(BsBudget::class, 'to_budget_id'); }

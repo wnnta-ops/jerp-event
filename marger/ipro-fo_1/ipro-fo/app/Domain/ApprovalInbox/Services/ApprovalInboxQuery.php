@@ -35,6 +35,7 @@ final class ApprovalInboxQuery
         BsApBerkasUpload::DOCUMENT_TYPE,
         BsApInvoice::APPROVAL_DOCUMENT_TYPE,
         BsBudgetCorrection::DOCUMENT_TYPE,
+        \App\Domain\BusinessSupport\Models\BsBudgetAllocation::DOCUMENT_TYPE,
     ];
 
     public const TYPE_LABELS = [
@@ -42,6 +43,7 @@ final class ApprovalInboxQuery
         BsApBerkasUpload::DOCUMENT_TYPE => 'TTD Berkas',
         BsApInvoice::APPROVAL_DOCUMENT_TYPE => 'Invoice Hutang',
         BsBudgetCorrection::DOCUMENT_TYPE => 'Koreksi Budget',
+        \App\Domain\BusinessSupport\Models\BsBudgetAllocation::DOCUMENT_TYPE => 'Alokasi Budget',
     ];
 
     /** @return Collection<int, Approval> */
@@ -135,8 +137,14 @@ final class ApprovalInboxQuery
 
             $stages[] = [
                 'label' => $this->stepLabel($approval, (int) $step->level, $chainStep),
-                'role' => $chainStep?->approver_type === 'assigned' ? 'Ditunjuk' : $chainStep?->approver_value,
+                'role' => match ($chainStep?->approver_type) {
+                    'assigned' => 'Ditunjuk',
+                    'user' => $this->users(collect([(int) $chainStep->approver_value]))[(int) $chainStep->approver_value]?->name ?? 'User',
+                    default => $chainStep?->approver_value,
+                },
                 'state' => $state,
+                // user = 'role' berisi nama orangnya; role/assigned = nama peran (bukan orang).
+                'approver_type' => $chainStep?->approver_type,
                 'by' => $who?->name,
                 'at' => $step->acted_at?->toIso8601String(),
                 'notes' => $step->notes,
@@ -238,6 +246,16 @@ final class ApprovalInboxQuery
             if ($inv) {
                 $out['links'][] = ['label' => 'Buka invoice', 'url' => route('bs.ap.show', $inv->id)];
             }
+        } elseif ($m instanceof \App\Domain\BusinessSupport\Models\BsBudgetAllocation) {
+            $bulanLabel = \App\Domain\BusinessSupport\Models\BsBudget::MONTHS;
+            $cc = fn ($b) => $b?->costCenter ? trim($b->costCenter->code.' '.$b->costCenter->name) : 'Semua cost center';
+            $out['fields'] = [
+                ['label' => 'Dari budget', 'value' => trim(($m->budget?->doc_no ?? '').' · '.$m->account?->code.' '.$m->account?->name.' · '.$cc($m->budget), ' ·')],
+                ['label' => 'Ke budget', 'value' => $m->toBudget ? trim($m->toBudget->doc_no.' · '.$m->toBudget->account?->code.' '.$m->toBudget->account?->name.' · '.$cc($m->toBudget)) : null],
+                ['label' => 'Per bulan', 'value' => collect($m->months ?? [])->map(fn ($v, $b) => $bulanLabel[(int) $b - 1].': '.$rp($v))->implode(' · ') ?: null],
+                ['label' => 'Total dipindah', 'value' => $rp($m->amount)],
+            ];
+            $out['body'] = $m->notes;
         }
 
         return $out;
@@ -253,6 +271,7 @@ final class ApprovalInboxQuery
                 BsApBerkasUpload::class => ['supplier:id,name', 'files.jenis:id,name'],
                 BsApInvoice::class => ['supplier:id,name'],
                 BsBudgetCorrection::class => ['account:id,code,name', 'costCenter:id,code,name', 'budget'],
+                \App\Domain\BusinessSupport\Models\BsBudgetAllocation::class => ['account:id,code,name', 'costCenter:id,code,name', 'budget', 'toBudget.account:id,code,name', 'toBudget.costCenter:id,code,name'],
                 MemoInternal::class => ['supplier:id,name'],
             ])]);
     }
@@ -271,6 +290,9 @@ final class ApprovalInboxQuery
                 'amount' => (float) $m->total],
             $m instanceof BsBudgetCorrection => ['number' => $m->doc_no, 'title' => 'Koreksi budget '.$m->account?->code.' '.$m->account?->name,
                 'sub' => $m->costCenter?->name ?? 'Semua cost center', 'amount' => round((float) $m->new_amount - (float) $m->old_amount, 2)],
+            $m instanceof \App\Domain\BusinessSupport\Models\BsBudgetAllocation => ['number' => $m->doc_no,
+                'title' => 'Alokasi budget → '.$m->toBudget?->account?->code.' '.$m->toBudget?->account?->name,
+                'sub' => 'dari '.$m->account?->code.' · '.($m->costCenter?->name ?? 'Semua cost center'), 'amount' => (float) $m->amount],
             default => ['number' => '#'.$approval->id, 'title' => null, 'sub' => null, 'amount' => null],
         };
     }
@@ -306,8 +328,11 @@ final class ApprovalInboxQuery
             return $lead;
         }
 
+        if ($approval->document_type === \App\Domain\BusinessSupport\Models\BsBudgetAllocation::DOCUMENT_TYPE) {
+            return [$stage('Pengaju', 'Alokasi dari invoice hutang', $submitter, $approval->submitted_at)];
+        }
         if ($approval->document_type === BsBudgetCorrection::DOCUMENT_TYPE) {
-            $dariInvoice = $approval->approvable?->source_type === BsBudgetCorrection::SOURCE_INVOICE;
+            $dariInvoice = in_array($approval->approvable?->source_type, [BsBudgetCorrection::SOURCE_INVOICE, \App\Domain\BusinessSupport\Models\BsApBudgetRequest::SOURCE], true);
 
             return [$stage('Pengaju', $dariInvoice ? 'Koreksi dari invoice hutang' : 'Koreksi Budget', $submitter, $approval->submitted_at)];
         }
@@ -328,7 +353,7 @@ final class ApprovalInboxQuery
     {
         return $berkas->files->map(fn ($f) => [
             'name' => $f->original_name,
-            'jenis' => $f->jenis?->name,
+            'jenis' => $f->labelJenis(),
             'url' => route('bs.ap.berkas.file', [$berkas->id, $f->id]),
         ])->all();
     }
@@ -352,18 +377,26 @@ final class ApprovalInboxQuery
     /** @var array<int, Collection<int, ApprovalChainStep>> */
     private array $chainSteps = [];
 
-    private function chainStep(Approval $approval, int $level): ?ApprovalChainStep
+    /** Susunan approver satu level: snapshot di approval_steps (sejak chain bisa diatur), atau chain step-nya. */
+    private function chainStep(Approval $approval, int $level): ?object
     {
+        $snap = $approval->relationLoaded('steps') ? $approval->steps->firstWhere('level', $level) : null;
+        if ($snap?->approver_type) {
+            return (object) ['approver_type' => $snap->approver_type, 'approver_value' => $snap->approver_value, 'label' => $snap->label];
+        }
         $this->chainSteps[$approval->approval_chain_id] ??= ApprovalChainStep::query()
             ->where('approval_chain_id', $approval->approval_chain_id)->get()->keyBy('level');
 
         return $this->chainSteps[$approval->approval_chain_id][$level] ?? null;
     }
 
-    private function stepLabel(Approval $approval, int $level, ?ApprovalChainStep $chainStep): string
+    private function stepLabel(Approval $approval, int $level, ?object $chainStep): string
     {
         if ($approval->document_type === BsApBerkasUpload::DOCUMENT_TYPE) {
             return 'Dept. Head (TTD)';
+        }
+        if (! empty($chainStep?->label)) {
+            return (string) $chainStep->label;
         }
         if (in_array($approval->document_type, [MemoInternal::DOCUMENT_TYPE, BsApInvoice::APPROVAL_DOCUMENT_TYPE], true)
             && isset(MemoInternal::STEPS[$level])) {

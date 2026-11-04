@@ -44,6 +44,8 @@ class SsoController extends Controller
 
         Auth::login($user, true);
         $request->session()->regenerate();
+        // Pop-up pengingat Memo Urgent dibayar tanpa invoice — tampil lagi tiap login.
+        $request->session()->put(\App\Domain\BusinessSupport\Services\PembayaranMemoUrgent::SESI_PENGINGAT, true);
 
         // ?next= dari FO (mis. tautan pop-up Posting ke BO) → langsung ke halaman itu.
         // HANYA path di dalam BO sendiri ("/..."): URL lengkap, "//host", backslash, atau

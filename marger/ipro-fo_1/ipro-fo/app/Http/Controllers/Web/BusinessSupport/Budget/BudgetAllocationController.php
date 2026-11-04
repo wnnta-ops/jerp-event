@@ -106,38 +106,85 @@ class BudgetAllocationController extends Controller
         return to_route('bs.budget.allocation.index')->with('success', "Alokasi {$a->doc_no} tersimpan — anggaran sudah dipindah.");
     }
 
-    /** Inbox approval batch alokasi. */
-    public function approvals(Request $request): Response
+    /**
+     * Inbox approval batch alokasi. Alokasi dari Registrasi Invoice Hutang berjalan di Approval
+     * Inbox (approval_id, chain AL-DEFAULT = Finance): Setujui/Tolak di sini = bertindak di tahap
+     * yang menunggu (approval yang sama, dua pintu). Anggaran baru dipindah saat disetujui.
+     */
+    public function approvals(Request $request, \App\Domain\ApprovalInbox\Services\ApprovalInboxQuery $inbox): Response
     {
-        abort_unless($request->user()?->can('budget.allocation.approve'), 403);
+        $user = $request->user();
+        $alokasi = BsBudgetAllocation::with(['account:id,code,name', 'costCenter:id,code,name', 'budget:id,doc_no', 'toBudget.account:id,code,name', 'toBudget.costCenter:id,name', 'approval.steps'])
+            ->where('status', 'baru')->orderBy('doc_no')->get();
+        $bisa = fn (BsBudgetAllocation $a) => $a->approval ? $inbox->canAct($user, $a->approval)
+            : (bool) $user?->canAny(['budget.allocation.approve', 'businesssupport.approval.act']);
+        abort_unless($user?->can('budget.allocation.approve') || $alokasi->contains(fn ($a) => $a->approval && $bisa($a)), 403);
 
-        $rows = BsBudgetAllocation::with(['account:id,code,name', 'costCenter:id,code,name'])
-            ->where('status', 'baru')->orderBy('doc_no')->get()
-            ->map(fn ($a) => [
+        $nomorInvoice = function (BsBudgetAllocation $a): ?string {
+            return match ($a->source_type) {
+                BsBudgetAllocation::SOURCE_INVOICE => \App\Domain\BusinessSupport\Models\BsApInvoice::query()->whereKey($a->source_id)->value('invoice_number'),
+                \App\Domain\BusinessSupport\Models\BsApBudgetRequest::SOURCE => \App\Domain\BusinessSupport\Models\BsApBudgetRequest::query()->whereKey($a->source_id)->value('invoice_number'),
+                default => null,
+            };
+        };
+        $rows = $alokasi->map(function ($a) use ($bisa, $inbox, $nomorInvoice) {
+            $tahap = $a->approval ? collect($inbox->stages($a->approval))->firstWhere('state', 'current') : null;
+
+            return [
                 'id' => $a->id, 'doc_no' => $a->doc_no, 'year' => $a->year, 'date' => $a->alloc_date?->format('Y-m-d'),
                 'account' => $a->account?->code.' - '.$a->account?->name, 'cost_center' => $a->costCenter?->name ?? 'Semua',
+                'ref' => $a->budget?->doc_no,
+                'to_ref' => $a->toBudget?->doc_no,
+                'to_account' => $a->toBudget ? $a->toBudget->account?->code.' - '.$a->toBudget->account?->name : null,
+                'to_cost_center' => $a->toBudget ? ($a->toBudget->costCenter?->name ?? 'Semua') : null,
+                'period' => collect(array_keys($a->months ?? []))->map(fn ($m) => BsBudget::MONTHS[(int) $m - 1])->implode(', ').' '.$a->year,
+                'invoice' => $nomorInvoice($a),
+                'notes' => $a->notes,
                 'amount' => (float) $a->amount, 'total_budget' => (float) $a->total_budget,
-            ])->values();
+                'tahap' => $tahap ? trim($tahap['label'].($tahap['role'] ? ' — '.$tahap['role'] : '')) : null,
+                'approval_url' => $a->approval_id ? route('approval-inbox.show', $a->approval_id) : null,
+                'bisa' => $bisa($a),
+            ];
+        })->values();
 
         return Inertia::render('BusinessSupport/Budget/Allocations/Approvals', [
-            'rows' => $rows, 'canApprove' => (bool) $request->user()?->canAny(['budget.allocation.approve', 'businesssupport.approval.act']),
+            'rows' => $rows, 'canApprove' => $rows->contains('bisa', true),
             'summary' => ['count' => $rows->count(), 'total' => $rows->sum('amount')],
         ]);
     }
 
     public function approveBatch(Request $request): RedirectResponse
     {
-        abort_unless($request->user()?->canAny(['budget.allocation.approve', 'businesssupport.approval.act']), 403);
         $v = $request->validate([
             'ids'      => ['required', 'array', 'min:1'],
             'ids.*'    => ['integer', 'exists:bs_budget_allocations,id'],
             'decision' => ['required', 'in:approve,reject'],
         ]);
         $approve = $v['decision'] === 'approve';
-        BsBudgetAllocation::whereIn('id', $v['ids'])->where('status', 'baru')->update([
-            'status' => $approve ? 'approved' : 'rejected', 'approved_at' => now(), 'approved_by' => $request->user()->id,
-        ]);
+        $bolehLama = (bool) $request->user()?->canAny(['budget.allocation.approve', 'businesssupport.approval.act']);
+        // Lewat Approval Inbox (ActOnApproval — hak per tahap sama dengan Inbox; SyncPengajuanBudgetInvoice
+        // memindah anggarannya). Alokasi tanpa approval_id diputuskan langsung. Per alokasi satu transaksi:
+        // yang sisa budget asalnya sudah tidak cukup gagal sendiri dan tetap menunggu.
+        $ok = 0;
+        $gagal = [];
+        foreach (BsBudgetAllocation::with('approval.steps')->whereIn('id', $v['ids'])->where('status', 'baru')->orderBy('id')->get() as $a) {
+            try {
+                if ($a->approval) {
+                    app(\App\Domain\Approval\Actions\ActOnApproval::class)->execute($a->approval, $approve ? 'approve' : 'reject');
+                } elseif ($bolehLama) {
+                    DB::transaction(fn () => app(BudgetAllocationService::class)->putuskan($a, $approve, $request->user()->id));
+                } else {
+                    $gagal[] = $a->doc_no.': tidak berhak';
 
-        return back()->with('success', $approve ? 'Alokasi disetujui.' : 'Alokasi ditolak.');
+                    continue;
+                }
+                $ok++;
+            } catch (BusinessRuleException $e) {
+                $gagal[] = $a->doc_no.': '.$e->getMessage();
+            }
+        }
+        $pesan = $ok ? $ok.' alokasi '.($approve ? 'disetujui — anggaran sudah dipindah.' : 'ditolak.') : '';
+
+        return $gagal ? back()->with($ok ? 'warning' : 'error', trim($pesan.' Gagal: '.implode(' · ', $gagal))) : back()->with('success', $pesan);
     }
 }

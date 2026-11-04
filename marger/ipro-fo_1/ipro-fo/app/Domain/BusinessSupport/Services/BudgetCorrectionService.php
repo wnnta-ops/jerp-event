@@ -66,7 +66,7 @@ final class BudgetCorrectionService
      *
      * @param  array<int,float>  $tambahan
      */
-    public function ajukanManual(BsBudget $budget, array $tambahan, string $tanggal, ?string $note, int $userId): BsBudgetCorrection
+    public function ajukanManual(BsBudget $budget, array $tambahan, string $tanggal, ?string $note, int $userId, ?array $sumber = null, ?int $costCenterId = null): BsBudgetCorrection
     {
         $tambahan = array_filter(array_map(fn ($v) => round((float) $v, 2), $tambahan), fn ($v) => $v != 0.0);
         ksort($tambahan);
@@ -76,11 +76,12 @@ final class BudgetCorrectionService
             'tenant_id' => $budget->tenant_id,
             'doc_no' => BsBudgetCorrection::nextDocNo((int) $budget->year, $budget->project, $tanggal),
             'year' => $budget->year, 'project' => $budget->project, 'budget_id' => $budget->id,
-            'cost_center_id' => $budget->cost_center_id, 'account_id' => $budget->account_id,
+            'cost_center_id' => $costCenterId ?? $budget->cost_center_id, 'account_id' => $budget->account_id,
             'corr_date' => $tanggal, 'period_from' => (int) array_key_first($tambahan), 'period_to' => (int) array_key_last($tambahan),
             'old_amount' => (float) $budget->amount, 'new_amount' => round((float) $budget->amount + $total, 2),
             'months' => $tambahan,
             'status' => 'baru', 'note' => $note !== null ? mb_substr($note, 0, 255) : null, 'created_by' => $userId,
+            'source_type' => $sumber['type'] ?? null, 'source_id' => $sumber['id'] ?? null,
         ]);
         $approval = $this->submit->execute(BsBudgetCorrection::DOCUMENT_TYPE, $c, ['doc_no' => $c->doc_no, 'nilai' => $total]);
         $c->forceFill(['approval_id' => $approval->id])->save();

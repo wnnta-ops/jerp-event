@@ -30,12 +30,14 @@ class EventServiceProvider extends ServiceProvider
             \App\Domain\ApprovalInbox\Listeners\SyncMemoInternalStatus::class,
             \App\Domain\BusinessSupport\Listeners\SyncApBerkasStatus::class,
             \App\Domain\BusinessSupport\Listeners\SyncBudgetCorrectionStatus::class,
+            \App\Domain\BusinessSupport\Listeners\SyncPengajuanBudgetInvoice::class,
             \App\Domain\ApprovalInbox\Listeners\NotifyApprovalProgress::class,
         ],
         \App\Domain\Approval\Events\ApprovalRejected::class => [
             \App\Domain\ApprovalInbox\Listeners\SyncMemoInternalStatus::class,
             \App\Domain\BusinessSupport\Listeners\SyncApBerkasStatus::class,
             \App\Domain\BusinessSupport\Listeners\SyncBudgetCorrectionStatus::class,
+            \App\Domain\BusinessSupport\Listeners\SyncPengajuanBudgetInvoice::class,
             \App\Domain\ApprovalInbox\Listeners\NotifyApprovalProgress::class,
         ],
         \App\Domain\Approval\Events\ApprovalSubmitted::class => [

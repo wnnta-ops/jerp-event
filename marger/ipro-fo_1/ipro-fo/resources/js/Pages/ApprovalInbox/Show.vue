@@ -20,14 +20,19 @@ const props = defineProps<{
     stages: Stage[];
     canAct: boolean;
     /** Memo Urgent: isi lembar memo untuk preview & cetak (null untuk dokumen lain). */
-    memo: { number: string; date: string | null; department: string | null; pengaju: string | null; supplier: string | null;
+    memo: { number: string; rincian?: string | null; date: string | null; department: string | null; pengaju: string | null; supplier: string | null;
         subject: string; body: string; amount: number | null; perusahaan: string; cetak_url: string } | null;
 }>();
 
-const tanggal = (d: string | null) => (d ? new Date(d).toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' }) : '—');
-const rupiah = (v: number | null) => (v == null ? '—' : 'Rp ' + Math.round(v).toLocaleString('id-ID'));
-/* Kotak TTD lembar memo = tahap alur (pengaju + tiap level). TTD muncul hanya untuk tahap yang SUDAH menyetujui. */
-const ttdLabel: Record<StageState, string> = { done: 'Disetujui', rejected: 'Ditolak', current: 'Menunggu', waiting: '', skipped: 'Tidak dilanjutkan' };
+
+/* Tinggi iframe preview = tinggi lembar (satu domain, jadi isinya bisa diukur). */
+const tinggiPreview = ref(900);
+function sesuaikanTinggi(ev: Event) {
+    try {
+        const doc = (ev.target as HTMLIFrameElement).contentDocument;
+        if (doc) tinggiPreview.value = Math.max(600, doc.documentElement.scrollHeight + 8);
+    } catch { /* biarkan tinggi bawaan */ }
+}
 
 const rejecting = ref(false);
 const form = useForm({ action: 'approve' as 'approve' | 'reject', notes: '' });
@@ -75,37 +80,10 @@ const statusBadge: Record<string, { variant: string; text: string }> = {
                 <p class="text-sm font-semibold">Preview Memo <span class="font-normal text-neutral-500">· TTD sampai tahap {{ approval.position }}</span></p>
                 <a :href="memo.cetak_url" target="_blank" rel="noopener" class="inline-flex h-8 items-center rounded-lg border border-neutral-300 px-3 text-xs font-medium hover:bg-neutral-50 dark:border-neutral-700 dark:hover:bg-neutral-800">Cetak / PDF</a>
             </div>
+            <!-- Lembar yang sama dengan Cetak / PDF (pdf/memo-urgent.blade.php), tanpa dialog cetak. -->
             <div class="bg-neutral-100 p-3 sm:p-6 dark:bg-neutral-950">
-                <div class="mx-auto max-w-3xl bg-white p-5 text-neutral-900 shadow-sm sm:p-10">
-                    <div class="flex items-end justify-between gap-3 border-b-2 border-neutral-900 pb-2">
-                        <div><p class="text-lg font-bold tracking-wide">MEMO URGENT</p><p class="text-xs text-neutral-600">{{ memo.perusahaan }}</p></div>
-                        <p class="font-mono text-sm font-bold">{{ memo.number }}</p>
-                    </div>
-                    <dl class="mt-4 grid gap-x-6 gap-y-1 text-sm sm:grid-cols-2">
-                        <div class="flex gap-2"><dt class="w-24 shrink-0 text-neutral-500">Tanggal</dt><dd>{{ tanggal(memo.date) }}</dd></div>
-                        <div class="flex gap-2"><dt class="w-24 shrink-0 text-neutral-500">Dari</dt><dd>{{ memo.pengaju ?? '—' }}<span v-if="memo.department" class="text-neutral-500"> · {{ memo.department }}</span></dd></div>
-                        <div class="flex gap-2"><dt class="w-24 shrink-0 text-neutral-500">Supplier</dt><dd>{{ memo.supplier ?? '—' }}</dd></div>
-                        <div class="flex gap-2"><dt class="w-24 shrink-0 text-neutral-500">Nominal</dt><dd class="font-semibold tabular-nums">{{ rupiah(memo.amount) }}</dd></div>
-                        <div class="flex gap-2 sm:col-span-2"><dt class="w-24 shrink-0 text-neutral-500">Perihal</dt><dd class="font-semibold">{{ memo.subject }}</dd></div>
-                    </dl>
-                    <p class="mt-5 min-h-[6rem] whitespace-pre-line text-sm leading-relaxed">{{ memo.body }}</p>
-
-                    <div class="mt-8 grid grid-cols-2 border-t border-l border-neutral-300 text-center text-[11px] sm:grid-cols-3 lg:grid-cols-6">
-                        <div v-for="(s, i) in stages" :key="i" class="flex flex-col border-r border-b border-neutral-300">
-                            <div class="border-b border-neutral-300 bg-neutral-50 px-1 py-1 font-semibold">{{ s.label }}</div>
-                            <div class="flex h-16 items-center justify-center px-1">
-                                <img v-if="s.state === 'done' && s.signature" :src="s.signature" :alt="'TTD ' + (s.by ?? '')" class="max-h-14 max-w-full object-contain" />
-                                <span v-else-if="s.state === 'done'" class="rotate-[-8deg] rounded border-2 border-emerald-600 px-1.5 py-0.5 text-[10px] font-bold uppercase text-emerald-700">Disetujui</span>
-                                <span v-else-if="s.state === 'rejected'" class="rotate-[-8deg] rounded border-2 border-red-600 px-1.5 py-0.5 text-[10px] font-bold uppercase text-red-700">Ditolak</span>
-                                <span v-else-if="s.state === 'current'" class="text-amber-600">Menunggu…</span>
-                            </div>
-                            <div class="px-1 pb-1">
-                                <p class="truncate font-semibold">{{ ['done', 'rejected'].includes(s.state) ? (s.by ?? '—') : '(…………)' }}</p>
-                                <p class="text-neutral-500">{{ ['done', 'rejected'].includes(s.state) && s.at ? new Date(s.at).toLocaleDateString('id-ID') : ttdLabel[s.state] || '\u00a0' }}</p>
-                            </div>
-                        </div>
-                    </div>
-                </div>
+                <iframe :src="memo.cetak_url + '?preview=1'" title="Preview Memo Urgent" class="mx-auto block w-full max-w-4xl rounded bg-white shadow-sm"
+                    :style="{ height: tinggiPreview + 'px' }" @load="sesuaikanTinggi" />
             </div>
         </div>
 

@@ -234,8 +234,10 @@ final class BudgetGuardService
      * Sisa budget BULAN tanggal dokumen untuk satu akun × cost center — dipakai kolom "Sisa Budget"
      * di Struktur Jurnal. Anggaran per cost center didahulukan; bila tidak ada, anggaran "Semua
      * cost center" (realisasinya lintas cost center). null = akun ini tidak punya anggaran.
+     * Ikut juga angka SETAHUN (anggaran berlaku m1..m12 & realisasi tahun itu, sama dengan Master
+     * Budget) untuk ringkasan Sisa Budget Tahunan & Bulanan di bawah Struktur Jurnal.
      *
-     * @return array{budget_id:int, cakupan:string, anggaran:float, terpakai:float, tanda:int}|null
+     * @return array{budget_id:int, cakupan:string, anggaran:float, terpakai:float, anggaran_tahun:float, terpakai_tahun:float, label:string, tanda:int}|null
      */
     public function sisaBulan(int $accountId, ?int $costCenterId, string $tanggal, ?int $excludeJournalId = null): ?array
     {
@@ -257,6 +259,10 @@ final class BudgetGuardService
             'cakupan' => $cc === null ? 'semua' : 'cc',
             'anggaran' => self::anggaranBulan($budget, (int) $tgl->month),
             'terpakai' => $this->terpakaiBulan($tgl, $accountId, $cc, $excludeJournalId),
+            'anggaran_tahun' => round(array_sum(array_map(fn ($m) => self::anggaranBulan($budget, $m), range(1, 12))), 2),
+            'terpakai_tahun' => $this->realisasi->total((int) $tgl->year, $accountId, $cc, null, null, $excludeJournalId),
+            'label' => trim(($budget->loadMissing(['account:id,code,name', 'costCenter:id,code,name'])->account?->code ?? '').' '.$budget->account?->name)
+                .' · '.($budget->costCenter?->name ?? 'Semua cost center'),
             // +1: debit yang dihitung sebagai realisasi (akun beban); -1: kredit yang dihitung.
             'tanda' => $this->realisasi->contribution($accountId, 1, 0) > 0 ? 1 : -1,
         ];

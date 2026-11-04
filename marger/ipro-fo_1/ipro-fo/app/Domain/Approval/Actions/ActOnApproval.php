@@ -47,10 +47,13 @@ final class ActOnApproval
 
             // Validasi user berhak meng-approve step ini (cek approver_type + approver_value
             // di chain step). SuperAdmin selalu boleh (override administratif).
-            $chainStep = DB::table('approval_chain_steps')
-                ->where('approval_chain_id', $approval->approval_chain_id)
-                ->where('level', $currentStep->level)
-                ->first();
+            // Snapshot di step menang; approval lama tanpa snapshot jatuh ke chain step.
+            $chainStep = $currentStep->approver_type
+                ? (object) ['approver_type' => $currentStep->approver_type, 'approver_value' => $currentStep->approver_value]
+                : DB::table('approval_chain_steps')
+                    ->where('approval_chain_id', $approval->approval_chain_id)
+                    ->where('level', $currentStep->level)
+                    ->first();
 
             $authorized = $user !== null && (
                 $user->hasRole('SuperAdmin')

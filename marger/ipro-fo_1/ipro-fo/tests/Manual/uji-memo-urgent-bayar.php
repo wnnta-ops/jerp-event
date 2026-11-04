@@ -5,7 +5,7 @@
  *  1. Memo bisa dibayar setelah Direktur menyetujui; sekali bayar, maks. nominal memo, akun uang muka 10107…
  *     Jurnal Dr Uang Muka / Cr Kas/Bank, kuitansi langsung aktif.
  *  2. Belum ada invoice → masuk daftar outstanding; lewat batas hari → pengaju tidak bisa ajukan memo baru.
- *  3. TTD cetakan: Direktur tertanda, MW / BA menyusul otomatis setelah disetujui.
+ *  3. TTD cetakan: Direktur tertanda; MW / BA kosong (chain Memo Urgent tanpa MW / BA).
  *  4. Invoice penyusul: lebih kecil dari yang dibayar → ditolak; dibayar di Kuitansi → potong uang muka wajib
  *     (Dr Hutang / Cr Uang Muka / Cr Kas sisanya); kuitansi memo tak bisa di-void setelah uang mukanya terpakai.
  *
@@ -94,6 +94,15 @@ try {
         return (string) $v;
     };
     $act = app(ActOnApproval::class);
+    // Chain memo per user (System › Approval Chain) diarahkan ke approver uji — ikut dibatalkan bersama transaksi.
+    $arahkanChainMemo = function (array $labelKeUser): void {
+        $chains = DB::table('approval_chains')->where('document_type', 'memo_internal')->pluck('id');
+        foreach ($labelKeUser as $label => $u) {
+            DB::table('approval_chain_steps')->whereIn('approval_chain_id', $chains)->where('label', $label)
+                ->update(['approver_type' => 'user', 'approver_value' => (string) $u->id]);
+        }
+    };
+    $arahkanChainMemo(['Accounting' => $approver['Accounting'], 'Finance' => $approver['Finance'], 'GM' => $approver['GM'], 'Direktur' => $approver['Direktur'], 'MW / BA' => $approver['Owner']]);
     $setujui = function (int $approvalId, array $roles) use ($act, $approver, $sebagai) {
         foreach ($roles as $r) {
             $sebagai($approver[$r]);
@@ -104,8 +113,7 @@ try {
     $supplier = (int) DB::table('bs_suppliers')->where('is_active', 1)->whereNull('deleted_at')->orderBy('id')->value('id');
     $bank = (int) DB::table('bs_accounts')->where('is_active', 1)->where('is_postable', 1)->where('code', 'like', '101010%')
         ->whereNotIn('code', ['10101010101', '10101010102'])->orderBy('code')->value('id');
-    $akunUm = (int) $svc->akunUangMuka()->first()->id;
-    $akunBukanUm = $bank;
+    $akunUm = (int) $svc->akunMemo()?->id; // pakem 10107030304 AKUN MEMO URGENT
     $hutang = (int) DB::table('bs_ap_invoices')->whereNotNull('payable_account_id')->value('payable_account_id');
     $tgl = now()->toDateString();
 
@@ -116,23 +124,45 @@ try {
     $cek('memo belum sampai Direktur → belum bisa dibayar', ! $svc->bisaDibayar()->contains('id', $memo->id));
     $setujui($memo->approval_id, ['Accounting', 'Finance', 'GM', 'Direktur']);
     $cek('Direktur menyetujui → bisa dibayar', $svc->bisaDibayar()->contains('id', $memo->id));
+    $tarik = app(App\Domain\ApprovalInbox\Services\MemoUntukInvoice::class);
+    $cek('belum dibayar → BELUM bisa ditarik ke invoice hutang', ! $tarik->boleh($memo->id));
+    $cek('…dan tampil di daftar "bayar dulu" form invoice', $tarik->menungguBayar()->contains('number', $memo->memo_number));
 
     $sebagai($admin);
-    $dasar = ['memo_internal_id' => $memo->id, 'kuitansi_date' => $tgl, 'cash_account_id' => $bank, 'advance_account_id' => $akunUm, 'amount' => 1_000_000, 'alat_transaksi' => 'transfer'];
+    $dasar = ['memo_internal_id' => $memo->id, 'kuitansi_date' => $tgl, 'cash_account_id' => $bank, 'amount' => 1_000_000, 'alat_transaksi' => 'transfer'];
     $cek('melebihi nominal memo → ditolak', $kode(fn () => $svc->bayar(['amount' => 1_000_001] + $dasar, $admin->id)) === 'MEMO_BAYAR_LEBIH');
-    $cek('akun debit bukan uang muka → ditolak', $kode(fn () => $svc->bayar(['advance_account_id' => $akunBukanUm] + $dasar, $admin->id)) === 'MEMO_BAYAR_AKUN');
+    $cek('akun pakem 10107030304 AKUN MEMO URGENT tersedia', $akunUm > 0 && $svc->akunMemo()->name === 'AKUN MEMO URGENT');
 
-    $resp = app()->call([app(ApKuitansiController::class), 'storeMemo'], ['request' => $minta('POST', $dasar)]);
+    $resp = app()->call([app(ApKuitansiController::class), 'storeMemo'], ['request' => $minta('POST', $dasar + ['advance_account_id' => $bank])]);
     $kui = BsApKuitansi::where('memo_internal_id', $memo->id)->first();
     $cek('bayar lewat layar → kuitansi aktif, supplier ikut memo', $kui && $kui->status === 'active' && (int) $kui->supplier_id === $supplier && $sama($kui->total, 1_000_000), $sesi('error'));
     $jl = BsJournalLine::where('journal_id', $kui?->journal_id)->get();
-    $cek('jurnal Dr Uang Muka / Cr Bank', $sama($jl->where('account_id', $akunUm)->sum('debit'), 1_000_000) && $sama($jl->where('account_id', $bank)->sum('credit'), 1_000_000));
+    $cek('jurnal Dr AKUN MEMO URGENT / Cr Bank (akun kiriman layar diabaikan)', $sama($jl->where('account_id', $akunUm)->sum('debit'), 1_000_000) && $sama($jl->where('account_id', $bank)->sum('credit'), 1_000_000));
+    $cek('sudah dibayar → bisa ditarik ke invoice hutang', $tarik->boleh($memo->id) && ! $tarik->menungguBayar()->contains('number', $memo->memo_number));
     $cek('sekali bayar — memo tidak bisa dibayar lagi', $kode(fn () => $svc->bayar($dasar, $admin->id)) === 'MEMO_BAYAR_TIDAK_BOLEH');
 
     echo "\n=== 2. Invoice wajib menyusul ===\n";
     $out = $svc->outstanding($pengaju->id);
     $cek('masuk daftar Memo Urgent Belum Invoice', $out->contains('memo_id', $memo->id));
     $cek('belum lewat batas → pengaju masih boleh ajukan memo', ! $svc->terblokir($pengaju));
+    $cek('batas hari = 7', $svc->batasHari() === 7, (string) $svc->batasHari());
+    $cek('hitung mundur: dibayar hari ini → sisa 7 hari', ($out->firstWhere('memo_id', $memo->id)['sisa'] ?? null) === 7);
+    // Pop-up login: penanda sesi → prop pengingatMemo berisi memo; ditutup → kosong sampai login lagi.
+    $popup = function (App\Models\User $u) use ($minta) {
+        auth()->setUser($u);
+        $r = $minta('GET');
+
+        return value(app(App\Http\Middleware\HandleInertiaRequests::class)->share($r)['pengingatMemo']);
+    };
+    session()->forget(PembayaranMemoUrgent::SESI_PENGINGAT);
+    $cek('tanpa login baru → tidak ada pop-up', $popup($pengaju) === null);
+    session()->put(PembayaranMemoUrgent::SESI_PENGINGAT, true);
+    $p = $popup($pengaju);
+    $cek('setelah login → pop-up berisi memo pengaju', $p && $p['batas'] === 7 && collect($p['rows'])->contains('memo_id', $memo->id));
+    app()->call([app(ApprovalInboxController::class), 'tutupPengingat'], ['request' => $minta('POST')]);
+    $cek('ditutup → tidak muncul lagi di sesi ini', $popup($pengaju) === null);
+    session()->put(PembayaranMemoUrgent::SESI_PENGINGAT, true);
+    $cek('user lain (bukan pembuat memo) → tidak dapat pop-up memo ini', ! collect($popup($admin)['rows'] ?? [])->contains('memo_id', $memo->id));
     $kui->forceFill(['kuitansi_date' => now()->subDays($svc->batasHari() + 1)->toDateString()])->save();
     $cek('lewat batas hari → pengaju terblokir', $svc->terblokir($pengaju));
     $sebagai($pengaju);
@@ -144,9 +174,8 @@ try {
     $ttd = $svc->kotakTtd($kui->fresh(['memo.approval.steps']));
     $cek('kotak TTD: Kasir · Direktur · MW / BA', array_column($ttd, 'title') === ['Kasir', 'Direktur', 'MW / BA'], json_encode(array_column($ttd, 'title')));
     $cek('Direktur tertanda, MW / BA belum', $ttd[1]['signed'] && ! $ttd[2]['signed']);
-    $setujui($memo->approval_id, ['Owner']);
-    $ttd = $svc->kotakTtd($kui->fresh(['memo.approval.steps']));
-    $cek('MW / BA menyetujui memo → TTD-nya otomatis tampil', $ttd[2]['signed'] && $ttd[2]['name'] === $approver['Owner']->name);
+    // Chain Memo Urgent berhenti di Direktur — kotak MW / BA tetap ada, kosong untuk TTD basah.
+    $cek('Memo Urgent selesai di Direktur (chain tanpa MW / BA)', Approval::find($memo->approval_id)->status === 'approved');
     $sebagai($admin);
     $html = app()->call([app(ApKuitansiController::class), 'print'], ['request' => $minta('GET'), 'kuitansi' => $kui->fresh()])->getContent();
     $cek('cetakan memuat no. memo & kotak MW / BA', str_contains($html, $memo->memo_number) && str_contains($html, 'MW / BA'));

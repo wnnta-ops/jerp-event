@@ -27,7 +27,7 @@ class BerkasSupplierController extends Controller
 
         return response(view('public.berkas-supplier', [
             'link' => $link,
-            'jenis' => BsApBerkas::query()->where('is_active', true)->orderByDesc('is_mandatory')->orderBy('id')->get(['id', 'name', 'is_mandatory']),
+            'jenis' => $this->jenisSupplier(),
             'maxFiles' => ApBerkasService::MAX_FILES,
             'perusahaan' => (string) (\Illuminate\Support\Facades\DB::table('parameters')->where('tenant_id', $link->tenant_id)
                 ->where('group', 'company')->where('key', 'name')->value('value') ?: 'PT MUP'),
@@ -40,23 +40,32 @@ class BerkasSupplierController extends Controller
         $v = $request->validate([
             'files' => ['required', 'array', 'min:1', 'max:'.ApBerkasService::MAX_FILES],
             'files.*.file' => ['required', 'file', 'mimes:pdf,jpg,jpeg,png', 'max:10240'],
-            'files.*.berkas_id' => ['required', 'integer', 'exists:bs_ap_berkas,id'],
+            'files.*.berkas_id' => ['required', 'integer', \Illuminate\Validation\Rule::in($this->jenisSupplier()->pluck('id')->all())],
+            'files.*.keterangan' => ['nullable', 'string', 'max:100'],
+            'no_invoice' => ['required', 'string', 'max:80'],
             'catatan' => ['nullable', 'string', 'max:200'],
         ], [
+            'no_invoice.required' => 'Isi nomor invoice Anda.',
             'files.required' => 'Unggah minimal satu file.',
             'files.*.file.required' => 'Pilih file untuk tiap baris.',
             'files.*.file.mimes' => 'File harus PDF, JPG, atau PNG.',
             'files.*.file.max' => 'Ukuran tiap file maksimal 10 MB.',
             'files.*.berkas_id.required' => 'Pilih jenis dokumen untuk tiap file.',
+            'files.*.berkas_id.in' => 'Jenis dokumen tidak dikenal.',
         ]);
-
         try {
-            $svc->terimaDariSupplier($link, array_map(fn ($f) => ['file' => $f['file'], 'berkas_id' => (int) $f['berkas_id']], $v['files']), $v['catatan'] ?? null);
+            $svc->terimaDariSupplier($link, BsApBerkas::rapikanUnggahan($v['files']), $v['catatan'] ?? null, $v['no_invoice']);
         } catch (BusinessRuleException $e) {
             return back()->withInput()->with('error', $e->getMessage());
         }
 
         return redirect()->route('berkas-supplier.show', $token);
+    }
+
+    /** Jenis dokumen tetap halaman ini: Invoice, Kuitansi, Faktur Pajak, Lainnya. */
+    private function jenisSupplier(): \Illuminate\Support\Collection
+    {
+        return BsApBerkas::jenisTetap();
     }
 
     /** Link dari token — tenant ikut link (halaman ini tanpa login). */

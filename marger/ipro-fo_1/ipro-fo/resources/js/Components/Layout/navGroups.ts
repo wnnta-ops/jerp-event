@@ -9,7 +9,7 @@ import {
     HandCoins, Coins, Building, PieChart, HardHat, Target, PiggyBank,
     FolderGit2, CalendarClock, TriangleAlert, Lock,
     Layers, FileCog, LandPlot,
-    GitMerge, FileSpreadsheet, IdCard, Gift, Eraser, SlidersHorizontal, DatabaseZap, Database, UserPlus,
+    GitMerge, FileSpreadsheet, IdCard, Gift, Eraser, SlidersHorizontal, Workflow, DatabaseZap, Database, UserPlus,
     Scale,
 } from 'lucide-vue-next';
 
@@ -132,7 +132,7 @@ export function navGroups(foUrl: string): NavGroup[] {
             // Satu layar, tiga tab (perlu persetujuan / pengajuan saya / riwayat); isi tiap tab
             // dibatasi per baris oleh server, jadi semua peran internal boleh membukanya.
             { label: 'Inbox Approval', icon: ShieldCheck, href: 'approval-inbox.index', permission: ['approvalinbox.view'], baru: true },
-            { label: 'Memo Urgent', icon: FileText, href: 'approval-inbox.create', permission: ['approvalinbox.submit'], baru: true },
+            { label: 'Memo Urgent', icon: FileText, href: 'approval-inbox.memo', permission: ['approvalinbox.submit'], baru: true },
         ],
     },
     {
@@ -722,6 +722,7 @@ export function navGroups(foUrl: string): NavGroup[] {
         items: [
             { label: 'Settings', icon: Settings, href: 'settings.index', permission: 'system.user.view' },
             { label: 'Konfigurasi Sistem', icon: SlidersHorizontal, href: 'settings.config.index', permission: ['system.setup.*'] },
+            { label: 'Approval Chain', icon: Workflow, href: 'settings.approval-chains.index', permission: 'system.setup.approval_chain' },
         ],
     },
     ]);

@@ -72,6 +72,7 @@ class BsBudgetCorrection extends Model
     public function budget(): BelongsTo { return $this->belongsTo(BsBudget::class, 'budget_id'); }
     public function account(): BelongsTo { return $this->belongsTo(BsAccount::class, 'account_id'); }
     public function costCenter(): BelongsTo { return $this->belongsTo(BsCostCenter::class, 'cost_center_id'); }
+    public function approval(): BelongsTo { return $this->belongsTo(\App\Domain\Approval\Models\Approval::class, 'approval_id'); }
 
     public static function nextDocNo(int $year, ?string $project = null, ?string $date = null): string
     {

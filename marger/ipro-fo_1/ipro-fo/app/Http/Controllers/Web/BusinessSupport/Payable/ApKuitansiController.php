@@ -158,7 +158,8 @@ class ApKuitansiController extends Controller
                 'status' => \App\Domain\ApprovalInbox\Services\MemoUntukInvoice::status($m),
                 'url' => $m->approval_id ? route('approval-inbox.show', $m->approval_id) : null,
             ])->values(),
-            'akunUangMuka' => $memoBayar->akunUangMuka(),
+            // Akun debit pakem: 10107030304 AKUN MEMO URGENT (ditampilkan terkunci).
+            'akunMemo' => $memoBayar->akunMemo(),
             'mode'         => $request->input('mode') === 'memo' ? 'memo' : 'invoice',
         ]);
     }
@@ -265,7 +266,6 @@ class ApKuitansiController extends Controller
             'memo_internal_id'   => ['required', 'integer', 'exists:memo_internals,id'],
             'kuitansi_date'      => ['required', 'date'],
             'cash_account_id'    => ['required', 'integer', 'exists:bs_accounts,id'],
-            'advance_account_id' => ['required', 'integer', 'exists:bs_accounts,id'],
             'amount'             => ['required', 'numeric', 'min:1'],
             'alat_transaksi'     => ['required', 'in:tunai,transfer,giro'],
             'manual_no'          => ['nullable', 'string', 'max:80'],
@@ -273,7 +273,6 @@ class ApKuitansiController extends Controller
             'description'        => ['nullable', 'string', 'max:255'],
         ], [
             'memo_internal_id.required' => 'Pilih Memo Urgent yang dibayar.',
-            'advance_account_id.required' => 'Pilih akun uang muka.',
             'bg_number.required_if' => 'Nomor BG/Cek wajib diisi untuk alat transaksi Cek/Giro.',
         ]);
         $v['kasir'] = $request->user()->name;

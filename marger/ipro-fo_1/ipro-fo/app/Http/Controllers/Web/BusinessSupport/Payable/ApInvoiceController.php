@@ -163,6 +163,15 @@ class ApInvoiceController extends Controller
                     'description' => $l->data['description'] ?? null, 'url' => $l->url(), 'created_at' => $l->created_at?->toDateString(),
                 ])->values()
                 : [],
+            // Invoice yang tertahan Pengajuan Budget (alokasi / koreksi menunggu Finance). Titik = sudah diputuskan, belum dibuka.
+            'pengajuanBudget' => \App\Domain\BusinessSupport\Models\BsApBudgetRequest::query()->where('user_id', $request->user()->id)
+                ->where('jenis', $jenis)->whereIn('status', ['menunggu', 'disetujui', 'ditolak'])->latest('id')->get()
+                ->map(fn ($p) => [
+                    'id' => $p->id, 'invoice_number' => $p->invoice_number ?? ($p->invoice_id ? BsApInvoice::query()->whereKey($p->invoice_id)->value('invoice_number') : null),
+                    'status' => $p->status, 'baru' => $p->status !== 'menunggu' && ! $p->seen_at, 'catatan' => $p->catatan,
+                    'description' => $p->data['description'] ?? null, 'url' => \App\Domain\BusinessSupport\Services\PengajuanBudgetInvoice::url($p),
+                    'diajukan' => $p->diajukan_at?->toDateString(),
+                ])->values(),
         ]);
     }
 
@@ -388,7 +397,7 @@ class ApInvoiceController extends Controller
                     'sisa' => $b->sisa(),
                     'files' => $b->files->map(fn ($f) => [
                         'name' => $f->original_name,
-                        'jenis' => $f->jenis?->name,
+                        'jenis' => $f->labelJenis(),
                         'url' => route('bs.ap.berkas.file', [$b->id, $f->id]),
                     ]),
                 ];
@@ -415,16 +424,29 @@ class ApInvoiceController extends Controller
                 'berkas_upload_id' => $link->berkas_upload_id ?? ($link->data['berkas_upload_id'] ?? '')]), 'step' => $link->step, 'updated_at' => $link->updated_at];
         }
 
+        // ?pengajuan= — lanjutkan invoice yang menunggu / sudah diputuskan Finance (Pengajuan Budget Invoice).
+        $pengajuan = $request->integer('pengajuan')
+            ? \App\Domain\BusinessSupport\Models\BsApBudgetRequest::query()->whereKey($request->integer('pengajuan'))
+                ->where('user_id', $request->user()->id)->where('jenis', $jenis)->where('invoice_id', $edit?->id)
+                ->whereIn('status', ['menunggu', 'disetujui', 'ditolak'])->first()
+            : null;
+        if ($pengajuan && $pengajuan->status !== 'menunggu' && ! $pengajuan->seen_at) {
+            $pengajuan->update(['seen_at' => now()]);
+        }
+
         return Inertia::render('BusinessSupport/Payable/Form', [
             'jenis' => $info,
             'dariBerkas' => $dariBerkas,
+            'pengajuanBudget' => $pengajuan ? app(\App\Domain\BusinessSupport\Services\PengajuanBudgetInvoice::class)->ringkas($pengajuan)
+                + ['data' => array_merge($pengajuan->data ?? [], ['pengajuan_id' => $pengajuan->id])] : null,
             'berkasSaya' => $wajibBerkas ? app(\App\Domain\BusinessSupport\Services\ApBerkasService::class)->pilihanInvoice($request->user()) : null,
             'draftInvoice' => $draft ? ['data' => $draft->data, 'step' => $draft->step, 'updated_at' => $draft->updated_at?->toIso8601String()] : null,
             // Detil Tagihan › Upload File / Generate Link.
             'linkBerkas' => $link ? ['id' => $link->id, 'url' => $link->url(), 'invoice_number' => $link->invoice_number, 'status' => $link->status,
-                'filled_at' => $link->filled_at?->toIso8601String(), 'berkas_upload_id' => $link->berkas_upload_id] : null,
-            'jenisBerkas' => $wajibBerkas ? \App\Domain\BusinessSupport\Models\BsApBerkas::query()->where('is_active', true)
-                ->orderByDesc('is_mandatory')->orderBy('id')->get(['id', 'name', 'is_mandatory']) : [],
+                'filled_at' => $link->filled_at?->toIso8601String(), 'berkas_upload_id' => $link->berkas_upload_id,
+                'riwayat' => array_values(array_reverse($link->riwayat ?? []))] : null,
+            // Drop box Upload File: jenis tetap Invoice, Kuitansi, Faktur Pajak, Lainnya (sama dengan halaman supplier).
+            'jenisBerkas' => $wajibBerkas ? \App\Domain\BusinessSupport\Models\BsApBerkas::jenisTetap() : [],
             // Penerima Reimburse/Deposit tercatat sebagai supplier berkategori khusus
             // (PenerimaHutang) — mereka bukan pilihan pada Invoice Hutang ke supplier.
             'suppliers' => $jenis === 'invoice'
@@ -507,9 +529,64 @@ class ApInvoiceController extends Controller
             // Memo Urgent yang sudah disetujui Direktur & belum dipakai invoice lain — tabel di
             // bawah Struktur Jurnal, satu memo per invoice (opsional).
             'memoUrgent' => app(\App\Domain\ApprovalInbox\Services\MemoUntukInvoice::class)->pilihan($edit?->id),
+            'memoMenungguBayar' => app(\App\Domain\ApprovalInbox\Services\MemoUntukInvoice::class)->menungguBayar(),
             // Tautan "Buat Memo Urgent" di langkah 1 — hanya bagi yang boleh mengajukan memo.
             'bisaBuatMemo' => (bool) $request->user()?->can('approvalinbox.submit'),
         ]);
+    }
+
+    /**
+     * "Ajukan ke Finance" di langkah Struktur: alokasi / koreksi isian wizard ini masuk Approval
+     * (satu tahap Finance), invoicenya tertahan sebagai draft di pengajuan — lihat PengajuanBudgetInvoice.
+     */
+    public function ajukanBudget(Request $request, \App\Domain\BusinessSupport\Services\PengajuanBudgetInvoice $svc): \Illuminate\Http\JsonResponse
+    {
+        $v = $request->validate([
+            'jenis' => ['required', 'string', 'in:invoice,reimburse,deposit'],
+            'data' => ['required', 'array'],
+            'invoice_id' => ['nullable', 'integer'],
+            'pengajuan_id' => ['nullable', 'integer'],
+        ]);
+        $edit = ! empty($v['invoice_id']) ? BsApInvoice::query()->findOrFail((int) $v['invoice_id']) : null;
+        if ($edit) {
+            $this->pastikanBolehEdit($request, $edit);
+        } else {
+            abort_unless($request->user()?->can($this->infoJenis($v['jenis'])['izin'].'.create'), 403);
+        }
+        $ulang = ! empty($v['pengajuan_id'])
+            ? \App\Domain\BusinessSupport\Models\BsApBudgetRequest::query()->whereKey((int) $v['pengajuan_id'])->where('user_id', $request->user()->id)->first()
+            : null;
+
+        try {
+            $req = $svc->ajukan($request->user(), $v['jenis'], $v['data'], $ulang, $edit);
+        } catch (BusinessRuleException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
+        // Draft biasa tidak diperlukan lagi — isian kini dibawa pengajuan.
+        if (! $edit) {
+            BsApInvoiceDraft::query()->where('user_id', $request->user()->id)->where('jenis', $v['jenis'])->delete();
+        }
+
+        // Kembali ke daftar invoice (edit: ke rincian invoicenya); pengajuan tampil di panel Draft — "Menunggu Finance".
+        session()->flash('success', 'Pengajuan budget '.($req->invoice_number ?? $edit?->invoice_number).' dikirim ke Finance — status Menunggu Finance. Lanjutkan dari panel Draft setelah disetujui.');
+
+        return response()->json(['id' => $req->id, 'url' => \App\Domain\BusinessSupport\Services\PengajuanBudgetInvoice::url($req),
+            'kembali' => $edit ? route('bs.ap.show', $edit->id) : route($v['jenis'] === 'invoice' ? 'bs.ap.index' : 'bs.ap.'.$v['jenis'].'.index')]);
+    }
+
+    /** Batalkan pengajuan budget (menunggu / ditolak) — nomor invoice yang dipesan tidak dipakai. */
+    public function batalPengajuan(Request $request, \App\Domain\BusinessSupport\Models\BsApBudgetRequest $pengajuan, \App\Domain\BusinessSupport\Services\PengajuanBudgetInvoice $svc): RedirectResponse
+    {
+        abort_unless((int) $pengajuan->user_id === (int) $request->user()->id, 403);
+        try {
+            $svc->batal($pengajuan);
+        } catch (BusinessRuleException $e) {
+            return back()->with('error', $e->getMessage());
+        }
+        $kembali = $pengajuan->invoice_id ? route('bs.ap.show', $pengajuan->invoice_id)
+            : route($pengajuan->jenis === 'invoice' ? 'bs.ap.index' : 'bs.ap.'.$pengajuan->jenis.'.index');
+
+        return redirect($kembali)->with('success', 'Pengajuan budget dibatalkan.');
     }
 
     /**
@@ -846,10 +923,8 @@ class ApInvoiceController extends Controller
                 'Cost center di luar daftar COA untuk akun: '.implode(', ', $salah).'.');
         }
 
-        // KOREKSI BUDGET (langkah Struktur): baris yang melewati sisa budget BULAN invoice boleh tetap
-        // jalan bila koreksinya diajukan bersama — tambahan yang diajukan dihitung sebagai ruang
-        // bulan itu oleh penjaga budget, lalu tiap koreksi masuk Approval Inbox. Hanya budget yang
-        // memang dipakai baris jurnal invoice ini yang boleh dikoreksi dari sini.
+        // KOREKSI / ALOKASI BUDGET (langkah Struktur) dikirim layar untuk ditampilkan; keputusannya lewat
+        // Pengajuan Budget Invoice (lihat di bawah) — di sini hanya penanda bahwa invoice ini memakainya.
         $koreksi = $request->validate([
             'koreksi' => ['nullable', 'array'],
             'koreksi.*.budget_id' => ['required', 'integer', 'exists:bs_budgets,id'],
@@ -858,9 +933,6 @@ class ApInvoiceController extends Controller
             'koreksi.*.keterangan' => ['nullable', 'string', 'max:200'],
             'koreksi.*.nilai' => ['required', 'numeric', 'min:1'],
         ], ['koreksi.*.nilai.min' => 'Nilai pengajuan koreksi budget wajib diisi.'], ['koreksi.*.nilai' => 'Nilai pengajuan'])['koreksi'] ?? [];
-        // ALOKASI (langkah Struktur): alternatif koreksi — kekurangan budget bulan invoice diambil
-        // dari sisa bulan yang sama di budget lain. Langsung berlaku (tanpa approval), dijalankan
-        // satu transaksi dengan invoice SEBELUM penjaga budget memeriksa.
         $alokasi = $request->validate([
             'alokasi' => ['nullable', 'array'],
             'alokasi.*.budget_id' => ['required', 'integer', 'exists:bs_budgets,id'],
@@ -872,7 +944,7 @@ class ApInvoiceController extends Controller
         // MEMO URGENT (opsional): satu memo yang tahap Direktur-nya sudah menyetujui.
         $memoId = $request->validate(['memo_internal_id' => ['nullable', 'integer']])['memo_internal_id'] ?? null;
         if ($memoId && ! app(\App\Domain\ApprovalInbox\Services\MemoUntukInvoice::class)->boleh((int) $memoId, $lama?->id)) {
-            return back()->withInput()->with('error', 'Memo Urgent ini belum disetujui Direktur atau sudah dipakai invoice lain.');
+            return back()->withInput()->with('error', 'Memo ini belum bisa ditarik: belum disetujui Direktur, Memo Urgent yang belum dibayar di Kuitansi Hutang, atau sudah dipakai invoice lain.');
         }
         if ($memoId && $jenis === 'invoice' && ! app(\App\Domain\ApprovalInbox\Services\MemoUntukInvoice::class)->supplierCocok((int) $memoId, $request->integer('supplier_id') ?: null)) {
             return back()->withInput()->with('error', 'Supplier invoice berbeda dengan supplier di Memo Urgent yang ditarik.');
@@ -882,6 +954,7 @@ class ApInvoiceController extends Controller
         if ($memoId) {
             $v['term_days'] = 0;
             $v['due_date'] = null;
+            $v = app(\App\Domain\ApprovalInbox\Services\MemoUntukInvoice::class)->kunciPajak((int) $memoId, $v);
         }
         // Dari link berkas supplier: pakai nomor invoice yang sudah dipesan link itu.
         $linkBerkas = null;
@@ -890,50 +963,77 @@ class ApInvoiceController extends Controller
                 ->where('user_id', $request->user()->id)->whereIn('status', ['menunggu', 'terisi'])->first();
             if ($linkBerkas) {
                 $v['nomor_dipesan'] = $linkBerkas->invoice_number;
+                // No. invoice yang diketik supplier di halaman link = No. Invoice Supplier aktif.
+                if ($linkBerkas->status === 'terisi' && ! empty($linkBerkas->data['supplier_invoice_no'])) {
+                    $v['supplier_invoice_no'] = $linkBerkas->data['supplier_invoice_no'];
+                }
             }
         }
 
+        // ALOKASI / KOREKSI BUDGET (langkah Struktur):
+        //   · Invoice yang menarik MEMO URGENT: WAJIB disetujui Finance dulu (Pengajuan Budget Invoice) —
+        //     disimpan dengan pengajuan yang sudah disetujui; budget barunya sudah berlaku.
+        //   · Invoice biasa (tanpa Memo Urgent): TIDAK ditahan — alokasi / koreksi diajukan ke Finance
+        //     bersama invoice ini dan dihitung sebagai ruang bulan itu oleh penjaga budget.
+        $pengajuan = null;
         $tambahan = [];
-        if ($koreksi !== [] || $alokasi !== []) {
-            $dipakai = collect($v['journal_lines'] ?? [])
-                ->filter(fn ($l) => ! empty($l['account_id']))
+        if ($request->filled('pengajuan_id')) {
+            try {
+                $pengajuan = app(\App\Domain\BusinessSupport\Services\PengajuanBudgetInvoice::class)
+                    ->untukSimpan($request->user(), $request->integer('pengajuan_id'), $jenis, $lama);
+            } catch (BusinessRuleException $e) {
+                return back()->withInput()->with('error', $e->getMessage());
+            }
+            if ($lama === null && $pengajuan->invoice_number) {
+                $v['nomor_dipesan'] = $pengajuan->invoice_number;
+            }
+        } elseif (($koreksi !== [] || $alokasi !== []) && ! empty($v['memo_internal_id'])) {
+            return back()->withInput()->with('error', 'Invoice dari Memo Urgent: alokasi / koreksi budget harus disetujui Finance dulu — klik "Selanjutnya" di langkah Struktur lalu ajukan ke Finance.');
+        } elseif ($koreksi !== [] || $alokasi !== []) {
+            $dipakai = collect($v['journal_lines'] ?? [])->filter(fn ($l) => ! empty($l['account_id']))
                 ->map(fn ($l) => $budgetGuard->sisaBulan((int) $l['account_id'], ! empty($l['cost_center_id']) ? (int) $l['cost_center_id'] : null, $v['invoice_date'])['budget_id'] ?? null)
                 ->filter()->unique()->all();
             foreach ([...$koreksi, ...$alokasi] as $k) {
                 if (! in_array((int) $k['budget_id'], $dipakai, true)) {
                     return back()->withInput()->with('error', 'Koreksi / alokasi budget hanya untuk anggaran yang dipakai baris jurnal invoice ini.');
                 }
-            }
-            foreach ($koreksi as $k) {
                 $tambahan[(int) $k['budget_id']] = ($tambahan[(int) $k['budget_id']] ?? 0) + (float) $k['nilai'];
             }
         }
+        $diajukan = ['koreksi' => 0, 'alokasi' => 0];
 
         try {
-            $koreksiDiajukan = [];
-            $alokasiDibuat = [];
-            $simpanInvoice = function () use ($action, $v, $jenis, $request, $lama, $berkas, $linkBerkas, $koreksi, $alokasi, $tambahan, $budgetGuard, &$koreksiDiajukan, &$alokasiDibuat): array {
-                // Alokasi dulu (budget tujuan bertambah), baru gerbang over-budget (BULANAN): tolak bila
-                // baris jurnal melewati sisa anggaran bulan invoice, kecuali tertutup koreksi yang
-                // diajukan bersama invoice ini. Edit: jurnal lama invoice ini dikecualikan supaya
-                // realisasinya tidak terhitung dua kali.
-                foreach ($alokasi as $a) {
-                    $bulan = (int) \Illuminate\Support\Carbon::parse($v['invoice_date'])->month;
-                    $alokasiDibuat[] = app(\App\Domain\BusinessSupport\Services\BudgetAllocationService::class)->pindah(
-                        (int) $a['dari_budget_id'], (int) $a['budget_id'], [$bulan => (float) $a['nilai']], $v['invoice_date'],
-                        $a['keterangan'] ?? null, $request->user()->id, null, $lama?->journal_id);
-                }
+            $simpanInvoice = function () use ($action, $v, $jenis, $request, $lama, $berkas, $linkBerkas, $pengajuan, $budgetGuard, $koreksi, $alokasi, $tambahan, &$diajukan): array {
+                // Gerbang over-budget (BULANAN): tolak bila baris jurnal melewati sisa anggaran bulan
+                // invoice (kecuali tertutup alokasi / koreksi yang diajukan bersama invoice biasa). Edit:
+                // jurnal lama invoice ini dikecualikan supaya realisasinya tidak terhitung dua kali.
                 $budgetGuard->assertWithinBudget($v['journal_lines'] ?? [], null, $v['invoice_date'], $lama?->journal_id, $tambahan);
                 $inv = $action->execute($v + ['jenis' => $jenis], $request->user()->id, $lama);
+                if ($tambahan !== []) {
+                    // Invoice biasa: alokasi / koreksi diajukan ke Finance (Approval Inbox) tanpa menahan invoice.
+                    $bulan = (int) \Illuminate\Support\Carbon::parse($v['invoice_date'])->month;
+                    foreach ($alokasi as $a) {
+                        $al = app(\App\Domain\BusinessSupport\Services\BudgetAllocationService::class)->pindah(
+                            (int) $a['dari_budget_id'], (int) $a['budget_id'], [$bulan => (float) $a['nilai']], $v['invoice_date'],
+                            mb_substr(trim(($a['keterangan'] ?? '').' · '.$inv->invoice_number, ' ·'), 0, 200), $request->user()->id,
+                            ['type' => \App\Domain\BusinessSupport\Models\BsBudgetAllocation::SOURCE_INVOICE, 'id' => $inv->id], $lama?->journal_id, langsung: false);
+                        $ap = app(\App\Domain\Approval\Actions\SubmitForApproval::class)->execute(\App\Domain\BusinessSupport\Models\BsBudgetAllocation::DOCUMENT_TYPE, $al,
+                            ['doc_no' => $al->doc_no, 'invoice_number' => $inv->invoice_number, 'nilai' => (float) $a['nilai']]);
+                        $al->forceFill(['approval_id' => $ap->id])->save();
+                        $diajukan['alokasi']++;
+                    }
+                    if ($koreksi !== []) {
+                        $diajukan['koreksi'] = count(app(\App\Domain\BusinessSupport\Services\BudgetCorrectionService::class)->ajukanDariInvoice($inv, $koreksi, $request->user()->id));
+                    }
+                }
                 if ($linkBerkas) {
                     app(\App\Domain\BusinessSupport\Services\LinkBerkasSupplier::class)->pakai($linkBerkas, $inv);
                 }
+                if ($pengajuan) {
+                    app(\App\Domain\BusinessSupport\Services\PengajuanBudgetInvoice::class)->pakai($pengajuan, $inv);
+                }
                 // Memo Urgent yang sudah dibayar di Kuitansi: invoice yang menyusul tidak boleh lebih kecil.
                 app(\App\Domain\BusinessSupport\Services\PembayaranMemoUrgent::class)->assertInvoiceCukup($inv->refresh());
-                foreach ($alokasiDibuat as $a) {
-                    $a->forceFill(['source_type' => \App\Domain\BusinessSupport\Models\BsBudgetAllocation::SOURCE_INVOICE, 'source_id' => $inv->id,
-                        'notes' => mb_substr(trim($a->notes.' · '.$inv->invoice_number, ' ·'), 0, 200)])->save();
-                }
                 // "Simpan & Buat Jurnal" sekaligus menerbitkan Purchase Order-nya, supaya pembelian
                 // yang tagihannya masuk lebih dulu tetap punya dokumen pesanan. Data yang tidak ada
                 // di invoice (no. PO, master barang) dibangkitkan sistem — lihat actionnya.
@@ -941,19 +1041,20 @@ class ApInvoiceController extends Controller
                 if ($berkas !== null) {
                     app(\App\Domain\BusinessSupport\Services\ApBerkasService::class)->ajukanInvoice($berkas, $inv);
                 }
-                if ($koreksi !== []) {
-                    $koreksiDiajukan = app(\App\Domain\BusinessSupport\Services\BudgetCorrectionService::class)
-                        ->ajukanDariInvoice($inv, $koreksi, $request->user()->id);
-                }
 
                 return [$inv, $po];
             };
-            // Dari berkas / dengan koreksi budget: invoice + pengajuan approval satu transaksi — tidak
-            // pernah ada invoice berkas tersimpan tanpa approval, atau over budget tanpa koreksinya.
-            [$inv, $po] = ($berkas !== null || $koreksi !== [] || $alokasi !== [] || ! empty($v['memo_internal_id'])) ? DB::transaction($simpanInvoice) : $simpanInvoice();
+            // Dari berkas / pengajuan budget / memo: satu transaksi — tidak pernah ada invoice berkas
+            // tersimpan tanpa approval, atau pengajuan terpakai tanpa invoicenya.
+            [$inv, $po] = ($berkas !== null || $pengajuan !== null || $tambahan !== [] || ! empty($v['memo_internal_id'])) ? DB::transaction($simpanInvoice) : $simpanInvoice();
         } catch (BusinessRuleException $e) {
             // Penolakan anggaran disalurkan ke DIALOG; selebihnya tetap toast. Lihat trait.
             return $this->balikDenganGalat($e);
+        }
+
+        if ($diajukan['koreksi'] || $diajukan['alokasi']) {
+            session()->flash('info', trim(($diajukan['alokasi'] ? $diajukan['alokasi'].' alokasi' : '').($diajukan['alokasi'] && $diajukan['koreksi'] ? ' & ' : '')
+                .($diajukan['koreksi'] ? $diajukan['koreksi'].' koreksi' : '')).' budget diajukan ke Finance (Approval Inbox) — invoice tetap berjalan.');
         }
 
         if ($lama === null) {
@@ -964,8 +1065,7 @@ class ApInvoiceController extends Controller
         if ($lama !== null) {
             session()->flash('success', "Invoice {$inv->invoice_number} diperbarui".($po ? " — Purchase Order {$po->po_number} dibuat ulang." : '.'));
         } elseif ($berkas !== null) {
-            session()->flash('success', "Invoice {$inv->invoice_number} dari berkas {$berkas->berkas_number} tersimpan & diajukan ke approval — belum bisa dibayar sampai disetujui MW / BA."
-                .($koreksiDiajukan ? ' '.count($koreksiDiajukan).' koreksi budget diajukan ke Approval Inbox.' : ''));
+            session()->flash('success', "Invoice {$inv->invoice_number} dari berkas {$berkas->berkas_number} tersimpan & diajukan ke approval — belum bisa dibayar sampai disetujui MW / BA.");
         } elseif ($po) {
             session()->flash('success', "Invoice {$inv->invoice_number} tersimpan & Purchase Order {$po->po_number} dibuat otomatis.");
         }
@@ -1290,295 +1390,125 @@ class ApInvoiceController extends Controller
             ->header('Content-Type', 'text/html; charset=UTF-8');
     }
 
-    /** @param  mixed  $user  pengguna yang mencetak — dipakai hanya bila pembuat invoice tidak diketahui */
+    /**
+     * Lampiran Memo Internal: alokasi / koreksi budget yang diajukan untuk invoice ini — langsung
+     * bersama invoice (source ap_invoice) atau lewat Pengajuan Budget yang dipakai invoice ini.
+     *
+     * @return list<array<string,mixed>>
+     */
+    private function lampiranBudget(BsApInvoice $invoice): array
+    {
+        $pengajuan = \App\Domain\BusinessSupport\Models\BsApBudgetRequest::query()->where('ap_invoice_id', $invoice->id)->pluck('id');
+        $milik = fn ($q, string $sumberInvoice) => $q->where(fn ($w) => $w
+            ->where(fn ($x) => $x->where('source_type', $sumberInvoice)->where('source_id', $invoice->id))
+            ->orWhere(fn ($x) => $x->where('source_type', \App\Domain\BusinessSupport\Models\BsApBudgetRequest::SOURCE)->whereIn('source_id', $pengajuan->all() ?: [0])))
+            ->where('status', '!=', 'batal')->orderBy('id');
+        $label = fn (?\App\Domain\BusinessSupport\Models\BsBudget $b) => $b
+            ? trim($b->account?->code.' '.$b->account?->name).' · '.($b->costCenter?->name ?? 'Semua cost center') : '—';
+        $periode = fn ($bulan, $tahun) => collect(array_keys((array) $bulan))->map(fn ($m) => \App\Domain\BusinessSupport\Models\BsBudget::MONTHS[(int) $m - 1])->implode(', ').' '.$tahun;
+        $status = fn (string $s) => ['approved' => 'Disetujui', 'rejected' => 'Ditolak'][$s] ?? 'Menunggu';
+        $users = \App\Models\User::query()->pluck('name', 'id');
+
+        $alokasi = $milik(\App\Domain\BusinessSupport\Models\BsBudgetAllocation::query()->with(['budget.account:id,code,name', 'budget.costCenter:id,name', 'toBudget.account:id,code,name', 'toBudget.costCenter:id,name']),
+            \App\Domain\BusinessSupport\Models\BsBudgetAllocation::SOURCE_INVOICE)->get()
+            ->map(fn ($a) => ['doc_no' => $a->doc_no, 'jenis' => 'Alokasi', 'dari' => $label($a->budget), 'ke' => $label($a->toBudget),
+                'periode' => $periode($a->months, $a->year), 'nilai' => (float) $a->amount, 'status' => $status((string) $a->status),
+                'oleh' => $a->approved_by ? ($users[$a->approved_by] ?? null) : null, 'pada' => $a->approved_at?->format('d/m/Y H:i'), 'catatan' => $a->notes]);
+        $koreksi = $milik(\App\Domain\BusinessSupport\Models\BsBudgetCorrection::query()->with(['budget.account:id,code,name', 'budget.costCenter:id,name']),
+            \App\Domain\BusinessSupport\Models\BsBudgetCorrection::SOURCE_INVOICE)->get()
+            ->map(fn ($c) => ['doc_no' => $c->doc_no, 'jenis' => 'Koreksi', 'dari' => null, 'ke' => $label($c->budget),
+                'periode' => $periode($c->tambahanBulan(), $c->year), 'nilai' => round(array_sum($c->tambahanBulan()), 2), 'status' => $status((string) $c->status),
+                'oleh' => $c->approved_by ? ($users[$c->approved_by] ?? null) : null, 'pada' => $c->approved_at?->format('d/m/Y H:i'), 'catatan' => $c->note]);
+
+        return $alokasi->concat($koreksi)->values()->all();
+    }
+
+    /**
+     * Memo Internal + Bukti Permohonan Pembayaran dalam satu halaman (pdf/memo-internal.blade.php),
+     * dengan informasi budget per baris Struktur Jurnal.
+     *
+     * @param  mixed  $user  pengguna yang mencetak — dipakai hanya bila pembuat invoice tidak diketahui
+     */
     private function renderMemoPrint(BsApInvoice $invoice, $user): string
     {
-        $e = fn ($s) => htmlspecialchars((string) $s, ENT_QUOTES, 'UTF-8');
-        $rp = fn ($n) => 'Rp. '.number_format((float) $n, 2, ',', '.');
-        $pct = fn ($n) => rtrim(rtrim(number_format((float) $n, 2, ',', '.'), '0'), ',');
-
-        $dpp = (float) $invoice->dpp;
-        $ppn = (float) $invoice->ppn_amount;
-        $pph = (float) $invoice->pph_amount;
-        $net = (float) $invoice->payable_amount;
-
         $sup = $invoice->supplier;
-        // Akun beku di invoice, bukan akun kategori: satu kategori bisa mengkredit akun berbeda
-        // per modul, dan setup kategori bisa berubah sesudah invoice ini terbit.
-        $payAcc = $invoice->payableAccount ?? $invoice->category?->payableAccount;
-        $created = $e(now()->translatedFormat('d-m-Y H.i.s'));
-        $eNo = $e($invoice->invoice_number);
-        $eTgl = $e(optional($invoice->invoice_date)->translatedFormat('d F Y'));
-        // Jatuh tempo dari invoice — diisi saat Registrasi Invoice Hutang, dan sejak sekarang
-        // juga saat posting dari FO / SPK / Purchase Order. Tanda '-' bila memang belum ada,
-        // supaya barisnya tetap tercetak dan ketiadaannya terbaca sebagai keadaan, bukan
-        // sebagai baris yang lupa dipasang.
-        $eJatuhTempo = $invoice->due_date
-            ? $e($invoice->due_date->translatedFormat('d F Y'))
-            : '-';
-        $eDesc = $e($invoice->description);
-        // NAMA LENGKAP KARYAWAN, bukan nama akun. users.name berisi nama login — di pemasangan
-        // ini sering sependek "aji" — sehingga memo tercetak "Dari: aji" dan kolom tanda tangan
-        // pun begitu. Dokumen yang keluar perusahaan menyebut orangnya, bukan akunnya.
-        //
-        // Jalur pencariannya sama dengan Departemen di bawah (NIP dulu, baru nama), lewat
-        // CostCenterPengguna supaya kedua keterangan pada satu kertas tidak pernah menunjuk
-        // karyawan yang berbeda. Jatuh ke nama akun bila akunnya memang belum tertaut.
-        //
-        // "Dari" & "Hormat Kami" = MANAGER cost center si PEMBUAT invoice (kolom Manager di master
-        // Cost Center — SPV ke atas per departemen). Dibaca dari pembuat, bukan dari yang mencetak:
-        // memo milik Legal yang dicetak orang Finance tetap ditandatangani Manager Legal.
-        // Jatuh ke nama karyawan pembuat bila kolom Manager-nya kosong / pembuat tak tertaut.
+        $net = (float) $invoice->payable_amount;
+        // "Dari" & "Hormat Kami" = MANAGER cost center si PEMBUAT invoice (kolom Manager di master Cost
+        // Center); jatuh ke nama karyawan pembuat, lalu nama akun. Dibaca dari pembuat, bukan yang mencetak.
         $user = \App\Models\User::find($invoice->created_by) ?? $user;
         $cc = app(CostCenterPengguna::class);
-        $eDari = $e($cc->namaManager($user) ?: $cc->namaKaryawan($user) ?: ($user?->name ?? '-'));
-        $eSupNm = $e($sup?->name ?? '-');
-        $eBankNm = $e($sup?->bank_name ?: '-');
-        $eBankRek = $e($sup?->bank_account_no ?: '-');
-        $eBankAn = $e($sup?->bank_account_name ?: ($sup?->name ?: '-'));
-        $eBankLbl = 'Bank'.($sup?->bank_name ? ' ('.$e($sup->bank_name).')' : '');
-        $ePayAcc = $e($payAcc?->code ?: '-');
-        $fDpp = $rp($dpp);
-        $fPpn = $rp($ppn);
-        $fPph = $rp($pph);
-        $fNet = $rp($net);
-        $ppnPct = $pct($invoice->ppn_pct);
-        $eWords = $e(strtoupper(trim(preg_replace('/\s+/', ' ', terbilang((int) round($net))))).' RUPIAH');
+        // Departemen = cost center karyawan pembuat (NIP dulu, baru nama), jatuh ke Jabatan.
+        $emp = ! empty($user?->employee_nip)
+            ? \App\Domain\BusinessSupport\Models\BsEmployee::with('costCenter:id,name')->where('nik', $user->employee_nip)->first() : null;
+        $emp ??= ! empty($user?->name) ? \App\Domain\BusinessSupport\Models\BsEmployee::with('costCenter:id,name')->where('name', $user->name)->first() : null;
 
-        // Penyetuju Memo Internal AP (sesuai contoh): kiri Rizki Setyawardana, kanan Rachmat Suhendra.
-        $eSign1 = $e('Rizki Setyawardana');
-        $eSign2 = $e('Rachmat Suhendra');
-        $eMeng1 = $e(BsSip::SIGNERS['moch_winarto'] ?? 'Moch Winarto');
-        $eMeng2 = $e(BsSip::SIGNERS['boy_arifin'] ?? 'Boy Arifin');
-        $logo = '/images/mup-logo.jpeg'; // logo MUP (public/images) — dimuat sebelum window.onload print
-
-        // Baris item: No | Nama Barang | Harga Sat | Jml Harga
-        $itemRows = '';
-        if ($invoice->lines->count()) {
-            foreach ($invoice->lines as $i => $l) {
-                $itemRows .= '<tr><td class="c">'.($i + 1).'</td><td>'.$e($l->description).'</td><td class="r">'.$rp($l->unit_price ?: $l->amount).'</td><td class="r">'.$rp($l->amount).'</td></tr>';
-            }
-        } else {
-            $itemRows = '<tr><td class="c">1</td><td>'.$eDesc.'</td><td class="r">'.$fDpp.'</td><td class="r">'.$fDpp.'</td></tr>';
-        }
-
-        // #BPP — checkbox OTOMATIS dari data invoice (sisanya kosong utk dicentang manual).
-        $hasRek = trim((string) ($sup?->bank_account_no ?? '')) !== '';        // ada nomor rekening?
-        $hasPph = in_array($invoice->pph_mode, ['withheld', 'borne'], true);   // ada PPh dipungut/ditanggung?
-        $cbKas = $hasRek ? '&nbsp;' : 'X';   // Dibayar Via: KAS bila TANPA rekening
-        $cbBank = $hasRek ? 'X' : '&nbsp;';   // Dibayar Via: Bank/transfer bila ADA rekening
-        $cbTransfer = $hasRek ? 'X' : '&nbsp;';   // Cara bayar: Transfer bila ada rekening
-        $cbTunai = $hasRek ? '&nbsp;' : 'X';   // Cara bayar: Tunai bila KAS (tanpa rekening)
-        $cbPekerjaan = $hasPph ? 'X' : '&nbsp;';   // Type: Pekerjaan bila ada PPh
-        $cbMaterial = $hasPph ? '&nbsp;' : 'X';   // Type: Material bila tanpa PPh
-        $cbPnjLgsg = 'X';                         // Lampiran: selalu silang Penunjukan Langsung
-        $backUrl = route('bs.ap.show', $invoice->id);
-
-        // Unit kerja si pengaju, dari karyawan yang tertaut ke akunnya (employee_nip = NIK,
-        // atau cocok nama). Bersumber cost center, jatuh ke Jabatan bila belum diisi.
-        //
-        // Dulu ada master Departemen tersendiri yang didahulukan, tapi tidak pernah diisi —
-        // 0 baris — sehingga dokumen selalu jatuh ke Jabatan, yang menyebut peran orangnya
-        // ("Staff Accounting") dan bukan unit yang menanggung biayanya. Master itu sudah
-        // dicabut; namanya tetap "Departemen" di cetakan.
-        //
-        // SIP memakai urutan yang sama lewat SipController::unitPerUser(), supaya kedua dokumen
-        // tidak menyebut unit yang berbeda untuk orang yang sama.
-        $eDept = '-';
-        $emp = null;
-        if (! empty($user?->employee_nip)) {
-            $emp = \App\Domain\BusinessSupport\Models\BsEmployee::with('costCenter:id,name')
-                ->where('nik', $user->employee_nip)->first();
-        }
-        if (! $emp && ! empty($user?->name)) {
-            $emp = \App\Domain\BusinessSupport\Models\BsEmployee::with('costCenter:id,name')
-                ->where('name', $user->name)->first();
-        }
-        if ($emp) {
-            $eDept = $e($emp->costCenter?->name ?: ($emp->position ?: '-'));
-        }
-
-        // #BPP — tabel No. Account / Uraian / Jumlah mengikuti Struktur Jurnal:
-        //   • semua akun jurnal KECUALI Utang Usaha Supplier (akun payable),
-        //   • Debit bernilai PLUS, Kredit bernilai MINUS,
-        //   • TOTAL = penjumlahan SELURUH rincian yang tercetak di atasnya.
+        // Baris pengeluaran = Struktur Jurnal selain akun hutang (Debit +, Kredit −). Data lama tanpa
+        // jurnal: satu baris sebesar hutang bersih.
         $jlines = $invoice->journal_id
-            ? \App\Domain\BusinessSupport\Models\BsJournalLine::with('account:id,code,name')
-                ->where('journal_id', $invoice->journal_id)->orderBy('id')->get()
+            ? \App\Domain\BusinessSupport\Models\BsJournalLine::with('account:id,code,name')->where('journal_id', $invoice->journal_id)->orderBy('id')->get()
             : collect();
-        // Akun hutang menurut jurnalnya — invoice lama yang Struktur Jurnalnya disusun manual bisa
-        // menyimpan akun Kategori yang tidak dikredit jurnal; baris hutangnya lalu ikut tercetak.
         $payableId = (int) (BsApInvoice::akunHutangDariJurnal(
             $jlines->map(fn ($l) => ['account_id' => $l->account_id, 'credit' => $l->credit]),
             (int) ($invoice->payable_account_id ?? 0),
         ) ?? $invoice->payable_account_id ?? 0);
-        // Nilai minus diberi tanda '-'; nilai positif (debit) tanpa tanda '+'.
-        $signFmt = fn (float $n) => ($n < 0 ? '- Rp. ' : 'Rp. ').number_format(abs($n), 2, ',', '.');
+        $pre = $sup?->name ? $sup->name.' — ' : '';
+        $baris = $jlines->reject(fn ($l) => (int) $l->account_id === $payableId)->map(fn ($l) => [
+            'account_id' => (int) $l->account_id, 'cc' => $l->cost_center_id ? (int) $l->cost_center_id : null, 'kode' => $l->account?->code ?: '-',
+            'uraian' => $pre.($l->description ?: $invoice->description),
+            'jumlah' => (float) $l->debit > 0 ? (float) $l->debit : -(float) $l->credit,
+        ])->values()->all();
+        if ($baris === []) {
+            $baris = [['account_id' => 0, 'cc' => null, 'kode' => '-', 'uraian' => $pre.$invoice->description, 'jumlah' => $net]];
+        }
 
-        $bppRows = '';
-        $bppCount = 0;
-        // Total dijumlahkan dari baris yang BENAR-BENAR dicetak, bukan diambil dari baris Utang
-        // Usaha Supplier. Satu invoice bisa punya BEBERAPA baris utang (mis. gimmick per customer);
-        // mengambil baris pertama saja membuat total tercetak hanya sebesar rincian pertama.
-        $totalPay = 0.0;
-        foreach ($jlines as $l) {
-            if ((int) $l->account_id === $payableId) {
-                continue; // Utang Usaha Supplier → lawan jurnalnya, tidak dirinci
+        // Kolom budget digabung per anggaran (akun × cost center, atau "semua cost center"). Realisasi
+        // tanpa jurnal invoice ini, supaya "sudah digunakan" + "pengajuan ini" tidak terhitung dua kali.
+        $guard = app(\App\Domain\BusinessSupport\Services\BudgetGuardService::class);
+        $tgl = ($invoice->invoice_date ?? now())->toDateString();
+        $grup = [];
+        foreach ($baris as $b) {
+            $s = $b['account_id'] ? $guard->sisaBulan($b['account_id'], $b['cc'], $tgl, $invoice->journal_id) : null;
+            $k = $s ? 'b'.$s['budget_id'] : 'n'.$b['account_id'];
+            $grup[$k] ??= ['budget' => $s ? ['anggaran' => $s['anggaran'], 'terpakai' => $s['terpakai'], 'pengajuan' => 0.0,
+                'anggaran_tahun' => $s['anggaran_tahun'], 'terpakai_tahun' => $s['terpakai_tahun'], 'label' => $s['label']] : null, 'baris' => []];
+            $grup[$k]['baris'][] = $b;
+            if ($s) {
+                $grup[$k]['budget']['pengajuan'] += max(0, $b['jumlah']);
             }
-            $amt = (float) $l->debit > 0 ? (float) $l->debit : -(float) $l->credit; // Debit + , Kredit −
-            $bppRows .= '<tr><td>'.$e($l->account?->code ?: '-').'</td><td>'.$e($l->description ?: $invoice->description).'</td><td class="r">'.$signFmt($amt).'</td></tr>';
-            $totalPay += $amt;
-            $bppCount++;
         }
-        $totalPay = round($totalPay, 2);
-        if ($bppCount === 0) { // fallback data lama tanpa jurnal: baris hutang tunggal.
-            $bppRows = '<tr><td>'.$ePayAcc.'</td><td>'.$eDesc.'</td><td class="r">'.$rp($net).'</td></tr>';
-            $bppCount = 1;
-            $totalPay = $net;
+        foreach ($grup as &$g) {
+            if ($g['budget']) {
+                $g['budget']['sisa'] = $g['budget']['anggaran'] - $g['budget']['terpakai'] - $g['budget']['pengajuan'];
+                $g['budget']['sisa_tahun'] = $g['budget']['anggaran_tahun'] - $g['budget']['terpakai_tahun'] - $g['budget']['pengajuan'];
+            }
         }
-        for ($k = $bppCount; $k < 6; $k++) { // padding baris kosong agar tabel rapi
-            $bppRows .= '<tr class="empty"><td>&nbsp;</td><td></td><td></td></tr>';
-        }
-        $fTotalPay = $rp($totalPay);
+        unset($g);
 
-        return <<<HTML
-<!DOCTYPE html><html lang="id"><head><meta charset="utf-8"><title>Memo Internal {$eNo}</title><style>
-@page{size:A4;margin:13mm}*{box-sizing:border-box}
-body{font-family:"Times New Roman",Georgia,serif;font-size:12px;color:#111;margin:0;line-height:1.4}
-.page{page-break-after:always}.page:last-of-type{page-break-after:auto}
-.created{font-size:9px;color:#555;text-align:right;margin-bottom:2px}
-.ttl{text-align:center;font-weight:bold;font-size:15px;text-decoration:underline;letter-spacing:.5px}
-.sub{text-align:center;font-size:12px;margin:0 0 10px}
-.meta{border-collapse:collapse;font-size:12px}.meta td{padding:1px 3px;vertical-align:top}
-.meta .lbl{width:130px}.meta .sep{width:8px}
-p{margin:7px 0;text-align:justify}
-table.grid{width:100%;border-collapse:collapse;margin:5px 0;font-size:11px}
-table.grid th,table.grid td{border:1px solid #333;padding:4px 6px;vertical-align:top}
-table.grid th{background:#f0f0f0;text-align:center}
-.r{text-align:right;font-variant-numeric:tabular-nums}.c{text-align:center}
-table.sum{float:right;width:280px;border-collapse:collapse;margin:2px 0 6px;font-size:11px}
-table.sum td{padding:2px 6px;border:1px solid #333}table.sum .tot{font-weight:bold;background:#f0f0f0}
-.bx{display:inline-block;width:11px;height:11px;border:1px solid #333;text-align:center;line-height:11px;font-size:9px;font-weight:bold}
-.signs{margin-top:26px}
-.srow{display:flex;justify-content:space-between;margin-bottom:6px}
-.srow.ctr{justify-content:center;gap:70px;margin-top:10px}
-.scol{width:31%;text-align:center}.sp{height:88px}.nm{font-weight:bold}
-.sign2 td{height:18px}.sign2 .sph td{height:55px}table.sign2{table-layout:fixed}
-.logo{width:62px;height:62px;object-fit:contain}
-.phead{width:100%;border-collapse:collapse;margin-bottom:4px}.phead td{vertical-align:middle;border:0;padding:0}
-.empty td{height:15px}
-@media print{.noprint{display:none}}
-</style></head><body>
+        $tglInv = $invoice->invoice_date ?? now();
 
-<div class="page">
-  <div class="created">Created By Java Core System ({$created})</div>
-  <div style="text-align:center"><img class="logo" src="{$logo}" alt="MUP"></div>
-  <div class="ttl">MEMO INTERNAL</div>
-  <div class="sub">No : {$eNo}</div>
-  <table class="meta">
-    <tr><td class="lbl">Kepada Yth</td><td class="sep">:</td><td>RS</td></tr>
-    <tr><td class="lbl">Tembusan</td><td class="sep">:</td><td>BA, MW</td></tr>
-    <tr><td class="lbl">Dari</td><td class="sep">:</td><td>{$eDari}</td></tr>
-    <tr><td class="lbl">Hari / Tanggal</td><td class="sep">:</td><td>{$eTgl}</td></tr>
-    <tr><td class="lbl">Perihal</td><td class="sep">:</td><td>{$eDesc}</td></tr>
-  </table>
-  <p>Dengan hormat,<br>Sehubungan dengan keperluan {$eDesc}. Maka kami mengajukan permohonan pembayaran sebesar {$fNet} ({$eWords}). Dengan rincian sebagai berikut :</p>
-  <table class="grid">
-    <thead><tr><th style="width:32px">No.</th><th>Nama Barang</th><th style="width:130px">HARGA SAT. (Rp)</th><th style="width:130px">JML HARGA</th></tr></thead>
-    <tbody>{$itemRows}</tbody>
-  </table>
-  <table class="sum">
-    <tr><td>Sub Total</td><td class="r">{$fDpp}</td></tr>
-    <tr><td>PPN {$ppnPct}%</td><td class="r">{$fPpn}</td></tr>
-    <tr><td>PPH</td><td class="r">{$fPph}</td></tr>
-    <tr class="tot"><td>TOTAL</td><td class="r">{$fNet}</td></tr>
-  </table>
-  <div style="clear:both"></div>
-  <p style="margin-top:10px">Pembayaran dilakukan melalui transfer Rekening :</p>
-  <table class="meta">
-    <tr><td class="lbl">No. Rekening</td><td class="sep">:</td><td>{$eBankRek}</td></tr>
-    <tr><td class="lbl">Bank</td><td class="sep">:</td><td>{$eBankNm}</td></tr>
-    <tr><td class="lbl">Atas Nama</td><td class="sep">:</td><td>{$eBankAn}</td></tr>
-  </table>
-  <p>Demikian ini kami sampaikan, atas perhatiannya kami ucapkan terima kasih.</p>
-  <div class="signs">
-    <div class="srow">
-      <div class="scol" style="width:34%">Hormat Kami,<div class="sp"></div><div class="nm">{$eDari}</div></div>
-      <div style="width:60%">
-        <div style="text-align:center">Menyetujui,</div>
-        <div class="sp"></div>
-        <div style="display:flex;justify-content:space-around;gap:12px">
-          <div class="nm" style="flex:1;text-align:center">{$eSign1}</div>
-          <div class="nm" style="flex:1;text-align:center">{$eSign2}</div>
-        </div>
-      </div>
-    </div>
-    <div class="srow" style="margin-top:40px">
-      <div class="scol" style="width:34%">&nbsp;</div>
-      <div style="width:60%">
-        <div style="text-align:center">Mengetahui,</div>
-        <div class="sp"></div>
-        <div style="display:flex;justify-content:space-around;gap:12px">
-          <div class="nm" style="flex:1;text-align:center">{$eMeng1}</div>
-          <div class="nm" style="flex:1;text-align:center">{$eMeng2}</div>
-        </div>
-      </div>
-    </div>
-  </div>
-</div>
-
-<div class="page">
-  <div class="created">Created By Java Core System ({$created})</div>
-  <table class="phead"><tr>
-    <td style="width:70px"><img class="logo" src="{$logo}" alt="MUP"></td>
-    <td><div class="ttl">BUKTI PERMOHONAN PEMBAYARAN</div></td>
-    <td style="width:70px"></td>
-  </tr></table>
-  <table class="meta" style="margin-top:8px">
-    <tr><td class="lbl">Tanggal Pengajuan</td><td class="sep">:</td><td>{$eTgl}</td></tr>
-    <tr><td class="lbl">Tanggal Jatuh Tempo</td><td class="sep">:</td><td>{$eJatuhTempo}</td></tr>
-    <tr><td class="lbl">Dibayarkan Kepada</td><td class="sep">:</td><td>{$eSupNm}</td></tr>
-    <tr><td class="lbl">Departemen</td><td class="sep">:</td><td>{$eDept}</td></tr>
-  </table>
-  <table class="grid">
-    <colgroup><col style="width:25%"><col style="width:25%"><col style="width:25%"><col style="width:25%"></colgroup>
-    <thead><tr><th>Dibayar Via</th><th>Type Pengeluaran</th><th>Cara Pembayaran Bank</th><th>Lampiran</th></tr></thead>
-    <tbody><tr>
-      <td><span class="bx">{$cbKas}</span> KAS<br><span class="bx">{$cbBank}</span> {$eBankLbl}<br>No. Rekening : {$eBankRek}</td>
-      <td><span class="bx">{$cbPekerjaan}</span> Pekerjaan<br><span class="bx">{$cbMaterial}</span> Material</td>
-      <td><span class="bx">{$cbTunai}</span> Tunai<br><span class="bx">{$cbTransfer}</span> Transfer</td>
-      <td><span class="bx">{$cbPnjLgsg}</span> Penunjukan Langsung<br><span class="bx">&nbsp;</span> Tender<br><span class="bx">&nbsp;</span> Non Pembelian</td>
-    </tr></tbody>
-  </table>
-  <table class="grid">
-    <thead><tr><th style="width:135px">No. Account</th><th>Uraian Pembayaran</th><th style="width:150px">Jumlah</th></tr></thead>
-    <tbody>{$bppRows}</tbody>
-    <tfoot>
-      <tr>
-        <td>No. Cek / BG : -</td>
-        <td>No. Voucher : {$eNo}</td>
-        <td class="r" style="font-weight:bold;background:#f0f0f0">Total : {$fTotalPay}</td>
-      </tr>
-    </tfoot>
-  </table>
-  <table class="meta">
-    <tr><td class="lbl">Terbilang</td><td class="sep">:</td><td>{$eWords}</td></tr>
-  </table>
-  <table class="grid sign2" style="margin-top:18px;text-align:center">
-    <colgroup><col style="width:14.28%"><col style="width:14.28%"><col style="width:14.28%"><col style="width:14.28%"><col style="width:14.28%"><col style="width:14.28%"><col style="width:14.32%"></colgroup>
-    <tr><td>Diajukan Oleh,</td><td colspan="2">Di Verifikasi Oleh,</td><td colspan="2">Di Setujui Oleh,</td><td>Di Bayarkan Oleh,</td><td>Di Terima Oleh,</td></tr>
-    <tr class="sph"><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>
-    <tr><td>SPV/Manager Dept</td><td>Manager Accounting</td><td>Manager Finance</td><td>General Manager</td><td>Direktur</td><td>General Cashier</td><td>Penerima</td></tr>
-  </table>
-  <div class="noprint" style="margin-top:14px">
-    <button onclick="window.print()" style="padding:6px 14px">Cetak</button>
-    <a href="{$backUrl}" style="margin-left:10px;padding:6px 14px;border:1px solid #ccc;text-decoration:none;color:#333;border-radius:4px">&larr; Kembali ke Invoice</a>
-  </div>
-</div>
-
-<script>window.onload=function(){setTimeout(function(){window.print()},300)}</script>
-</body></html>
-HTML;
+        return view('pdf.memo-internal', [
+            'lampiran' => $this->lampiranBudget($invoice),
+            'no' => $invoice->invoice_number,
+            'dicetak' => now()->translatedFormat('d-m-Y H.i.s'),
+            'dept' => $emp ? ($emp->costCenter?->name ?: ($emp->position ?: '-')) : '-',
+            'supplier' => $sup?->name ?? '-',
+            'dari' => $cc->namaManager($user) ?: $cc->namaKaryawan($user) ?: ($user?->name ?? '-'),
+            'tanggal' => $tglInv->translatedFormat('l, d F Y'),
+            // "Keperluan" = Uraian di langkah Detil Tagihan (beberapa baris → digabung koma).
+            'perihal' => $invoice->lines->pluck('description')->map(fn ($d) => trim((string) $d))->filter()->unique()->implode(', ') ?: (string) $invoice->description,
+            // Checkbox OTOMATIS: Bank/Transfer bila supplier punya rekening (selain itu KAS/Tunai);
+            // Pekerjaan bila ada PPh (selain itu Material); Lampiran selalu Penunjukan Langsung.
+            'bank' => ['ada' => trim((string) ($sup?->bank_account_no ?? '')) !== '', 'nama' => $sup?->bank_name,
+                'rek' => $sup?->bank_account_no ?: '-', 'an' => $sup?->bank_account_name ?: ($sup?->name ?: '-')],
+            'pekerjaan' => in_array($invoice->pph_mode, ['withheld', 'borne'], true),
+            'total' => $net, 'ppn' => (float) $invoice->ppn_amount, 'pph' => (float) $invoice->pph_amount,
+            'ppnPct' => rtrim(rtrim(number_format((float) $invoice->ppn_pct, 2, ',', '.'), '0'), ','),
+            'terbilang' => mb_strtoupper(trim(preg_replace('/\s+/', ' ', terbilang((int) round($net))))).' RUPIAH',
+            'bulanLabel' => \App\Domain\BusinessSupport\Models\BsBudget::MONTHS[$tglInv->month - 1].' '.$tglInv->year,
+            'tahun' => $tglInv->year,
+            'grup' => array_values($grup),
+            'kembali' => route('bs.ap.show', $invoice->id),
+        ])->render();
     }
 
     public function pay(Request $request, BsApInvoice $invoice, PayApInvoice $action): RedirectResponse

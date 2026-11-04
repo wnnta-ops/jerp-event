@@ -481,7 +481,7 @@ class ApBerkasController extends Controller
         return $b->files->map(fn (BsApBerkasUploadFile $f) => [
             'id' => $f->id,
             'name' => $f->original_name,
-            'jenis' => $f->jenis?->name,
+            'jenis' => $f->labelJenis(),
             'size' => $f->size,
             'mime' => $f->mime,
             'url' => route('bs.ap.berkas.file', [$b->id, $f->id]),

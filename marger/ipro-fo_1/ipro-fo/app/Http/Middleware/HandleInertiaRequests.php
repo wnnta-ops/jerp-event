@@ -69,6 +69,9 @@ final class HandleInertiaRequests extends Middleware
                 // galatnya bisa puluhan baris dan justru baris itulah yang harus dibetulkan.
                 'uploadError' => fn () => $request->session()->get('uploadError'),
             ],
+            // Memo Urgent saya yang sudah dibayar tapi invoice hutangnya belum dibuat — pop-up sekali
+            // tiap login (penanda diset saat login, dihapus saat pop-up ditutup / tidak ada isinya).
+            'pengingatMemo' => fn () => $this->pengingatMemo($request),
             'config' => [
                 'currency'   => config('domain.currency'),
                 'timezone'   => config('domain.timezone'),
@@ -80,5 +83,23 @@ final class HandleInertiaRequests extends Middleware
             // sekali via @routes di app.blade.php → window.Ziggy; ZiggyVue (app.ts, tanpa argumen)
             // membacanya dari sana. Mengirim ulang tiap response Inertia hanya memboroskan ~76 KB/klik.
         ]);
+    }
+
+    /** @return array{batas:int, rows:mixed}|null */
+    private function pengingatMemo(Request $request): ?array
+    {
+        $kunci = \App\Domain\BusinessSupport\Services\PembayaranMemoUrgent::SESI_PENGINGAT;
+        if (! $request->user() || ! $request->hasSession() || ! $request->session()->get($kunci)) {
+            return null;
+        }
+        $svc = app(\App\Domain\BusinessSupport\Services\PembayaranMemoUrgent::class);
+        $rows = rescue(fn () => $svc->outstanding($request->user()->id), collect(), report: false);
+        if ($rows->isEmpty()) {
+            $request->session()->forget($kunci);
+
+            return null;
+        }
+
+        return ['batas' => $svc->batasHari(), 'rows' => $rows];
     }
 }

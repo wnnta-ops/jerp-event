@@ -74,62 +74,12 @@ final class RegisterApInvoice
             $pphMode = $data['pph_mode'] ?? 'none';
             $pphOn   = in_array($pphMode, ['withheld', 'borne'], true); // PPh dihitung utk Dipotong & Ditanggung
 
-            $dpp    = round((float) $data['dpp']);
-            $ppnPct = ($data['ppn_mode'] ?? 'none') === 'with' ? round((float) ($data['ppn_pct'] ?? 11), 2) : 0.0;
-            // #140: PPN dihitung dari NILAI OBJEK PPN (ppn_base), bukan seluruh DPP. Default = seluruh DPP; clamp ke DPP.
-            $ppnBase = 0.0;
-            if (($data['ppn_mode'] ?? 'none') === 'with') {
-                $ppnBase = round((float) ($data['ppn_base'] ?? 0));
-                if ($ppnBase <= 0) {
-                    $ppnBase = $dpp;
-                }
-                $ppnBase = min($ppnBase, $dpp);
-            }
-            /* PEMBULATAN PPN: desimal tepat 0,5 ke BAWAH, di atasnya ke atas.
-               round() PHP membulatkan 0,5 ke ATAS, sehingga PPN kerap satu rupiah lebih besar
-               daripada hitungan Accounting — dan selisih satu rupiah pada faktur pajak harus
-               dijelaskan. ceil(v − 0,5): 550.000,50 → 550.000 · 550.000,51 → 550.001.
-               Dihitung ULANG di sini, tidak memakai kiriman layar: nilai pajak yang datang dari
-               luar bisa berisi apa saja. Form.vue memakai rumus yang sama supaya angka di layar
-               dan angka yang tersimpan tidak pernah berbeda. */
-
-            /* INCLUDE PPN — nilai yang dikirim adalah TOTAL, bukan DPP.
-               PPN diambil dari DALAM total (tarif/(100+tarif)) lalu DPP = total − PPN, sehingga
-               penjumlahannya kembali ke angka yang diketik MENURUT DEFINISI. Menghitungnya
-               sebagai total ÷ (1+tarif) lalu × tarif tidak pernah bisa eksak: 5.000.000 tidak
-               terbagi bulat pada tarif 11%, dan hasilnya meleset Rp 1 pada sekitar sepersepuluh
-               nilai — berapa pun aturan pembulatannya (diuji pada 7.276 nilai).
-
-               Mode ini DIKIRIM dari layar dan TIDAK disimpan: yang tersimpan hanya hasilnya
-               (dpp, ppn, total). Dulu Include hanya alat bantu pengetikan yang tidak pernah
-               sampai ke sini, sehingga angka di layar dan angka tersimpan bisa berbeda. */
-            $inclPpn = $ppnPct > 0 && (bool) ($data['ppn_incl'] ?? false);
-
-            if ($inclPpn) {
-                $ppn   = ceil($ppnBase * $ppnPct / (100 + $ppnPct) - 0.5);
-                $dpp   = $dpp - $ppn;
-                $total = $dpp + $ppn;
-            } else {
-                $ppn   = ceil($ppnBase * $ppnPct / 100 - 0.5);
-                $total = round($dpp + $ppn);
-            }
-            $pphPct = $pphOn ? round((float) ($data['pph_pct'] ?? 0), 2) : 0.0;
-            // #92: PPh dihitung dari NILAI OBJEK PPh (pph_base), bukan total. Default = seluruh DPP; clamp ke DPP.
-            $pphBase = 0.0;
-            if ($pphOn) {
-                $pphBase = round((float) ($data['pph_base'] ?? 0));
-                if ($pphBase <= 0) {
-                    $pphBase = $dpp;
-                }
-                $pphBase = min($pphBase, $dpp);
-            }
-            // PPh Pasal 4(2) (pph4_2) → rounddown (floor); jenis lain → round.
-            $pphRaw     = $pphBase * $pphPct / 100;
-            $pphJournal = ($data['pph_type'] ?? null) === 'pph4_2' ? floor($pphRaw) : round($pphRaw); // nilai PPh utk JURNAL
-            // PPh DITANGGUNG (borne) → nilai tampil/tersimpan 0 (supplier dibayar penuh); jurnal tetap Dr Biaya PPh / Cr Hutang PPh (pakai $pphJournal).
-            $pph        = $pphMode === 'borne' ? 0 : $pphJournal;
-            // Ditanggung → supplier dibayar PENUH (net = total); Dipotong → net = total − PPh.
-            $net        = $pphMode === 'borne' ? $total : round($total - $pph);
+            // Hitungan pajak (pembulatan PPN 0,5-ke-bawah, Include PPN dari dalam total, PPh 4(2)
+            // rounddown, Ditanggung → net = total) ada di PajakHutang — sama dengan Memo Urgent.
+            // Dihitung ULANG di sini, tidak memakai angka kiriman layar.
+            $p = \App\Domain\BusinessSupport\Support\PajakHutang::hitung($data);
+            ['dpp' => $dpp, 'ppn_pct' => $ppnPct, 'ppn_base' => $ppnBase, 'ppn' => $ppn, 'total' => $total,
+                'pph_pct' => $pphPct, 'pph_base' => $pphBase, 'pph_journal' => $pphJournal, 'pph' => $pph, 'net' => $net] = $p;
 
             // Jatuh tempo: eksplisit atau dari term (hari).
             // Jatuh tempo: eksplisit; jika tidak, dari term (hari) dihitung dari Tgl. Terima (fallback Tgl. Input).

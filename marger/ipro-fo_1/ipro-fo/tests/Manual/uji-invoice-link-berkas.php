@@ -86,6 +86,29 @@ try {
     $cek('jadi Upload Berkas milik pembuat + diajukan ke TTD Dept Head', (int) $b->uploaded_by === $staf->id && $b->status === BsApBerkasUpload::STATUS_MENUNGGU_TTD && (int) $b->dept_head_id === $deptHead->id, $b->status);
     $cek('isian berkas dari wizard (supplier, no. tagihan, nilai)', (int) $b->supplier_id === $supplier && $b->supplier_invoice_no === 'SUP-LINK-1' && (float) $b->amount === 750000.0);
 
+    // Drop box Upload File (layar invoice): jenis tetap; "Lainnya" wajib keterangan.
+    $ctlUp = app(App\Http\Controllers\Web\BusinessSupport\Payable\ApInvoiceBerkasController::class);
+    $kirimUp = fn (array $files, array $berkas) => app()->call([$ctlUp, 'upload'], ['request' => $minta('POST',
+        ['data' => json_encode($wizard), 'files' => $files], ['files' => $berkas])]);
+    $tolakUp = null;
+    try {
+        $kirimUp([['berkas_id' => $jenis['INVOICE']], ['berkas_id' => $jenis['SURAT-JALAN']]], [['file' => $pdf('a.pdf')], ['file' => $pdf('b.pdf')]]);
+    } catch (Illuminate\Validation\ValidationException $e) {
+        $tolakUp = $e->errors();
+    }
+    $cek('Upload File: jenis di luar 4 jenis tetap → ditolak', isset($tolakUp['files.1.berkas_id']), json_encode($tolakUp));
+    $tolakUp = null;
+    try {
+        $kirimUp([['berkas_id' => $jenis['INVOICE']], ['berkas_id' => $jenis['KUITANSI']], ['berkas_id' => $jenis['LAINNYA'], 'keterangan' => ' ']], [['file' => $pdf('a.pdf')], ['file' => $pdf('b.pdf')], ['file' => $pdf('c.pdf')]]);
+    } catch (Illuminate\Validation\ValidationException $e) {
+        $tolakUp = $e->errors();
+    }
+    $cek('Upload File: "Lainnya" tanpa keterangan → ditolak', isset($tolakUp['files.2.keterangan']), json_encode($tolakUp));
+    $resUp = $kirimUp([['berkas_id' => $jenis['INVOICE']], ['berkas_id' => $jenis['KUITANSI']], ['berkas_id' => $jenis['LAINNYA'], 'keterangan' => 'Berita Acara']], [['file' => $pdf('a.pdf')], ['file' => $pdf('b.pdf')], ['file' => $pdf('c.pdf')]]);
+    $bUp = BsApBerkasUpload::find($resUp->getData(true)['id'] ?? 0);
+    $pathsUji = array_merge($pathsUji, $bUp?->files()->pluck('path')->all() ?? []);
+    $cek('Upload File: "Lainnya" tersimpan dengan keterangan', $bUp && $bUp->files()->where('berkas_id', $jenis['LAINNYA'])->first()?->labelJenis() === 'Lainnya — Berita Acara');
+
     echo "\n=== 2. Generate Link ===\n";
     $cek('tanpa supplier → ditolak', $kode(fn () => $svc->buat($staf, ['invoice_date' => $tgl], 3)) === 'LINK_DATA');
     $link = $svc->buat($staf, $wizard + ['link_id' => 99], 3);
@@ -96,25 +119,59 @@ try {
     $cek('boleh banyak link sekaligus, nomor berbeda', $link2->invoice_number !== $link->invoice_number && $svc->aktifUntuk($staf)->count() >= 2);
     auth()->logout();
     $html = app()->call([app(BerkasSupplierController::class), 'show'], ['token' => $link->token])->getContent();
-    $cek('halaman publik (tanpa login) menampilkan nomor invoice & dokumen wajib', str_contains($html, $link->invoice_number) && str_contains($html, 'Invoice / Nota Supplier'));
+    $cek('halaman publik (tanpa login): isian No. Invoice kosong, nomor internal & "No. Tagihan Anda" tidak tampil, dokumen wajib ada',
+        str_contains($html, 'name="no_invoice"') && ! str_contains($html, $link->invoice_number) && ! str_contains($html, 'No. Tagihan Anda') && str_contains($html, 'Invoice / Nota Supplier'));
 
     echo "\n=== 3. Supplier mengunggah ===\n";
     $cek('dokumen wajib kurang → ditolak', $kode(fn () => $svc->terimaDariSupplier($link, [['file' => $pdf('a.pdf'), 'berkas_id' => $jenis['INVOICE']]])) === 'LINK_WAJIB');
     $notifSebelum = DB::table('notifications')->where('notifiable_id', $staf->id)->where('type', 'berkas.supplier_terisi')->count();
+    $cek('halaman supplier: hanya Invoice, Kuitansi, Faktur Pajak, Lainnya', str_contains($html, 'Faktur Pajak') && str_contains($html, 'Lainnya') && ! str_contains($html, 'Surat Jalan'));
+    $tolakLain = null;
+    try {
+        app()->call([app(BerkasSupplierController::class), 'store'], ['request' => $minta('POST', [
+            'no_invoice' => 'INV-SUP-001', 'files' => [['berkas_id' => $jenis['INVOICE']], ['berkas_id' => $jenis['KUITANSI']], ['berkas_id' => $jenis['LAINNYA'], 'keterangan' => '']],
+        ], ['files' => [['file' => $pdf('i.pdf')], ['file' => $pdf('k.pdf')], ['file' => $pdf('l.pdf')]]]), 'token' => $link->token]);
+    } catch (Illuminate\Validation\ValidationException $e) {
+        $tolakLain = $e->errors();
+    }
+    $cek('"Lainnya" tanpa keterangan → ditolak', isset($tolakLain['files.2.keterangan']), json_encode($tolakLain));
+    $tolakNo = null;
+    try {
+        app()->call([app(BerkasSupplierController::class), 'store'], ['request' => $minta('POST', [
+            'files' => [['berkas_id' => $jenis['INVOICE']], ['berkas_id' => $jenis['KUITANSI']]],
+        ], ['files' => [['file' => $pdf('i.pdf')], ['file' => $pdf('k.pdf')]]]), 'token' => $link->token]);
+    } catch (Illuminate\Validation\ValidationException $e) {
+        $tolakNo = $e->errors();
+    }
+    $cek('tanpa No. Invoice → ditolak', isset($tolakNo['no_invoice']), json_encode($tolakNo));
     app()->call([app(BerkasSupplierController::class), 'store'], ['request' => $minta('POST', [
-        'files' => [['berkas_id' => $jenis['INVOICE']], ['berkas_id' => $jenis['KUITANSI']]], 'catatan' => 'Mohon diproses',
-    ], ['files' => [['file' => $pdf('inv-sup.pdf')], ['file' => $pdf('kui-sup.pdf')]]]), 'token' => $link->token]);
+        'no_invoice' => 'INV-SUP-777', 'files' => [['berkas_id' => $jenis['INVOICE']], ['berkas_id' => $jenis['KUITANSI']], ['berkas_id' => $jenis['LAINNYA'], 'keterangan' => 'Surat Kuasa']], 'catatan' => 'Mohon diproses',
+    ], ['files' => [['file' => $pdf('inv-sup.pdf')], ['file' => $pdf('kui-sup.pdf')], ['file' => $pdf('kuasa.pdf')]]]), 'token' => $link->token]);
     $link->refresh();
     $bs = BsApBerkasUpload::find($link->berkas_upload_id);
     $pathsUji = array_merge($pathsUji, $bs?->files()->pluck('path')->all() ?? []);
     $cek('link terisi + berkas tercatat', $link->status === 'terisi' && $bs !== null, app('session.store')->get('error') ?? '');
-    $cek('berkas milik pembuat invoice + diajukan TTD Dept Head', $bs && (int) $bs->uploaded_by === $staf->id && $bs->status === BsApBerkasUpload::STATUS_MENUNGGU_TTD && $bs->files()->count() === 2);
+    $cek('berkas milik pembuat invoice + diajukan TTD Dept Head', $bs && (int) $bs->uploaded_by === $staf->id && $bs->status === BsApBerkasUpload::STATUS_MENUNGGU_TTD && $bs->files()->count() === 3);
+    $cek('file "Lainnya" tersimpan dengan keterangannya', $bs && $bs->files()->where('berkas_id', $jenis['LAINNYA'])->first()?->labelJenis() === 'Lainnya — Surat Kuasa');
     $cek('catatan supplier ikut di keterangan berkas', $bs && str_contains($bs->description, 'Mohon diproses'));
+    $cek('No. Invoice dari supplier → berkas & draft link', $bs && $bs->supplier_invoice_no === 'INV-SUP-777' && ($link->data['supplier_invoice_no'] ?? null) === 'INV-SUP-777');
+    $svc->simpanDraft($link, ['supplier_invoice_no' => 'DIUBAH-WIZARD'] + ($link->data ?? []), 2);
+    $cek('Simpan Draft wizard tidak menimpa nomor dari supplier', ($link->fresh()->data['supplier_invoice_no'] ?? null) === 'INV-SUP-777');
     $notif = DB::table('notifications')->where('notifiable_id', $staf->id)->where('type', 'berkas.supplier_terisi')->get();
     $cek('pembuat dapat notifikasi "Supplier sudah mengisi … di <no invoice>"',
         $notif->count() === $notifSebelum + 1 && $notif->contains(fn ($n) => str_contains(json_decode($n->data, true)['body'] ?? '', $link->invoice_number)),
         $notif->count().' '.$notif->pluck('data')->implode(' | '));
-    $cek('kiriman kedua ditolak', $kode(fn () => $svc->terimaDariSupplier($link, [['file' => $pdf('b.pdf'), 'berkas_id' => $jenis['INVOICE']]])) === 'LINK_TUTUP');
+    // Link tetap hidup: supplier boleh mengunggah ULANG — berkas baru menggantikan yang lama, riwayat tercatat.
+    $bsLama = $bs;
+    $bs = $svc->terimaDariSupplier($link->fresh(), [['file' => $pdf('inv2.pdf'), 'berkas_id' => $jenis['INVOICE']], ['file' => $pdf('kui2.pdf'), 'berkas_id' => $jenis['KUITANSI']]], null, 'INV-SUP-778');
+    $pathsUji = array_merge($pathsUji, $bs->files()->pluck('path')->all());
+    $link->refresh();
+    $cek('unggah ulang lewat link yang sama → diterima, berkas baru jadi berkas link', (int) $link->berkas_upload_id === $bs->id && $bs->id !== $bsLama->id && $link->status === 'terisi');
+    $cek('berkas lama dibatalkan (keluar dari TTD Dept Head)', $bsLama->fresh()->status === BsApBerkasUpload::STATUS_DIBATALKAN);
+    $cek('riwayat unggahan tercatat 2× (waktu, berkas, no. invoice)', count($link->riwayat ?? []) === 2 && $link->riwayat[1]['no_invoice'] === 'INV-SUP-778' && $link->riwayat[1]['berkas_number'] === $bs->berkas_number);
+    $cek('no. invoice ikut unggahan terbaru', ($link->data['supplier_invoice_no'] ?? null) === 'INV-SUP-778');
+    $html2 = app()->call([app(BerkasSupplierController::class), 'show'], ['token' => $link->token])->getContent();
+    $cek('halaman link tetap menerima + menampilkan riwayat', str_contains($html2, 'Kirim Ulang Dokumen') && str_contains($html2, 'Riwayat unggahan') && str_contains($html2, 'INV-SUP-778'));
 
     auth()->setUser($staf);
     if (! $staf->can('ap.invoice.view')) {   // titik tampil di daftar invoice — butuh akses lihat daftar
@@ -143,8 +200,10 @@ try {
             ['account_id' => $akunDebit, 'cost_center_id' => null, 'debit' => 750_000, 'credit' => 0, 'description' => 'uji'],
             ['account_id' => (int) $pakai->payable_account_id, 'cost_center_id' => null, 'debit' => 0, 'credit' => 750_000, 'description' => 'hutang'],
         ]];
-    app()->call([$ctl, 'store'], ['request' => $minta('POST', $isi)]);
+    app()->call([$ctl, 'store'], ['request' => $minta('POST', ['supplier_invoice_no' => 'KETIK-LAIN'] + $isi)]);
     $inv = BsApInvoice::where('invoice_number', $link->invoice_number)->first();
+    $cek('No. Invoice Supplier invoice = nomor yang diisi supplier di link (unggahan terbaru)', $inv?->supplier_invoice_no === 'INV-SUP-778', (string) $inv?->supplier_invoice_no);
+    $cek('setelah invoice disimpan, link ditutup', $kode(fn () => $svc->terimaDariSupplier($link->fresh(), [['file' => $pdf('c.pdf'), 'berkas_id' => $jenis['INVOICE']], ['file' => $pdf('d.pdf'), 'berkas_id' => $jenis['KUITANSI']]], null, 'X')) === 'LINK_TUTUP');
     $galat = app('session.store')->get('error') ?? json_encode(app('session.store')->get('errors')?->getBag('default')->toArray());
     $cek('invoice tersimpan memakai nomor yang dipesan link', $inv !== null, (string) $galat);
     $cek('link selesai (dipakai) & keluar dari daftar menunggu', $link->fresh()->status === 'dipakai' && (int) $link->fresh()->ap_invoice_id === $inv?->id

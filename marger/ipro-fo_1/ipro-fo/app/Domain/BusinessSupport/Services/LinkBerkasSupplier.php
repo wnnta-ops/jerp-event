@@ -65,6 +65,10 @@ final class LinkBerkasSupplier
     public function simpanDraft(BsApBerkasLink $link, array $data, int $step): void
     {
         if ($link->aktif()) {
+            // Nomor invoice dari supplier tidak tertimpa isian wizard.
+            if ($link->status === BsApBerkasLink::TERISI && ! empty($link->data['supplier_invoice_no'])) {
+                $data['supplier_invoice_no'] = $link->data['supplier_invoice_no'];
+            }
             $link->update(['data' => $this->bersihkan($data), 'step' => max(1, min(5, $step))]);
         }
     }
@@ -94,11 +98,15 @@ final class LinkBerkasSupplier
      *
      * @param  list<array{file:UploadedFile, berkas_id:?int}>  $files
      */
-    public function terimaDariSupplier(BsApBerkasLink $link, array $files, ?string $catatan = null): BsApBerkasUpload
+    public function terimaDariSupplier(BsApBerkasLink $link, array $files, ?string $catatan = null, ?string $noInvoice = null): BsApBerkasUpload
     {
-        if ($link->status !== BsApBerkasLink::MENUNGGU) {
+        // Link tetap hidup sampai invoicenya disimpan / dibatalkan: supplier boleh mengunggah ULANG.
+        // Unggahan baru = berkas baru yang menggantikan berkas sebelumnya (dibatalkan, keluar dari
+        // inbox TTD Dept Head); semua unggahan tercatat di riwayat link.
+        if (! $link->aktif()) {
             throw new BusinessRuleException('Link ini sudah tidak menerima dokumen.', errorCode: 'LINK_TUTUP');
         }
+        $ulang = $link->status === BsApBerkasLink::TERISI;
         if ($files === []) {
             throw new BusinessRuleException('Unggah minimal satu file.', errorCode: 'LINK_KOSONG');
         }
@@ -109,7 +117,13 @@ final class LinkBerkasSupplier
         }
 
         $pembuat = User::findOrFail($link->user_id);
-        $isian = $this->isianBerkas($link->data ?? []);
+        // No. invoice yang diketik supplier di halaman link = No. Invoice Supplier invoice ini (aktif, dikunci di wizard).
+        $noInvoice = trim((string) $noInvoice);
+        $data = $link->data ?? [];
+        if ($noInvoice !== '') {
+            $data['supplier_invoice_no'] = mb_substr($noInvoice, 0, 80);
+        }
+        $isian = $this->isianBerkas($data);
         if ($catatan) {
             $isian['description'] = mb_substr($isian['description'].' — catatan supplier: '.$catatan, 0, 255);
         }
@@ -128,10 +142,22 @@ final class LinkBerkasSupplier
         } finally {
             $sebelum ? auth()->setUser($sebelum) : auth()->forgetUser();
         }
-        $link->update(['berkas_upload_id' => $berkas->id, 'status' => BsApBerkasLink::TERISI, 'filled_at' => now(), 'seen_at' => null]);
+        $lama = $ulang && $link->berkas_upload_id ? BsApBerkasUpload::query()->find($link->berkas_upload_id) : null;
+        if ($lama && $lama->id !== $berkas->id) {
+            try {
+                $this->berkas->cancel($lama, $pembuat, 'Diganti unggahan ulang supplier ('.$berkas->berkas_number.')');
+            } catch (BusinessRuleException) {
+                // sudah dipakai invoice — dibiarkan
+            }
+        }
+        $riwayat = $link->riwayat ?? [];
+        $riwayat[] = ['at' => now()->toIso8601String(), 'berkas_id' => $berkas->id, 'berkas_number' => $berkas->berkas_number,
+            'no_invoice' => $data['supplier_invoice_no'] ?? null, 'file' => count($files), 'catatan' => $catatan];
+        $link->update(['data' => $data, 'berkas_upload_id' => $berkas->id, 'status' => BsApBerkasLink::TERISI, 'filled_at' => now(),
+            'riwayat' => $riwayat, 'seen_at' => null]);
 
-        $this->notifier->notify([$pembuat], 'berkas.supplier_terisi', 'Berkas supplier masuk',
-            'Supplier sudah mengisi kelengkapan dokumen di '.$link->invoice_number.' (berkas '.$berkas->berkas_number.').',
+        $this->notifier->notify([$pembuat], 'berkas.supplier_terisi', $ulang ? 'Supplier mengunggah ulang berkas' : 'Berkas supplier masuk',
+            ($ulang ? 'Supplier mengunggah ULANG dokumen di ' : 'Supplier sudah mengisi kelengkapan dokumen di ').$link->invoice_number.' (berkas '.$berkas->berkas_number.').',
             route('bs.ap.create', ['link' => $link->id]));
 
         return $berkas;

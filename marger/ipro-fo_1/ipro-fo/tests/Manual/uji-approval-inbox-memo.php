@@ -69,6 +69,15 @@ try {
     }
     $inbox = app(ApprovalInboxQuery::class);
     $act = app(ActOnApproval::class);
+    // Chain memo per user (System › Approval Chain) diarahkan ke approver uji — ikut dibatalkan bersama transaksi.
+    $arahkanChainMemo = function (array $labelKeUser): void {
+        $chains = DB::table('approval_chains')->where('document_type', 'memo_internal')->pluck('id');
+        foreach ($labelKeUser as $label => $u) {
+            DB::table('approval_chain_steps')->whereIn('approval_chain_id', $chains)->where('label', $label)
+                ->update(['approver_type' => 'user', 'approver_value' => (string) $u->id]);
+        }
+    };
+    $arahkanChainMemo(['Accounting' => $role['Accounting'], 'Finance' => $role['Finance'], 'GM' => $role['GM'], 'Direktur' => $role['Direktur'], 'MW / BA' => $role['Owner']]);
     $sebagai = function (User $u) {
         auth()->setUser($u);
     };
@@ -78,7 +87,7 @@ try {
     echo "\n=== 1. Pengajuan ===\n";
     $sebagai($staf);
     $memo = app(SubmitMemoInternal::class)->execute([
-        'memo_date' => now()->toDateString(), 'department' => 'Marketing',
+        'jenis' => 'reguler', 'memo_date' => now()->toDateString(), 'department' => 'Marketing',
         'subject' => 'Uji pengadaan banner', 'body' => 'Isi uji', 'amount' => 2500000,
     ]);
     $cek('nomor memo format MI/YYMM/NNNNN', (bool) preg_match('#^MI/\d{4}/\d{5}$#', $memo->memo_number), $memo->memo_number);
@@ -122,7 +131,7 @@ try {
     echo "\n=== 4. Ditolak di GM ===\n";
     $sebagai($staf);
     $memo2 = app(SubmitMemoInternal::class)->execute([
-        'memo_date' => now()->toDateString(), 'department' => 'Marketing',
+        'jenis' => 'reguler', 'memo_date' => now()->toDateString(), 'department' => 'Marketing',
         'subject' => 'Uji ditolak', 'body' => 'Isi uji', 'amount' => null,
     ]);
     foreach (['Accounting', 'Finance'] as $r) {

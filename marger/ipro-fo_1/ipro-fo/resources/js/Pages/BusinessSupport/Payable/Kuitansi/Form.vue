@@ -14,7 +14,8 @@ const props = defineProps<{
     kasir: string;
     /** Memo Urgent yang bisa dibayar tanpa invoice (sudah disetujui Direktur, belum dibayar, belum ada invoice). */
     memoBayar: Array<{ id: number; number: string; subject: string; date: string | null; department: string | null; supplier: string | null; amount: number; status: string; url: string | null }>;
-    akunUangMuka: Array<{ id: number; code: string; name: string }>;
+    /** Akun debit pakem Bayar Memo Urgent (10107030304 AKUN MEMO URGENT); null = belum ada di COA. */
+    akunMemo: { id: number; code: string; name: string } | null;
     mode: 'invoice' | 'memo';
 }>();
 
@@ -37,7 +38,7 @@ const form = useForm<any>({
     kuitansi_date: today, supplier_id: '', cash_account_id: '',
     alat_transaksi: 'transfer', kasir: props.kasir, manual_no: '', bg_number: '', description: '', lines: [],
     // Bayar Memo Urgent — harus ada sejak awal: useForm hanya mengirim kunci yang ada di nilai awalnya.
-    memo_internal_id: '', advance_account_id: '', memo_amount: null,
+    memo_internal_id: '', memo_amount: null,
 });
 
 // #50: opsi kas/bank dikunci sesuai alat transaksi.
@@ -90,7 +91,7 @@ function submit() {
     if (mode.value === 'memo') {
         form.transform((d: any) => ({
             memo_internal_id: d.memo_internal_id, kuitansi_date: d.kuitansi_date, cash_account_id: d.cash_account_id,
-            advance_account_id: d.advance_account_id, amount: d.memo_amount, alat_transaksi: d.alat_transaksi,
+            amount: d.memo_amount, alat_transaksi: d.alat_transaksi,
             manual_no: d.manual_no, bg_number: d.bg_number, description: d.description,
         })).post(route('bs.ap.kuitansi.store-memo'));
         return;
@@ -110,7 +111,7 @@ watch(memoDipilih, (m) => {
     }
 });
 const memoLebih = computed(() => !!memoDipilih.value && (Number(form.memo_amount) || 0) > memoDipilih.value.amount + 0.001);
-const bisaBayarMemo = computed(() => !!memoDipilih.value && !!form.advance_account_id && !!form.cash_account_id && (Number(form.memo_amount) || 0) > 0 && !memoLebih.value && !form.processing);
+const bisaBayarMemo = computed(() => !!memoDipilih.value && !!props.akunMemo && !!form.cash_account_id && (Number(form.memo_amount) || 0) > 0 && !memoLebih.value && !form.processing);
 const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 text-sm dark:border-neutral-700 dark:bg-neutral-900';
 
 // Pop-up rincian invoice (klik No. Invoice): Struktur Jurnal + ringkasan + riwayat pelunasan.
@@ -158,9 +159,12 @@ const STATUS_KUI: Record<string, [string, string]> = {
                 <p class="text-[11px] text-neutral-500">Hanya memo yang sudah disetujui Direktur, belum dibayar, dan belum punya invoice. Dibayar sekali, paling banyak sebesar nominal memo; kuitansi langsung jadi (tanpa approval) — TTD MW / BA muncul otomatis di cetakan setelah MW / BA menyetujui memo. <b class="text-red-600">Invoice hutang wajib menyusul.</b></p>
                 <div class="grid gap-3 sm:grid-cols-2">
                     <div>
-                        <label class="mb-1 block text-xs font-medium text-neutral-500">Akun Uang Muka (Debit) *</label>
-                        <SearchSelect v-model="form.advance_account_id" :options="akunUangMuka" placeholder="— pilih akun uang muka —" :no-truncate="true" />
-                        <p v-if="form.errors.advance_account_id" class="mt-1 text-xs text-danger-500">{{ form.errors.advance_account_id }}</p>
+                        <label class="mb-1 block text-xs font-medium text-neutral-500">Akun Debit</label>
+                        <!-- Pakem: selalu AKUN MEMO URGENT — tidak bisa diganti. -->
+                        <div v-if="akunMemo" class="flex h-10 items-center gap-2 rounded-lg border border-neutral-200 bg-neutral-50 px-3 text-sm dark:border-neutral-700 dark:bg-neutral-800">
+                            <span class="font-mono text-xs text-neutral-500">{{ akunMemo.code }}</span><span class="font-medium">{{ akunMemo.name }}</span><span class="ml-auto text-[11px] text-neutral-400">🔒 pakem</span>
+                        </div>
+                        <p v-else class="text-xs text-danger-500">Akun 10107030304 AKUN MEMO URGENT belum ada di COA — hubungi Accounting.</p>
                     </div>
                     <div>
                         <label class="mb-1 block text-xs font-medium text-neutral-500">Nominal Dibayar *</label>
@@ -236,7 +240,7 @@ const STATUS_KUI: Record<string, [string, string]> = {
                 <span v-if="Object.keys(form.errors).length" class="self-center text-xs text-danger-500">{{ Object.values(form.errors)[0] }}</span>
                 <span v-else-if="!form.cash_account_id" class="self-center text-xs text-danger-500">Pilih Kas/Bank dulu.</span>
                 <span v-else-if="mode === 'memo' && !memoDipilih" class="self-center text-xs text-neutral-400">Pilih Memo Urgent dulu.</span>
-                <span v-else-if="mode === 'memo' && !form.advance_account_id" class="self-center text-xs text-neutral-400">Pilih akun uang muka.</span>
+                <span v-else-if="mode === 'memo' && !akunMemo" class="self-center text-xs text-danger-500">Akun Memo Urgent belum ada di COA.</span>
                 <span v-else-if="mode === 'invoice' && total <= 0 && totalUm <= 0" class="self-center text-xs text-neutral-400">Centang minimal satu invoice.</span>
             </div>
         </form>

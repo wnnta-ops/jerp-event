@@ -9,7 +9,7 @@ declare(strict_types=1);
  *   1. Realisasi = sisi pengeluaran saja: kredit di akun beban tidak mengurangi realisasi, tidak
  *      membuka ruang di penjaga budget.
  *   2. Koreksi Budget per bulan (layar Koreksi): isian nilai baru per bulan → selisihnya saja yang
- *      diajukan, masuk Approval Inbox (Accounting → GM), disetujui → hanya bulan itu yang berubah.
+ *      diajukan, masuk Approval Inbox (satu tahap Finance), disetujui → hanya bulan itu yang berubah.
  *      Budget lama tanpa rincian bulanan dirinci dulu (tidak hilang).
  *   3. Alokasi = pindah anggaran A → B per bulan, langsung berlaku; tidak boleh melebihi sisa bulan
  *      itu di A; asal = tujuan ditolak.
@@ -146,6 +146,9 @@ try {
         ], null, "{$tahun}-03-25")) === 'OVER_BUDGET');
 
     echo "\n=== 2. Koreksi Budget per bulan ===\n";
+    // Chain Koreksi & Alokasi (satu tahap Finance) diarahkan ke Finance uji — ikut dibatalkan bersama transaksi.
+    DB::table('approval_chain_steps')->whereIn('approval_chain_id', DB::table('approval_chains')->whereIn('code', ['KB-DEFAULT', 'AL-DEFAULT'])->pluck('id'))
+        ->update(['approver_type' => 'user', 'approver_value' => (string) $finance->id]);
     $sebagai($admin);
     $ctlKor = app(BudgetCorrectionController::class);
     app()->call([$ctlKor, 'store'], ['request' => $minta('POST', [
@@ -157,13 +160,20 @@ try {
         $k && $sama($k->months[3] ?? null, 800_000) && $sama($k->months[5] ?? null, -300_000) && ! isset($k->months[4]), json_encode($k?->months));
     $cek('nilai baru = tahunan + total selisih', $k && $sama($k->new_amount, 12_500_000));
     $a = $k ? Approval::with('steps')->find($k->approval_id) : null;
-    $cek('masuk Approval Inbox (2 tahap Accounting → GM)', $a && $a->steps->count() === 2);
+    $cek('masuk Approval Inbox (1 tahap Finance)', $a && $a->steps->count() === 1);
     $cek('label periode "Mar, Mei 2039"', $k && BudgetCorrectionController::labelPeriode($k) === "Mar, Mei {$tahun}");
     $cek('belum disetujui → budget belum berubah', $sama($budgetA->fresh()->m3, 1_000_000));
     $act = app(ActOnApproval::class);
-    $sebagai($accounting);
-    $act->execute(Approval::with('steps')->find($a->id), 'approve');
-    $sebagai($gm);
+    // Chain memo per user (System › Approval Chain) diarahkan ke approver uji — ikut dibatalkan bersama transaksi.
+    $arahkanChainMemo = function (array $labelKeUser): void {
+        $chains = DB::table('approval_chains')->where('document_type', 'memo_internal')->pluck('id');
+        foreach ($labelKeUser as $label => $u) {
+            DB::table('approval_chain_steps')->whereIn('approval_chain_id', $chains)->where('label', $label)
+                ->update(['approver_type' => 'user', 'approver_value' => (string) $u->id]);
+        }
+    };
+    $arahkanChainMemo(['Accounting' => $accounting, 'Finance' => $finance, 'GM' => $gm, 'Direktur' => $direktur, 'MW / BA' => $admin]);
+    $sebagai($finance);
     $act->execute(Approval::with('steps')->find($a->id), 'approve');
     $b = $budgetA->fresh();
     $cek('disetujui → Mar 1,8 jt, Mei 700 rb, Apr tetap', $sama($b->m3, 1_800_000) && $sama($b->m5, 700_000) && $sama($b->m4, 1_000_000), "{$b->m3} {$b->m4} {$b->m5}");
@@ -201,7 +211,7 @@ try {
 
     echo "\n=== 5. Memo Urgent & alokasi dari invoice hutang ===\n";
     $sebagai($admin);
-    $memo = app(SubmitMemoInternal::class)->execute(['memo_date' => "{$tahun}-03-01", 'department' => 'Uji', 'subject' => 'Memo uji meeting', 'body' => 'Isi', 'amount' => 900_000]);
+    $memo = app(SubmitMemoInternal::class)->execute(['jenis' => 'reguler', 'memo_date' => "{$tahun}-03-01", 'department' => 'Uji', 'subject' => 'Memo uji meeting', 'body' => 'Isi', 'amount' => 900_000]);
     $pilihan = app(MemoUntukInvoice::class);
     $cek('memo baru (belum sampai Direktur) belum bisa ditarik', ! $pilihan->boleh($memo->id));
     foreach ([$accounting, $finance, $gm, $direktur] as $u) {
@@ -261,23 +271,55 @@ try {
         $tolak = $sesi('error').' '.json_encode(app('session.store')->pull('budgetError'));
         $cek('melebihi sisa bulan tanpa alokasi/koreksi → ditolak (OVER_BUDGET)', BsApInvoice::count() === $sebelum && str_contains($tolak, 'Melebihi anggaran'), $tolak);
 
-        // Alokasi kurang (100 rb) → penjaga tetap menolak, dan pemindahannya ikut dibatalkan.
+        // Alokasi WAJIB disetujui Finance dulu (Pengajuan Budget Invoice) — simpan langsung ditolak.
         app()->call([$ctlInv, 'storeJenis'], ['request' => $minta('POST', $isi + ['alokasi' => [
-            ['budget_id' => $budgetB->id, 'dari_budget_id' => $budgetA->id, 'nilai' => 100_000],
+            ['budget_id' => $budgetB->id, 'dari_budget_id' => $budgetA->id, 'nilai' => 200_000],
         ]]), 'jenis' => 'reimburse']);
-        app('session.store')->pull('budgetError');
-        $cek('alokasi kurang → ditolak & anggaran A/B tidak berubah', BsApInvoice::count() === $sebelum
-            && $sama($budgetA->fresh()->m3, 1_100_000) && $sama($budgetB->fresh()->m3, 1_200_000), $budgetA->fresh()->m3.' '.$budgetB->fresh()->m3);
-
-        app()->call([$ctlInv, 'storeJenis'], ['request' => $minta('POST', $isi + ['alokasi' => [
-            ['budget_id' => $budgetB->id, 'dari_budget_id' => $budgetA->id, 'nilai' => 200_000, 'keterangan' => 'tutup kurang'],
+        $cek('simpan dengan alokasi tanpa persetujuan Finance → ditolak', BsApInvoice::count() === $sebelum && str_contains($sesi('error'), 'disetujui Finance'));
+        $ajukan = fn (array $alokasi, ?int $ulang = null) => app()->call([$ctlInv, 'ajukanBudget'], ['request' => $minta('POST',
+            ['jenis' => 'reimburse', 'data' => $isi + ['alokasi' => $alokasi], 'pengajuan_id' => $ulang])]);
+        $r = $ajukan([['budget_id' => $budgetB->id, 'dari_budget_id' => $budgetA->id, 'nilai' => 100_000]]);
+        $cek('ajukan alokasi kurang (100 rb) → ditolak, anggaran A/B tidak berubah', $r->getStatusCode() === 422 && str_contains((string) ($r->getData(true)['message'] ?? ''), 'Melebihi anggaran')
+            && $sama($budgetA->fresh()->m3, 1_100_000) && $sama($budgetB->fresh()->m3, 1_200_000), json_encode($r->getData(true)));
+        $r = $ajukan([['budget_id' => $budgetB->id, 'dari_budget_id' => $budgetA->id, 'nilai' => 200_000, 'keterangan' => 'tutup kurang']]);
+        $req = App\Domain\BusinessSupport\Models\BsApBudgetRequest::find($r->getData(true)['id'] ?? 0);
+        $cek('ajukan ke Finance → pengajuan menunggu, nomor invoice dipesan, belum ada invoice', $req && $req->status === 'menunggu' && str_starts_with((string) $req->invoice_number, 'AP.') && BsApInvoice::count() === $sebelum, json_encode($r->getData(true)));
+        $alInv = BsBudgetAllocation::where('source_type', App\Domain\BusinessSupport\Models\BsApBudgetRequest::SOURCE)->where('source_id', $req?->id)->first();
+        $cek('alokasi tercatat (Mar, 200 rb, menunggu, approval Finance), anggaran A/B belum berubah', $alInv && $alInv->status === 'baru' && $alInv->approval_id && $sama($alInv->months[3] ?? null, 200_000)
+            && str_contains((string) $alInv->notes, (string) $req->invoice_number) && $sama($budgetB->fresh()->m3, 1_200_000) && $sama($budgetA->fresh()->m3, 1_100_000));
+        app()->call([$ctlInv, 'storeJenis'], ['request' => $minta('POST', $isi + ['pengajuan_id' => $req->id]), 'jenis' => 'reimburse']);
+        $cek('selama menunggu Finance → invoice belum bisa disimpan', BsApInvoice::count() === $sebelum && str_contains($sesi('error'), 'menunggu persetujuan Finance'));
+        $ctlAl = app(App\Http\Controllers\Web\BusinessSupport\Budget\BudgetAllocationController::class);
+        $daftar = (fn () => $this->props)->call(app()->call([$ctlAl, 'approvals'], ['request' => $minta('GET')]))['rows'];
+        $cek('muncul di Approval Alokasi Budget (asal → tujuan, no. invoice dipesan, tahap Finance)', ($rw = $daftar->firstWhere('id', $alInv->id)) && $rw['invoice'] === $req->invoice_number && $rw['to_ref'] === $budgetB->doc_no && str_starts_with((string) $rw['tahap'], 'Finance'), json_encode($rw ?? null));
+        $cek('sisa bulan A sudah dipesan alokasi yang menunggu', $sama(app(App\Domain\BusinessSupport\Services\BudgetAllocationService::class)->sisaBulan($budgetA->fresh(), 3),
+            app(App\Domain\BusinessSupport\Services\BudgetAllocationService::class)->sisaBulan($budgetA->fresh(), 3, null, $alInv->id) - 200_000));
+        app()->call([$ctlAl, 'approveBatch'], ['request' => $minta('POST', ['ids' => [$alInv->id], 'decision' => 'approve'])]);
+        $cek('Finance setujui → budget B Maret +200 rb, A berkurang, pengajuan disetujui', $alInv->fresh()->status === 'approved' && $sama($budgetB->fresh()->m3, 1_400_000) && $sama($budgetA->fresh()->m3, 900_000)
+            && $req->fresh()->status === 'disetujui', $sesi('error').$sesi('warning').' '.$req->fresh()->status);
+        $cek('pengaju dapat notifikasi "disetujui"', DB::table('notifications')->where('notifiable_id', $admin->id)->where('type', 'budget.pengajuan_invoice')->where('data', 'like', '%disetujui%')->exists());
+        app()->call([$ctlInv, 'storeJenis'], ['request' => $minta('POST', $isi + ['pengajuan_id' => $req->id, 'alokasi' => [
+            ['budget_id' => $budgetB->id, 'dari_budget_id' => $budgetA->id, 'nilai' => 200_000],
         ]]), 'jenis' => 'reimburse']);
         $inv = BsApInvoice::latest('id')->first();
         $galat = $sesi('error').' '.json_encode(app('session.store')->pull('budgetError')).' '.json_encode(app('session.store')->get('errors')?->all());
-        $cek('dengan alokasi 200 rb dari A → invoice tersimpan', BsApInvoice::count() === $sebelum + 1 && $inv?->description === 'Uji alokasi dari invoice', $galat);
-        $alInv = BsBudgetAllocation::where('source_type', BsBudgetAllocation::SOURCE_INVOICE)->where('source_id', $inv?->id)->first();
-        $cek('alokasi tercatat dari invoice (Mar, 200 rb, catatan + no. invoice)', $alInv && $sama($alInv->months[3] ?? null, 200_000) && str_contains((string) $alInv->notes, (string) $inv->invoice_number), json_encode($alInv?->only(['months', 'notes'])));
-        $cek('budget B Maret bertambah 200 rb, A berkurang', $sama($budgetB->fresh()->m3, 1_400_000) && $sama($budgetA->fresh()->m3, 900_000));
+        $cek('disetujui → Selesai: invoice tersimpan dengan nomor yang dipesan, pengajuan dipakai', BsApInvoice::count() === $sebelum + 1 && $inv?->invoice_number === $req->invoice_number
+            && $req->fresh()->status === 'dipakai' && (int) $req->fresh()->ap_invoice_id === (int) $inv->id, $galat);
+        $cek('alokasi tidak dibuat dua kali saat simpan', BsBudgetAllocation::where('to_budget_id', $budgetB->id)->where('status', '!=', 'batal')->whereIn('source_type', [BsBudgetAllocation::SOURCE_INVOICE, App\Domain\BusinessSupport\Models\BsApBudgetRequest::SOURCE])->count() === 1);
+        // Invoice BIASA (tanpa Memo Urgent): alokasi tidak menahan — invoice langsung tersimpan, alokasinya
+        // diajukan ke Finance di belakang.
+        $isi2 = array_diff_key($isi, ['memo_internal_id' => 1]) + ['supplier_invoice_no' => 'UJI-MT-2', 'description' => 'Uji tanpa memo'];
+        $isi2['supplier_invoice_no'] = 'UJI-MT-2'; $isi2['description'] = 'Uji tanpa memo';
+        $isi2['journal_lines'][0]['debit'] = 100_000; $isi2['journal_lines'][1]['credit'] = 100_000; $isi2['dpp'] = 100_000;
+        $nAl = BsBudgetAllocation::count();
+        app()->call([$ctlInv, 'storeJenis'], ['request' => $minta('POST', $isi2 + ['alokasi' => [
+            ['budget_id' => $budgetB->id, 'dari_budget_id' => $budgetA->id, 'nilai' => 100_000, 'keterangan' => 'tanpa memo'],
+        ]]), 'jenis' => 'reimburse']);
+        $inv2 = BsApInvoice::latest('id')->first();
+        $galat2 = $sesi('error').' '.json_encode(app('session.store')->pull('budgetError'));
+        $al2 = BsBudgetAllocation::where('source_type', BsBudgetAllocation::SOURCE_INVOICE)->where('source_id', $inv2?->id)->first();
+        $cek('invoice tanpa Memo Urgent + alokasi → langsung tersimpan (tidak ditahan Finance)', $inv2?->description === 'Uji tanpa memo', $galat2);
+        $cek('…alokasinya diajukan ke Finance (menunggu, ada approval) & anggaran belum pindah', $al2 && $al2->status === 'baru' && $al2->approval_id && $sama($budgetB->fresh()->m3, 1_400_000));
         $cek('memo tertaut ke invoice', (int) $inv?->memo_internal_id === $memo->id);
         $cek('Memo Urgent → jatuh tempo hari itu juga (0 hari)', (int) $inv->term_days === 0 && $inv->due_date?->toDateString() === ($inv->receive_date ?? $inv->invoice_date)?->toDateString(),
             $inv->term_days.' '.$inv->due_date?->toDateString());

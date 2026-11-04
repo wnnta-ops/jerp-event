@@ -74,9 +74,13 @@ try {
         return $u->fresh();
     };
     $staf = $buatUser('Staf Koreksi Uji', ['Collection']);
-    $accounting = $buatUser('Accounting Koreksi Uji', ['Accounting']);
+    // Koreksi Budget = satu tahap Finance (chain KB-DEFAULT); GM di sini = bukan approver.
+    $accounting = $buatUser('Finance Koreksi Uji', ['Finance']);
     $gm = $buatUser('GM Koreksi Uji', ['GM']);
     $sebagai = function (User $u) { auth()->setUser($u); };
+    // Chain Koreksi (satu tahap Finance) diarahkan ke Finance uji — ikut dibatalkan bersama transaksi.
+    DB::table('approval_chain_steps')->whereIn('approval_chain_id', DB::table('approval_chains')->where('code', 'KB-DEFAULT')->pluck('id'))
+        ->update(['approver_type' => 'user', 'approver_value' => (string) $accounting->id]);
 
     // Akun beban & cost center yang sudah dipakai budget demo; tahun jauh supaya bebas data lain.
     $akun = (int) DB::table('bs_accounts')->where('code', 'like', '5%')->where('is_postable', 1)->value('id');
@@ -121,19 +125,39 @@ try {
         && $k->source_type === 'ap_invoice' && (int) $k->source_id === (int) $inv->id);
     $cek('nilai baru = anggaran tahunan + pengajuan', abs((float) $k->new_amount - 12_500_000) < 0.01);
     $a = Approval::with('steps')->find($k->approval_id);
-    $cek('approval koreksi dibuat (2 tahap)', $a && $a->document_type === BsBudgetCorrection::DOCUMENT_TYPE && $a->steps->count() === 2);
+    $cek('approval koreksi dibuat (1 tahap Finance)', $a && $a->document_type === BsBudgetCorrection::DOCUMENT_TYPE && $a->steps->count() === 1);
     $inbox = app(ApprovalInboxQuery::class);
-    $cek('muncul di inbox Accounting', $inbox->needsMe($accounting)->contains('id', $a->id));
-    $cek('belum muncul di inbox GM (belum gilirannya)', ! $inbox->needsMe($gm)->contains('id', $a->id));
+    $cek('muncul di inbox Finance', $inbox->needsMe($accounting)->contains('id', $a->id));
+    $cek('tidak muncul di inbox non-Finance (GM)', ! $inbox->needsMe($gm)->contains('id', $a->id));
     $cek('label inbox "Koreksi Budget" & nominal = pengajuan', ($r = $inbox->row($a->load('approvable')))['type'] === 'Koreksi Budget' && abs($r['amount'] - 500_000) < 0.01, json_encode($r));
-    $cek('tidak muncul di layar Approval Koreksi lama', ! BsBudgetCorrection::where('status', 'baru')->whereNull('approval_id')->whereKey($k->id)->exists());
+    // Menu Approval Koreksi Budget: koreksi dari invoice ikut tampil; Setujui di sana = tahap di Approval Inbox.
+    $minta = function (string $method, array $isi = []) {
+        $r = Illuminate\Http\Request::create('/', $method, $isi);
+        $r->setUserResolver(fn () => auth()->user());
+        $r->setLaravelSession(app('session.store'));
+        app()->instance('request', $r);
+
+        return $r;
+    };
+    $ctlKor = app(App\Http\Controllers\Web\BusinessSupport\Budget\BudgetCorrectionController::class);
+    $sebagai($accounting);
+    $baris = app()->call([$ctlKor, 'approvals'], ['request' => $minta('GET')]);
+    $baris = (fn () => $this->props)->call($baris)['rows']->firstWhere('id', $k->id);
+    $cek('muncul di Approval Koreksi Budget (sumber invoice, tahap Finance, bisa diputuskan)', $baris && $baris['invoice'] && str_starts_with((string) $baris['tahap'], 'Finance') && $baris['bisa'] && abs($baris['tambahan'] - 500_000) < 0.01, json_encode($baris));
+    $sebagai($gm);
+    try {
+        $barisGm = (fn () => $this->props)->call(app()->call([$ctlKor, 'approvals'], ['request' => $minta('GET')]))['rows']->firstWhere('id', $k->id);
+    } catch (Symfony\Component\HttpKernel\Exception\HttpException $e) {
+        $barisGm = ['bisa' => false]; // tanpa izin menu & belum gilirannya → halaman ditolak
+    }
+    $cek('GM (bukan approver) → tidak bisa memutuskan', ! $barisGm['bisa']);
+    app()->call([$ctlKor, 'approveBatch'], ['request' => $minta('POST', ['ids' => [$k->id], 'decision' => 'approve'])]);
+    $cek('GM tidak bisa menyetujui', Approval::find($a->id)->steps()->where('status', 'approved')->count() === 0);
 
     $act = app(ActOnApproval::class);
     $sebagai($accounting);
-    $act->execute(Approval::with('steps')->find($a->id), 'approve', 'Cek budget ok');
-    $cek('setelah Accounting → budget belum berubah', abs((float) $budget->fresh()->m11 - 1_000_000) < 0.01);
-    $sebagai($gm);
-    $act->execute(Approval::with('steps')->find($a->id), 'approve');
+    app()->call([$ctlKor, 'approveBatch'], ['request' => $minta('POST', ['ids' => [$k->id], 'decision' => 'approve'])]);
+    $cek('Finance setujui dari menu Approval Koreksi → tahap Finance di Inbox approved', Approval::find($a->id)->steps()->where('level', 1)->value('status') === 'approved');
     $b = $budget->fresh();
     $cek('disetujui penuh → koreksi approved', $k->fresh()->status === 'approved');
     $cek('tambahan masuk ke bulan invoice (m11)', abs((float) $b->m11 - 1_500_000) < 0.01, (string) $b->m11);

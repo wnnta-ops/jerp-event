@@ -148,7 +148,7 @@ function submit() {
                     </tfoot>
                 </table>
             </div>
-            <p v-if="selected && bulan" class="text-xs text-neutral-500">Diajukan ke Approval Inbox (Accounting → GM). Setelah disetujui, selisih tiap bulan ditambahkan ke budget bulan itu.</p>
+            <p v-if="selected && bulan" class="text-xs text-neutral-500">Diajukan ke Approval Inbox (Finance). Setelah disetujui, selisih tiap bulan ditambahkan ke budget bulan itu.</p>
 
             <div>
                 <label class="mb-1 block text-sm font-medium">Catatan</label>

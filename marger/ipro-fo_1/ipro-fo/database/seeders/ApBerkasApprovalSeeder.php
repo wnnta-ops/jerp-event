@@ -33,7 +33,8 @@ class ApBerkasApprovalSeeder extends Seeder
     public const PENGAJU_INVOICE = ['Collection'];
 
     /** Urutan approval Koreksi Budget dari invoice hutang (level => peran). */
-    public const KOREKSI_BUDGET_STEPS = [1 => 'Accounting', 2 => 'GM'];
+    /** Koreksi & Alokasi Budget (dari invoice maupun manual): satu tahap Finance. */
+    public const KOREKSI_BUDGET_STEPS = [1 => 'Finance'];
 
     public function run(): void
     {
@@ -96,18 +97,26 @@ class ApBerkasApprovalSeeder extends Seeder
             );
         }
 
-        // Koreksi Budget yang diajukan dari langkah Struktur Registrasi Invoice Hutang (sisa budget
-        // bulan itu terlampaui): Accounting (budget control) → GM. Disetujui penuh → tambahan
-        // masuk ke budget bulan invoice (SyncBudgetCorrectionStatus).
+        // Koreksi & Alokasi Budget dari langkah Struktur Registrasi Invoice Hutang (Pengajuan Budget
+        // Invoice): satu tahap Finance. Disetujui → tambahan / pemindahan berlaku
+        // (SyncBudgetCorrectionStatus, SyncPengajuanBudgetInvoice) dan invoicenya bisa diselesaikan.
         $koreksi = ApprovalChain::updateOrCreate(
             ['tenant_id' => $tenant->id, 'project_id' => null, 'document_type' => BsBudgetCorrection::DOCUMENT_TYPE, 'code' => 'KB-DEFAULT'],
             ['name' => 'Koreksi Budget dari Invoice Hutang', 'match_conditions' => null, 'is_active' => true],
         );
-        foreach (self::KOREKSI_BUDGET_STEPS as $level => $role) {
-            ApprovalChainStep::updateOrCreate(
-                ['approval_chain_id' => $koreksi->id, 'level' => $level],
-                ['approver_type' => 'role', 'approver_value' => $role, 'is_final' => $level === array_key_last(self::KOREKSI_BUDGET_STEPS)],
-            );
+        $alokasi = ApprovalChain::updateOrCreate(
+            ['tenant_id' => $tenant->id, 'project_id' => null, 'document_type' => \App\Domain\BusinessSupport\Models\BsBudgetAllocation::DOCUMENT_TYPE, 'code' => 'AL-DEFAULT'],
+            ['name' => 'Alokasi Budget dari Invoice Hutang', 'match_conditions' => null, 'is_active' => true],
+        );
+        // Langkah hanya dibuat saat chain belum punya langkah — user approver diatur di System › Approval Chain.
+        foreach ([$koreksi, $alokasi] as $chain) {
+            if ($chain->steps()->exists()) {
+                continue;
+            }
+            foreach (self::KOREKSI_BUDGET_STEPS as $level => $role) {
+                ApprovalChainStep::create(['approval_chain_id' => $chain->id, 'level' => $level, 'approver_type' => 'role', 'approver_value' => $role,
+                    'label' => $role, 'is_final' => $level === array_key_last(self::KOREKSI_BUDGET_STEPS)]);
+            }
         }
 
         app(PermissionRegistrar::class)->forgetCachedPermissions();

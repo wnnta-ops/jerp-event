@@ -717,6 +717,9 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::put('/business-support/payable/berkas-link/{link}/draft', [App\Http\Controllers\Web\BusinessSupport\Payable\ApInvoiceBerkasController::class, 'simpanDraft'])->name('bs.ap.berkas-link.draft');
     Route::post('/business-support/payable/berkas-link/{link}/batal', [App\Http\Controllers\Web\BusinessSupport\Payable\ApInvoiceBerkasController::class, 'batal'])->name('bs.ap.berkas-link.batal');
     Route::get('/business-support/payable/sisa-budget', [BsApController::class, 'sisaBudget'])->name('bs.ap.sisa-budget'); // kolom Sisa Budget di langkah Struktur
+    // Pengajuan Budget Invoice — alokasi / koreksi langkah Struktur disetujui Finance dulu, baru invoice bisa diselesaikan.
+    Route::post('/business-support/payable/pengajuan-budget', [BsApController::class, 'ajukanBudget'])->name('bs.ap.pengajuan-budget.store');
+    Route::delete('/business-support/payable/pengajuan-budget/{pengajuan}', [BsApController::class, 'batalPengajuan'])->name('bs.ap.pengajuan-budget.destroy');
     Route::get('/business-support/payable/sumber-alokasi', [BsApController::class, 'sumberAlokasi'])->name('bs.ap.sumber-alokasi'); // pilihan budget asal Alokasi di langkah Struktur
     Route::delete('/business-support/payable/draft', [BsApController::class, 'buangDraft'])->name('bs.ap.draft.destroy');
     // AP › Master: Reimburse Biaya Karyawan & Deposit Renovasi Customer — alur Invoice Hutang,
@@ -1560,12 +1563,14 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     // ── APPROVAL INBOX — tracking approval bertingkat (Memo Urgent, TTD Berkas, Invoice Hutang, Koreksi Budget) ──
     Route::prefix('approval-inbox')->name('approval-inbox.')->group(function (): void {
         $c = App\Http\Controllers\Web\ApprovalInbox\ApprovalInboxController::class;
+        Route::get('/memo', [$c, 'memoSaya'])->name('memo');      // daftar Memo Urgent saya
         Route::get('/ajukan', [$c, 'create'])->name('create');   // Memo Urgent
         Route::post('/', [$c, 'store'])->name('store');
         Route::get('/', [$c, 'index'])->name('index');
         Route::get('/{approval}', [$c, 'show'])->whereNumber('approval')->name('show');
         Route::post('/{approval}/act', [$c, 'act'])->whereNumber('approval')->name('act');
         Route::get('/{approval}/cetak', [$c, 'cetak'])->whereNumber('approval')->name('cetak'); // lembar Memo Urgent
+        Route::post('/pengingat-memo/tutup', [$c, 'tutupPengingat'])->name('pengingat.tutup'); // pop-up login
     });
 
     // Exports (customers, bookings, kpr) — sudah PINDAH ke FO. Rutenya dimatikan lewat sakelar, bukan
@@ -1614,6 +1619,11 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
 
         Route::get('/parameters', [ParameterController::class, 'index'])->name('parameters.index');
         Route::put('/parameters', [ParameterController::class, 'update'])->name('parameters.update');
+
+        Route::get('/approval-chain', [App\Http\Controllers\Web\Settings\ApprovalChainController::class, 'index'])->name('approval-chains.index');
+        Route::post('/approval-chain/{chain}/steps', [App\Http\Controllers\Web\Settings\ApprovalChainController::class, 'storeStep'])->name('approval-chains.steps.store');
+        Route::put('/approval-chain/steps/{step}', [App\Http\Controllers\Web\Settings\ApprovalChainController::class, 'updateStep'])->name('approval-chains.steps.update');
+        Route::delete('/approval-chain/steps/{step}', [App\Http\Controllers\Web\Settings\ApprovalChainController::class, 'destroyStep'])->name('approval-chains.steps.destroy');
 
         Route::get('/konfigurasi', [App\Http\Controllers\Web\Settings\SettingsConfigController::class, 'index'])->name('config.index');
         Route::put('/konfigurasi', [App\Http\Controllers\Web\Settings\SettingsConfigController::class, 'update'])->name('config.update');

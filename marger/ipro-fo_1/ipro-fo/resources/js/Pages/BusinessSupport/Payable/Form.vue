@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue';
+import { ref, computed, watch, nextTick, onMounted, onBeforeUnmount } from 'vue';
 import { useForm, Link, router } from '@inertiajs/vue3';
-import { ArrowLeft, ArrowRight, Save, HandCoins, Plus, Trash2, Check, Search, Copy, ClipboardPaste, Files, FileText, ChevronDown, Building2, Upload, Link2, RefreshCw } from 'lucide-vue-next';
+import { ArrowLeft, ArrowRight, Save, HandCoins, Plus, Trash2, Check, Search, Copy, Share2, ClipboardPaste, Files, FileText, ChevronDown, Building2, Upload, Link2, RefreshCw, X } from 'lucide-vue-next';
 import Button from '@/Components/UI/Button.vue';
 import MoneyInput from '@/Components/UI/MoneyInput.vue';
 import SearchSelect from '@/Components/UI/SearchSelect.vue';
@@ -9,6 +9,7 @@ import { pilihCc, opsiCc } from '@/Composables/costCenterAkun';
 import PesanWajib from '@/Components/UI/PesanWajib.vue';
 import { tandai, kosong, pesanKolom, CINCIN_MERAH } from '@/Composables/useWajib';
 import { gabungBerkas } from '@/Composables/useGabungPdf';
+import DropBerkas, { type FileBerkas } from '@/Components/UI/DropBerkas.vue';
 import { bangunStrukturJurnal, akunKurang, samaDenganBawaan, barisStruktur, akunBiayaPphDitanggung } from './strukturJurnal';
 
 type BerkasPilihan = {
@@ -54,21 +55,31 @@ const props = defineProps<{
         invoice_date?: string | null; dpp?: number | null; ppn_mode?: 'none' | 'with'; ppn_pct?: number; ppn_incl?: boolean;
         cost_center_id?: number | null; sisa?: number | null; invoiced?: number;
     } | null;
-    /** Registrasi baru Invoice Hutang: berkas unggahan user sendiri — WAJIB dipilih di Detil Tagihan. null = tidak dipakai. */
+    /** Registrasi baru Invoice Hutang: berkas unggahan user sendiri — WAJIB dipilih di langkah Input Transaksi. null = tidak dipakai. */
     berkasSaya?: BerkasPilihan[] | null;
     /** Draft isian wizard (disimpan saat user menekan "Edit" berkas, atau "Simpan Draft"). */
     draftInvoice?: { data: Record<string, any>; step: number; updated_at: string | null } | null;
+    /** Pengajuan Budget (alokasi / koreksi langkah Struktur) yang sedang dilanjutkan — dibuka dari ?pengajuan=. */
+    pengajuanBudget?: {
+        id: number; status: 'menunggu' | 'disetujui' | 'ditolak'; catatan: string | null; invoice_number: string | null;
+        diajukan: string | null; diputuskan: string | null; data: Record<string, any>;
+        item: Array<{ jenis: string; doc_no: string; nilai: number; status: string; approval_url: string | null }>;
+    } | null;
     departments: Array<any>;
     ledgers: Array<any>;
     locations: Array<any>;
     units: Array<any>;
     /** Memo Urgent yang sudah disetujui Direktur & belum dipakai invoice lain (satu memo per invoice, opsional). */
-    memoUrgent?: Array<{ id: number; number: string; date: string | null; department: string | null; supplier_id: number | null; supplier: string | null; subject: string; amount: number; status: string; url: string | null }>;
+    /** Memo Urgent disetujui Direktur tapi belum dibayar di Kuitansi Hutang — belum bisa ditarik. */
+    memoMenungguBayar?: Array<{ number: string; subject: string }>;
+    memoUrgent?: Array<{ id: number; number: string; date: string | null; department: string | null; supplier_id: number | null; supplier: string | null; subject: string; amount: number; status: string; url: string | null;
+        /** Rincian pajak dari form Memo Urgent — mengisi & MENGUNCI tahap 2; null = memo lama. */
+        pajak?: { dpp: number; ppn_mode: 'none' | 'with'; ppn_pct: number; ppn_incl: boolean; ppn_base: number; pph_mode: 'none' | 'withheld' | 'borne'; pph_type: string | null; pph_pct: number; pph_base: number } | null }>;
     bisaBuatMemo?: boolean;
     /** Link berkas supplier yang sedang dilanjutkan (?link=) — nomor invoice sudah dipesan. */
-    linkBerkas?: { id: number; url: string; invoice_number: string; status: string; filled_at: string | null; berkas_upload_id: number | null } | null;
-    /** Jenis dokumen untuk Upload File di Detil Tagihan. */
-    jenisBerkas?: Array<{ id: number; name: string; is_mandatory: boolean }>;
+    linkBerkas?: { id: number; url: string; invoice_number: string; status: string; filled_at: string | null; berkas_upload_id: number | null; riwayat?: Array<{ at: string; berkas_number: string; no_invoice: string | null; file: number }> } | null;
+    /** Jenis dokumen untuk Upload File (blok Berkas Tagihan, langkah Input Transaksi). */
+    jenisBerkas?: Array<{ id: number; code?: string; name: string; is_mandatory: boolean }>;
 }>();
 
 const steps = ['Pilih ' + props.jenis.penerima, 'Input Transaksi', 'Detil Tagihan', 'Struktur', 'Selesai'];
@@ -76,8 +87,9 @@ const steps = ['Pilih ' + props.jenis.penerima, 'Input Transaksi', 'Detil Tagiha
    dari Input Transaksi dan tidak bisa mundur ke langkah 1. */
 const modeEdit = !! props.invoiceEdit;
 /* Draft dipulihkan pada registrasi baru — kecuali dibuka dari ?berkas= (server tidak mengirimnya). */
-const pakaiDraft = !modeEdit && !!props.draftInvoice;
-const step = ref(modeEdit ? 2 : (pakaiDraft ? props.draftInvoice!.step : 1));
+const pakaiDraft = !modeEdit && !!props.draftInvoice && !props.pengajuanBudget;
+// Melanjutkan Pengajuan Budget → langsung ke langkah Struktur (tempat statusnya ditampilkan).
+const step = ref(props.pengajuanBudget ? 4 : (modeEdit ? 2 : (pakaiDraft ? props.draftInvoice!.step : 1)));
 const today = new Date().toISOString().slice(0, 10);
 const supplierSearch = ref('');
 
@@ -90,7 +102,7 @@ const form = useForm<any>({
     lines: [], schedules: [], journal_lines: [],
     // Koreksi budget yang diajukan bersama invoice (baris Struktur yang melewati sisa budget bulan ini).
     koreksi: [],
-    // ATAU alokasi: kekurangannya diambil dari sisa bulan yang sama di budget lain (langsung berlaku).
+    // ATAU alokasi: kekurangannya diambil dari sisa bulan yang sama di budget lain (menunggu Approval Alokasi Budget).
     alokasi: [],
     // Memo Urgent yang ditarik ke invoice ini (opsional).
     memo_internal_id: null,
@@ -101,6 +113,8 @@ const form = useForm<any>({
     berkas_upload_id: props.dariBerkas?.id ?? '',
     // Link berkas supplier (Generate Link) — invoice memakai nomor yang dipesan link ini.
     link_id: '' as number | '',
+    // Pengajuan Budget yang sudah disetujui Finance — syarat menyimpan invoice beralokasi / berkoreksi.
+    pengajuan_id: '' as number | '',
     ...(props.dariBerkas ? {
         supplier_id: props.dariBerkas.supplier_id ?? '',
         supplier_invoice_no: props.dariBerkas.supplier_invoice_no ?? '',
@@ -111,6 +125,7 @@ const form = useForm<any>({
     } : {}),
     ...(props.invoiceEdit?.data ?? {}),
     ...(pakaiDraft ? props.draftInvoice!.data : {}),
+    ...(props.pengajuanBudget?.data ?? {}),
 });
 
 /* PENERIMA — satu-satunya bagian yang berbeda antarmodul. Invoice Hutang memilih supplier,
@@ -619,7 +634,7 @@ watch(step, (s) => {
     }
 });
 
-/* ── BERKAS (langkah Detil Tagihan) ──
+/* ── BERKAS (langkah Input Transaksi) ──
    Registrasi baru Invoice Hutang wajib punya satu berkas: diunggah di sini (Upload File) atau dari supplier (Generate Link).
    Server memeriksa ulang (milik user, sudah di-TTD Dept Head) saat invoice disimpan. */
 const wajibBerkas = Array.isArray(props.berkasSaya);
@@ -630,11 +645,12 @@ const supplierBeda = computed(() => !!berkasDipilih.value?.supplier_id && !!form
 /** Invoice baru bisa disimpan bila berkasnya sudah di-TTD Dept Head. */
 const berkasBelumSiap = computed(() => wajibBerkas && !!berkasDipilih.value && !berkasDipilih.value.bisa_diinvoice);
 
-/* Dua jalan berkas di Detil Tagihan:
+/* Dua jalan berkas di langkah Input Transaksi:
    - Upload File  : unggah di sini → jadi Upload Berkas Anda + langsung diajukan ke TTD Dept Head.
    - Generate Link: link tanpa login untuk supplier. Nomor invoice dipesan & isian wizard disimpan di
      link; tidak bisa lanjut sampai supplier mengunggah. Begitu masuk: notifikasi + titik di daftar. */
-type LinkInfo = { id: number; url: string; invoice_number: string; status: string; filled_at: string | null; berkas_upload_id: number | null; berkas_number?: string | null };
+type LinkInfo = { id: number; url: string; invoice_number: string; status: string; filled_at: string | null; berkas_upload_id: number | null; berkas_number?: string | null;
+    supplier_invoice_no?: string | null; riwayat?: Array<{ at: string; berkas_number: string; no_invoice: string | null; file: number }> };
 const linkAktif = ref<LinkInfo | null>(props.linkBerkas ?? null);
 const modeBerkas = ref<'upload' | 'link'>(linkAktif.value || form.link_id ? 'link' : 'upload');
 const pesanLink = ref('');
@@ -659,7 +675,10 @@ async function cekLink() {
         const { data } = await (window as any).axios.get(route('bs.ap.berkas-link.status', linkAktif.value.id));
         const baruTerisi = data.status === 'terisi' && linkAktif.value.status !== 'terisi';
         linkAktif.value = data;
-        if (data.berkas_upload_id && (baruTerisi || !berkasDipilih.value)) {
+        // Nomor invoice yang diketik supplier di halaman link = No. Invoice Supplier (dikunci).
+        if (data.supplier_invoice_no) form.supplier_invoice_no = data.supplier_invoice_no;
+        // Unggahan (ulang) supplier = berkas baru → pilih berkas terbarunya.
+        if (data.berkas_upload_id && (baruTerisi || Number(form.berkas_upload_id) !== Number(data.berkas_upload_id) || !berkasDipilih.value)) {
             router.reload({ only: ['berkasSaya'], onSuccess: () => { form.berkas_upload_id = data.berkas_upload_id; } });
         }
     } catch { galatLink.value = 'Status link gagal dimuat.'; } finally { memprosesLink.value = false; }
@@ -675,31 +694,67 @@ function salinLink() {
     navigator.clipboard?.writeText(linkAktif.value.url);
     tersalin.value = true; setTimeout(() => { tersalin.value = false; }, 1500);
 }
-// Selagi menunggu supplier & berada di Detil Tagihan, status dicek berkala.
+/* Share: lembar bagikan bawaan perangkat (HP / Safari / Chrome Mac & Windows); bila tidak didukung,
+   menu WhatsApp / Email / salin pesan. Pesannya sudah berisi nomor invoice + link. */
+const menuBagikan = ref(false);
+const pesanBagikan = computed(() => linkAktif.value
+    ? `Yth. ${supplier.value?.name ?? 'Bapak/Ibu'}, mohon isi nomor invoice dan unggah dokumen tagihan Anda (invoice, kuitansi, faktur pajak) melalui link berikut:\n${linkAktif.value.url}\nTerima kasih.`
+    : '');
+async function bagikanLink() {
+    if (!linkAktif.value) return;
+    if (typeof navigator.share === 'function') {
+        try {
+            await navigator.share({ title: 'Unggah dokumen tagihan ' + linkAktif.value.invoice_number, text: pesanBagikan.value });
+            return;
+        } catch (e: any) {
+            if (e?.name === 'AbortError') return; // dibatalkan pengguna
+        }
+    }
+    menuBagikan.value = !menuBagikan.value;
+}
+const urlWhatsApp = computed(() => 'https://wa.me/?text=' + encodeURIComponent(pesanBagikan.value));
+const urlEmail = computed(() => 'mailto:?subject=' + encodeURIComponent('Unggah dokumen tagihan ' + (linkAktif.value?.invoice_number ?? '')) + '&body=' + encodeURIComponent(pesanBagikan.value));
+function salinPesan() {
+    navigator.clipboard?.writeText(pesanBagikan.value);
+    menuBagikan.value = false;
+    tersalin.value = true; setTimeout(() => { tersalin.value = false; }, 1500);
+}
+// Selagi menunggu supplier & berada di langkah Input Transaksi (blok Berkas), status dicek berkala.
 let pantau: ReturnType<typeof setInterval> | null = null;
 watch([step, () => linkAktif.value?.status], ([s, st]) => {
     if (pantau) { clearInterval(pantau); pantau = null; }
-    if (s === 3 && st === 'menunggu') pantau = setInterval(cekLink, 15000);
+    if (s === 2 && st === 'menunggu') pantau = setInterval(cekLink, 15000);
 }, { immediate: true });
 onBeforeUnmount(() => { if (pantau) clearInterval(pantau); });
 // Dibuka dari link yang sudah terisi → berkasnya langsung terpilih.
 if (linkAktif.value?.berkas_upload_id && !form.berkas_upload_id) form.berkas_upload_id = linkAktif.value.berkas_upload_id;
 
-const unggahan = ref<Array<{ file: File | null; berkas_id: number | '' }>>(
-    (props.jenisBerkas ?? []).filter((j) => j.is_mandatory).map((j) => ({ file: null, berkas_id: j.id as number | '' })));
-if (!unggahan.value.length) unggahan.value.push({ file: null, berkas_id: '' });
+// Drop box: file + jenis (Invoice/Kuitansi/Faktur Pajak/Lainnya); "Lainnya" wajib keterangan; jenis wajib harus ada.
+const unggahan = ref<FileBerkas[]>([]);
 const mengunggah = ref(false);
 const galatUnggah = ref('');
-const bisaUnggah = computed(() => unggahan.value.length > 0 && unggahan.value.every((u) => u.file && u.berkas_id) && !mengunggah.value);
+const idLainnyaBerkas = computed(() => (props.jenisBerkas ?? []).find((j) => j.code === 'LAINNYA')?.id ?? null);
+const kurangWajib = computed(() => (props.jenisBerkas ?? []).filter((j) => j.is_mandatory && !unggahan.value.some((u) => u.berkas_id === j.id)).map((j) => j.name));
+/* No. Invoice Supplier (registrasi Invoice Hutang): terkunci sampai ada berkasnya — Upload File: setelah
+   file di-drop; Generate Link: diisi supplier sendiri di halaman link dan tetap terkunci (nomor aktif). */
+const noInvoiceDariLink = computed(() => modeBerkas.value === 'link' && !!linkAktif.value);
+const kunciNoInvoice = computed(() => wajibBerkas && (noInvoiceDariLink.value || (!berkasDipilih.value && unggahan.value.length === 0)));
+const ketNoInvoice = computed(() => !kunciNoInvoice.value ? ''
+    : noInvoiceDariLink.value ? (linkAktif.value?.status === 'terisi' ? 'Diisi supplier lewat link — nomor aktif invoice ini.' : 'Akan diisi supplier di halaman link.')
+    : 'Drop file tagihan di Berkas Tagihan (bawah) dulu, baru bisa diisi.');
+const bisaUnggah = computed(() => unggahan.value.length > 0 && !mengunggah.value && !kurangWajib.value.length
+    && unggahan.value.every((u) => u.berkas_id && (u.berkas_id !== idLainnyaBerkas.value || u.keterangan.trim())));
 async function unggahBerkas() {
     mengunggah.value = true; galatUnggah.value = '';
     const fd = new FormData();
     fd.append('data', JSON.stringify(form.data()));
-    unggahan.value.forEach((u, i) => { fd.append(`files[${i}][file]`, u.file as File); fd.append(`files[${i}][berkas_id]`, String(u.berkas_id)); });
+    unggahan.value.forEach((u, i) => {
+        fd.append(`files[${i}][file]`, u.file); fd.append(`files[${i}][berkas_id]`, String(u.berkas_id)); fd.append(`files[${i}][keterangan]`, u.keterangan);
+    });
     try {
         const { data } = await (window as any).axios.post(route('bs.ap.berkas-langsung.upload'), fd);
         router.reload({ only: ['berkasSaya'], onSuccess: () => { form.berkas_upload_id = data.id; } });
-        unggahan.value = unggahan.value.map((u) => ({ ...u, file: null }));
+        unggahan.value = [];
     } catch (e: any) {
         const r = e?.response?.data;
         galatUnggah.value = r?.message && !r?.errors ? r.message : (r?.errors ? String(Object.values(r.errors)[0]) : 'Upload gagal — coba lagi.');
@@ -759,7 +814,7 @@ const draftPada = props.draftInvoice?.updated_at
    anggaran (akun × cost center, atau akun "semua cost center"). Angkanya dari server
    (bs.ap.sisa-budget) — aturan yang sama dengan penjaga budget saat simpan. Baris yang minus
    bisa diajukan Koreksi Budget; invoice tetap jalan dan koreksinya masuk Approval Inbox. */
-type SisaInfo = { budget_id: number; cakupan: 'cc' | 'semua'; anggaran: number; terpakai: number; tanda: number } | null;
+type SisaInfo = { budget_id: number; cakupan: 'cc' | 'semua'; anggaran: number; terpakai: number; anggaran_tahun: number; terpakai_tahun: number; label: string; tanda: number } | null;
 const sisaInfo = ref<Record<string, SisaInfo>>({});
 const bulanBudget = ref('');
 const kunciBudget = (l: any) => `${l.account_id}|${l.cost_center_id ?? ''}`;
@@ -789,6 +844,25 @@ const pakaiInvoice = computed<Record<number, number>>(() => {
         const info = l.account_id ? sisaInfo.value[kunciBudget(l)] : null;
         if (!info) continue;
         out[info.budget_id] = (out[info.budget_id] ?? 0) + (info.tanda > 0 ? Number(l.debit) || 0 : Number(l.credit) || 0);
+    }
+    return out;
+});
+/* Ringkasan di bawah Struktur Jurnal: per anggaran, sisa TAHUNAN & BULANAN (Master Budget = anggaran
+   berlaku − realisasi) sebelum invoice ini, pemakaian invoice ini, dan sisa sesudahnya — langsung
+   berubah saat baris jurnal diubah. */
+const ringkasanBudget = computed(() => {
+    const out: Array<{ budget_id: number; label: string; invoice: number;
+        tahun: { anggaran: number; realisasi: number; sebelum: number; sesudah: number };
+        bulan: { anggaran: number; realisasi: number; sebelum: number; sesudah: number } }> = [];
+    for (const l of form.journal_lines as any[]) {
+        const info = l.account_id ? sisaInfo.value[kunciBudget(l)] : null;
+        if (!info || out.some((o) => o.budget_id === info.budget_id)) continue;
+        const pakai = r0(pakaiInvoice.value[info.budget_id] ?? 0);
+        const sebelumT = r0(info.anggaran_tahun - info.terpakai_tahun);
+        const sebelumB = r0(info.anggaran - info.terpakai);
+        out.push({ budget_id: info.budget_id, label: info.label, invoice: pakai,
+            tahun: { anggaran: r0(info.anggaran_tahun), realisasi: r0(info.terpakai_tahun), sebelum: sebelumT, sesudah: sebelumT - pakai },
+            bulan: { anggaran: r0(info.anggaran), realisasi: r0(info.terpakai), sebelum: sebelumB, sesudah: sebelumB - pakai } });
     }
     return out;
 });
@@ -829,7 +903,7 @@ function budgetBaris(l: any) {
         keterangan: String(l.description ?? '').trim(), kurang: sisa < 0 ? -sisa : 0 };
 }
 /* Baris merah WAJIB diselesaikan dengan SALAH SATU: Koreksi Budget (tambah anggaran, lewat Approval
-   Inbox) atau Alokasi (pindah dari sisa bulan ini di budget lain, langsung berlaku). Baris yang
+   Inbox) atau Alokasi (pindah dari sisa bulan ini di budget lain, lewat Approval Alokasi Budget). Baris yang
    anggarannya masih cukup juga boleh memakainya (opsional) — nilai awalnya = nilai baris. */
 function ajukanKoreksi(l: any) {
     const o = budgetBaris(l);
@@ -942,7 +1016,32 @@ watch(() => form.memo_internal_id, (id) => {
 // Memo Urgent: jatuh tempo hari itu juga & Nilai Transaksi = nominal memo (masih bisa diubah).
 // Memo dilepas → jatuh tempo dikosongkan lagi; nilai hanya ikut dikosongkan bila belum diubah.
 let dppDariMemo: number | null = null;
+/** Memo dengan rincian pajak → Nilai Transaksi, PPN & PPh tahap 2 ikut memo dan dikunci (server juga memaksa). */
+const kunciPajak = computed(() => !!memoDipilih.value?.pajak);
+async function isiPajakMemo(p: NonNullable<NonNullable<typeof memoDipilih.value>['pajak']>) {
+    // Mode & jenis dulu; watcher-nya mengisi tarif/objek/akun default — sesudah itu ditimpa angka memo.
+    form.dpp = p.dpp;
+    form.ppn_mode = p.ppn_mode;
+    form.ppn_incl = p.ppn_incl;
+    form.pph_mode = p.pph_mode;
+    form.pph_type = p.pph_type ?? '';
+    await nextTick();
+    await nextTick();
+    form.ppn_pct = p.ppn_mode === 'with' ? p.ppn_pct : 11;
+    form.ppn_base = p.ppn_base;
+    form.pph_pct = p.pph_pct;
+    form.pph_base = p.pph_base;
+}
 watch(memoDipilih, (m, lama) => {
+    if (m?.pajak) {
+        form.term_days = 0;
+        isiPajakMemo(m.pajak);
+        return;
+    }
+    if (lama?.pajak && !m) {
+        // Memo berpajak dilepas → tahap 2 kembali kosong.
+        Object.assign(form, { dpp: 0, ppn_mode: 'none', ppn_incl: false, ppn_base: 0, pph_mode: 'none', pph_type: '', pph_pct: 0, pph_base: 0 });
+    }
     if (modeEdit) return;
     if (m) {
         form.term_days = 0;
@@ -961,22 +1060,72 @@ watch(() => form.supplier_id, () => { if (memoDipilih.value && !memoCocok(memoDi
 /** Ambil ulang daftar memo (mis. sesudah membuat / menyetujui memo di tab lain) tanpa mengganggu isian. */
 function muatUlangMemo() {
     memuatMemo.value = true;
-    router.reload({ only: ['memoUrgent'], onFinish: () => { memuatMemo.value = false; } });
+    router.reload({ only: ['memoUrgent', 'memoMenungguBayar'], onFinish: () => { memuatMemo.value = false; } });
 }
 
 function canNext() {
     if (step.value === 1) return !!form[kolomPihak] && (props.jenis.kunci !== 'deposit' || rekeningLengkap.value);
-    if (step.value === 2) return !!form.category_id && !!form.supplier_invoice_no && Number(form.dpp) > 0 && !!form.description && (Number(form.term_days) > 0 || !!form.memo_internal_id);
+    // Berkas Tagihan ada di langkah ini. Generate Link: tidak bisa lanjut sampai supplier mengunggah dokumen di link itu.
+    if (step.value === 2) return !!form.category_id && !!form.supplier_invoice_no && Number(form.dpp) > 0 && !!form.description && (Number(form.term_days) > 0 || !!form.memo_internal_id)
+        && (!wajibBerkas || (!!berkasDipilih.value && (modeBerkas.value !== 'link' || linkAktif.value?.status === 'terisi')));
     // Langkah Struktur: selain balance, cost center pada baris yang memerlukannya harus terisi.
     // Baris jurnal tanpa cost center tidak terhitung di Budget Control maupun laporan per cost
     // center — dan itu tidak muncul sebagai galat apa pun, hanya angka yang kurang. Karena itu
     // ditahan di sini, bukan diperbaiki belakangan.
-    // Generate Link: tidak bisa lanjut sampai supplier mengunggah dokumen di link itu.
-    if (step.value === 3) return !wajibBerkas || (!!berkasDipilih.value && (modeBerkas.value !== 'link' || linkAktif.value?.status === 'terisi'));
-    if (step.value === 4) return jurnalBalanced.value && kurangCc.value.length === 0 && koreksiBelumCukup.value.length === 0;
+    // Alokasi / koreksi WAJIB disetujui Finance dulu (Pengajuan Budget) sebelum boleh ke Selesai.
+    // Sesudah disetujui, anggaran sudah berubah (sisa asal alokasi berkurang) — kelengkapan koreksi/alokasi
+    // tidak dinilai ulang; penjaga budget server tetap memeriksa saat simpan.
+    if (step.value === 4) return jurnalBalanced.value && kurangCc.value.length === 0
+        && (statusPengajuan.value === 'disetujui' || (koreksiBelumCukup.value.length === 0 && !butuhPengajuan.value));
     return true;
 }
 function next() { if (canNext() && step.value < 5) step.value++; }
+
+/* ── PENGAJUAN BUDGET ──
+   Baris Struktur yang ditutup Alokasi / Koreksi → "Ajukan ke Finance": isian tersimpan sebagai draft
+   di pengajuan (nomor invoice dipesan), wizard terkunci sampai Finance memutuskan. Disetujui → lanjut
+   ke Selesai; ditolak → isian bisa diubah & diajukan ulang. Status dicek berkala selama menunggu. */
+// Hanya invoice yang menarik MEMO URGENT yang ditahan sampai Finance menyetujui. Invoice biasa: alokasi /
+// koreksi diajukan bersama invoice saat disimpan (tidak menahan) — langsung ke Selesai.
+const adaBudgetBaru = computed(() => (form.koreksi as any[]).length > 0 || (form.alokasi as any[]).length > 0);
+const butuhPengajuan = computed(() => adaBudgetBaru.value && (!!form.memo_internal_id || !!props.pengajuanBudget));
+const statusPengajuan = computed(() => props.pengajuanBudget?.status ?? null);
+/* Setelah Finance menyetujui semua alokasi / koreksi, stepper bisa diklik untuk melompat ke langkah mana pun. */
+const bisaLompat = computed(() => statusPengajuan.value === 'disetujui');
+const langkahAwal = modeEdit ? 2 : 1;
+const kunciPengajuan = computed(() => statusPengajuan.value === 'menunggu' || statusPengajuan.value === 'disetujui');
+const bisaAjukan = computed(() => butuhPengajuan.value && statusPengajuan.value !== 'menunggu' && statusPengajuan.value !== 'disetujui'
+    && jurnalBalanced.value && kurangCc.value.length === 0 && koreksiBelumCukup.value.length === 0);
+const mengajukan = ref(false);
+const konfirmasiFinance = ref(false);
+const jenisPengajuan = computed(() => [(form.alokasi as any[]).length ? 'alokasi' : '', (form.koreksi as any[]).length ? 'koreksi' : ''].filter(Boolean).join(' / '));
+const galatPengajuan = ref('');
+async function ajukanFinance() {
+    mengajukan.value = true; galatPengajuan.value = '';
+    try {
+        const { data } = await (window as any).axios.post(route('bs.ap.pengajuan-budget.store'), {
+            jenis: props.jenis.kunci, data: form.data(), invoice_id: props.invoiceEdit?.id ?? null,
+            pengajuan_id: statusPengajuan.value === 'ditolak' ? props.pengajuanBudget!.id : null,
+        });
+        sudahKirim = true;
+        router.visit(data.kembali ?? data.url);
+    } catch (e: any) {
+        const r = e?.response?.data;
+        galatPengajuan.value = r?.message && !r?.errors ? r.message : (r?.errors ? String(Object.values(r.errors)[0]) : 'Gagal mengajukan — coba lagi.');
+        mengajukan.value = false;
+    }
+}
+function batalPengajuan() {
+    if (!props.pengajuanBudget || !confirm('Batalkan pengajuan budget ini? Nomor invoice yang dipesan tidak dipakai dan isian tidak disimpan.')) return;
+    router.delete(route('bs.ap.pengajuan-budget.destroy', props.pengajuanBudget.id));
+}
+let pantauPengajuan: ReturnType<typeof setInterval> | null = null;
+watch(statusPengajuan, (s) => {
+    if (pantauPengajuan) { clearInterval(pantauPengajuan); pantauPengajuan = null; }
+    if (s === 'menunggu') pantauPengajuan = setInterval(() => router.reload({ only: ['pengajuanBudget'] }), 15000);
+}, { immediate: true });
+onBeforeUnmount(() => { if (pantauPengajuan) clearInterval(pantauPengajuan); });
+const fmtTgl = (s: string | null) => (s ? new Date(s).toLocaleString('id-ID', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '');
 function prev() { if (step.value > (modeEdit ? 2 : 1)) step.value--; }
 
 /* Tombol "Kembali" pada REGISTRASI = mulai lagi dari awal di halaman yang sama: isian dikosongkan
@@ -1018,7 +1167,8 @@ const pesanUraian = (i: number) => pesanKolom(galatServer(`lines.${i}.descriptio
 const LANGKAH_KOLOM: Array<[RegExp, number]> = [
     [/^(supplier_id|employee_id|customer_id|bank_)/, 1],
     [/^(category_id|supplier_invoice_no|manual_no|invoice_date|receive_date|due_date|term_days|description|transfer_detail|kurs|dpp|ppn_|pph_)/, 2],
-    [/^(lines\.|berkas_upload_id)/, 3],
+    [/^berkas_upload_id/, 2],
+    [/^lines\./, 3],
     [/^(journal_lines|koreksi)\./, 4],
 ];
 function submit() {
@@ -1089,14 +1239,50 @@ const cellArea = 'w-full rounded-md border border-neutral-300 bg-white px-2 py-1
         <!-- Stepper -->
         <div class="card flex flex-wrap items-center gap-1 p-3 text-sm">
             <template v-for="(s, i) in steps" :key="i">
-                <div class="flex items-center gap-2 rounded-lg px-2.5 py-1" :class="step === i+1 ? 'bg-primary-600 text-white' : (step > i+1 ? 'text-success-600' : 'text-neutral-400')">
-                    <span class="flex h-5 w-5 items-center justify-center rounded-full text-xs" :class="step > i+1 ? 'bg-success-100 dark:bg-success-900/40' : (step === i+1 ? 'bg-white/20' : 'bg-neutral-100 dark:bg-neutral-800')"><Check v-if="step > i+1" class="h-3 w-3" /><span v-else>{{ i+1 }}</span></span>
+                <!-- Pengajuan budget sudah disetujui: semua isian sudah final, langkah bisa diklik bebas (lihat / kembali ke Selesai). -->
+                <component :is="bisaLompat && i+1 >= langkahAwal ? 'button' : 'div'" type="button" @click="bisaLompat && i+1 >= langkahAwal && (step = i+1)"
+                    class="flex items-center gap-2 rounded-lg px-2.5 py-1" :class="[step === i+1 ? 'bg-primary-600 text-white' : (step > i+1 || (bisaLompat && i+1 >= langkahAwal) ? 'text-success-600' : 'text-neutral-400'),
+                        bisaLompat && i+1 >= langkahAwal && step !== i+1 ? 'cursor-pointer hover:bg-success-50 dark:hover:bg-success-900/30' : '']">
+                    <span class="flex h-5 w-5 items-center justify-center rounded-full text-xs" :class="step > i+1 || (bisaLompat && step !== i+1) ? 'bg-success-100 dark:bg-success-900/40' : (step === i+1 ? 'bg-white/20' : 'bg-neutral-100 dark:bg-neutral-800')"><Check v-if="step > i+1 || (bisaLompat && step !== i+1)" class="h-3 w-3" /><span v-else>{{ i+1 }}</span></span>
                     {{ s }}
-                </div>
+                </component>
                 <ArrowRight v-if="i < steps.length-1" class="h-3.5 w-3.5 text-neutral-300" />
             </template>
         </div>
 
+        <!-- Pengajuan Budget: status persetujuan Finance atas alokasi / koreksi langkah Struktur. -->
+        <div v-if="pengajuanBudget" :class="['rounded-xl border p-4 text-sm',
+            pengajuanBudget.status === 'disetujui' ? 'border-emerald-200 bg-emerald-50 dark:border-emerald-900 dark:bg-emerald-950/30'
+            : pengajuanBudget.status === 'ditolak' ? 'border-danger-200 bg-danger-50 dark:border-danger-900 dark:bg-danger-950/30'
+            : 'border-amber-200 bg-amber-50 dark:border-amber-900 dark:bg-amber-950/30']">
+            <div class="flex flex-wrap items-start justify-between gap-2">
+                <div>
+                    <p class="font-semibold">
+                        <template v-if="pengajuanBudget.status === 'disetujui'">✓ Budget disetujui Finance — lanjutkan ke Selesai &amp; simpan invoice.</template>
+                        <template v-else-if="pengajuanBudget.status === 'ditolak'">Pengajuan budget ditolak — ubah alokasi / koreksi di langkah Struktur lalu ajukan ulang.</template>
+                        <template v-else>Menunggu persetujuan Finance — invoice belum bisa diselesaikan.</template>
+                    </p>
+                    <p class="mt-0.5 text-xs text-neutral-600 dark:text-neutral-300">
+                        <template v-if="pengajuanBudget.invoice_number">No. invoice dipesan <span class="font-mono font-semibold">{{ pengajuanBudget.invoice_number }}</span> · </template>
+                        diajukan {{ fmtTgl(pengajuanBudget.diajukan) }}<template v-if="pengajuanBudget.diputuskan"> · diputuskan {{ fmtTgl(pengajuanBudget.diputuskan) }}</template>
+                        <template v-if="pengajuanBudget.status === 'menunggu'"> · dicek otomatis tiap 15 detik; Anda juga dapat notifikasi. Halaman ini boleh ditutup.</template>
+                    </p>
+                    <p v-if="pengajuanBudget.status === 'ditolak' && pengajuanBudget.catatan" class="mt-1 text-xs font-medium text-danger-700 dark:text-danger-300">{{ pengajuanBudget.catatan }}</p>
+                </div>
+                <button v-if="pengajuanBudget.status !== 'disetujui'" type="button" class="text-xs text-danger-600 hover:underline" @click="batalPengajuan">Batalkan pengajuan</button>
+            </div>
+            <ul class="mt-2 flex flex-wrap gap-2 text-xs">
+                <li v-for="it in pengajuanBudget.item" :key="it.doc_no" class="rounded-md border border-neutral-200 bg-white px-2 py-1 dark:border-neutral-700 dark:bg-neutral-900">
+                    <span class="font-medium">{{ it.jenis }}</span>
+                    <a v-if="it.approval_url" :href="it.approval_url" class="ml-1 font-mono text-primary-600 hover:underline">{{ it.doc_no }}</a><span v-else class="ml-1 font-mono">{{ it.doc_no }}</span>
+                    · {{ fmtRp(it.nilai) }} ·
+                    <span :class="it.status === 'approved' ? 'text-emerald-700 dark:text-emerald-300' : it.status === 'rejected' ? 'text-danger-600' : 'text-amber-700 dark:text-amber-300'">{{ it.status === 'approved' ? 'Disetujui' : it.status === 'rejected' ? 'Ditolak' : it.status === 'batal' ? 'Dibatalkan' : 'Menunggu' }}</span>
+                </li>
+            </ul>
+        </div>
+
+        <!-- Menunggu / sudah disetujui Finance: isian langkah 1–4 dikunci (yang disetujui = yang diajukan). -->
+        <fieldset :disabled="kunciPengajuan" class="min-w-0">
         <!-- Step 1: Pilih Supplier -->
         <div v-show="step === 1" class="card p-5">
             <!-- Dua baris terlipat: klik untuk memilih Memo Urgent atau penerima. -->
@@ -1108,7 +1294,7 @@ const cellArea = 'w-full rounded-md border border-neutral-300 bg-white px-2 py-1
                         <span class="min-w-0 flex-1">
                             <span class="block text-sm font-medium">Memo Urgent <span class="text-xs font-normal text-neutral-400">(opsional)</span></span>
                             <span v-if="memoDipilih" class="block truncate text-xs text-primary-700 dark:text-primary-300">{{ memoDipilih.number }} — {{ memoDipilih.subject }} · {{ fmtRp(memoDipilih.amount) }}</span>
-                            <span v-else class="block text-xs text-neutral-400">{{ opsiMemo.length ? opsiMemo.length + ' memo siap ditarik — klik untuk memilih' : 'Belum ada memo yang disetujui Direktur' }}</span>
+                            <span v-else class="block text-xs text-neutral-400">{{ opsiMemo.length ? opsiMemo.length + ' memo siap ditarik — klik untuk memilih' : 'Belum ada memo yang siap ditarik' }}</span>
                         </span>
                         <Check v-if="memoDipilih" class="h-4 w-4 text-success-600" />
                         <ChevronDown class="h-4 w-4 text-neutral-400 transition-transform" :class="bukaLangkah1 === 'memo' ? 'rotate-180' : ''" />
@@ -1116,12 +1302,17 @@ const cellArea = 'w-full rounded-md border border-neutral-300 bg-white px-2 py-1
                     <div v-if="bukaLangkah1 === 'memo'" class="border-t border-neutral-100 bg-neutral-50/60 px-4 py-3 dark:border-neutral-800 dark:bg-neutral-800/30">
                         <div class="mb-1.5 flex flex-wrap items-center justify-end gap-3 text-xs">
                             <button type="button" class="text-neutral-500 hover:text-primary-600 disabled:opacity-50" :disabled="memuatMemo" @click="muatUlangMemo">{{ memuatMemo ? 'Memuat…' : 'Muat ulang' }}</button>
-                            <a v-if="bisaBuatMemo" :href="route('approval-inbox.create')" target="_blank" rel="noopener" class="inline-flex items-center gap-1 font-medium text-primary-600 hover:underline"><Plus class="h-3.5 w-3.5" /> Buat Memo Urgent</a>
+                            <a v-if="bisaBuatMemo" :href="route('approval-inbox.memo')" target="_blank" rel="noopener" class="inline-flex items-center gap-1 font-medium text-primary-600 hover:underline"><FileText class="h-3.5 w-3.5" /> Daftar Memo Urgent</a>
                         </div>
                         <SearchSelect v-model="form.memo_internal_id" :options="opsiMemo" :placeholder="opsiMemo.length ? '— cari no. memo / perihal —' : '— belum ada memo yang disetujui Direktur —'" :no-truncate="true" />
                         <p v-if="memoDipilih" class="mt-1 text-[11px] text-neutral-500">{{ memoDipilih.date }} · {{ memoDipilih.department || '—' }}<template v-if="memoDipilih.supplier"> · Supplier: <b>{{ memoDipilih.supplier }}</b> (terisi otomatis)</template> · <span class="text-amber-600">{{ memoDipilih.status }}</span>
                             <a v-if="memoDipilih.url" :href="memoDipilih.url" target="_blank" rel="noopener" class="ml-1 text-primary-600 hover:underline">lihat memo</a></p>
-                        <p v-else class="mt-1 text-[11px] text-neutral-400">Memo baru dibuat di modul Memo Urgent (tab baru) dan muncul di sini setelah disetujui Direktur — klik "Muat ulang".</p>
+                        <p v-else class="mt-1 text-[11px] text-neutral-400">Memo baru dibuat di modul Memo Urgent (tab baru). Memo Urgent muncul di sini setelah disetujui Direktur <b>dan dibayar di Kuitansi Hutang</b> — klik "Muat ulang".</p>
+                        <div v-if="memoMenungguBayar?.length" class="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-800 dark:border-amber-800/60 dark:bg-amber-900/20 dark:text-amber-300">
+                            <b>{{ memoMenungguBayar.length }} Memo Urgent belum bisa ditarik — bayar dulu</b> di
+                            <a :href="route('bs.ap.kuitansi.create', { mode: 'memo' })" target="_blank" rel="noopener" class="font-semibold underline">Kuitansi Hutang › Bayar Memo Urgent</a>:
+                            {{ memoMenungguBayar.map((m) => m.number).join(', ') }}
+                        </div>
                     </div>
                 </div>
                 <!-- Penerima (supplier / karyawan / customer) -->
@@ -1177,7 +1368,7 @@ const cellArea = 'w-full rounded-md border border-neutral-300 bg-white px-2 py-1
                     <PesanWajib :pesan="pesan.category_id" />
                     <p v-if="category" class="mt-1 text-[11px] text-neutral-400">Dr {{ category.debit }} · Cr {{ category.payable }}</p>
                     <p v-else class="mt-1 text-[11px] text-neutral-400">Ketik nama atau kode kategori untuk mencarinya.</p></div>
-                <div><label class="mb-1 block text-xs font-medium text-neutral-500">{{ jenis.kunci === 'invoice' ? 'No. Invoice Supplier' : 'No. Bukti / Nota' }} *</label><input v-model="form.supplier_invoice_no" required :class="tandai(inputCls, !!pesan.supplier_invoice_no)" /><PesanWajib :pesan="pesan.supplier_invoice_no" /></div>
+                <div><label class="mb-1 block text-xs font-medium text-neutral-500">{{ jenis.kunci === 'invoice' ? 'No. Invoice Supplier' : 'No. Bukti / Nota' }} *</label><input v-model="form.supplier_invoice_no" required :readonly="kunciNoInvoice" :class="[tandai(inputCls, !!pesan.supplier_invoice_no && !kunciNoInvoice), kunciNoInvoice ? 'cursor-not-allowed bg-neutral-100 text-neutral-500 dark:bg-neutral-800' : '']" /><p v-if="kunciNoInvoice" class="mt-1 text-[11px] text-neutral-500">🔒 {{ ketNoInvoice }}</p><PesanWajib v-else :pesan="pesan.supplier_invoice_no" /></div>
                 <div><label class="mb-1 block text-xs font-medium text-neutral-500">Tgl. Input *</label><input v-model="form.invoice_date" type="date" disabled title="Otomatis tanggal input, tidak bisa diubah" class="h-9 w-full cursor-not-allowed rounded-lg border border-neutral-300 bg-neutral-100 px-3 text-sm text-neutral-500 dark:border-neutral-700 dark:bg-neutral-800" /><p class="mt-1 text-[10px] text-neutral-400">Otomatis tanggal input — tidak bisa diubah.</p></div>
                 <div><label class="mb-1 block text-xs font-medium text-neutral-500">Tgl. Terima</label><input v-model="form.receive_date" type="date" :class="tandai(inputCls, !!pesan.receive_date)" /><PesanWajib :pesan="pesan.receive_date" /></div>
                 <div><label class="mb-1 block text-xs font-medium text-neutral-500">Jatuh Tempo (hari) <span class="text-danger-500">*</span></label><input v-model.number="form.term_days" type="number" :min="form.memo_internal_id ? 0 : 1" required placeholder="mis. 30" :disabled="!!form.memo_internal_id" :class="[tandai(inputCls, !!pesan.term_days),'text-right', form.memo_internal_id ? 'cursor-not-allowed bg-neutral-100 dark:bg-neutral-800' : '']" /><PesanWajib :pesan="pesan.term_days" />
@@ -1186,9 +1377,11 @@ const cellArea = 'w-full rounded-md border border-neutral-300 bg-white px-2 py-1
                 <div><label class="mb-1 block text-xs font-medium text-neutral-500">No. Manual</label><input v-model="form.manual_no" :class="tandai(inputCls, !!pesan.manual_no)" /><PesanWajib :pesan="pesan.manual_no" /></div>
                 <div class="md:col-span-3"><label class="mb-1 block text-xs font-medium text-neutral-500">Keterangan *</label><input v-model="form.description" required :class="tandai(inputCls, !!pesan.description)" /><PesanWajib :pesan="pesan.description" /></div>
             </div>
-            <div class="card grid gap-4 p-5 md:grid-cols-3">
+            <!-- Memo Urgent berpajak → seluruh tahap 2 dikunci (fieldset disabled). -->
+            <fieldset :disabled="kunciPajak" class="card grid gap-4 p-5 md:grid-cols-3" :class="kunciPajak ? 'bg-neutral-50/60 dark:bg-neutral-900/40' : ''">
+                <p v-if="kunciPajak" class="md:col-span-3 -mb-1 rounded-lg bg-primary-50 px-3 py-2 text-xs text-primary-800 dark:bg-primary-900/20 dark:text-primary-200">🔒 Nilai Transaksi, PPN &amp; PPh dikunci — mengikuti rincian Memo Urgent {{ memoDipilih?.number }}. Lepas memonya di langkah 1 untuk mengubah.</p>
                 <div><label class="mb-1 block text-xs font-medium text-neutral-500">Nilai Transaksi *</label><div :class="pesan.dpp ? CINCIN_MERAH : ''"><MoneyInput v-model="form.dpp" placeholder="0" /></div><PesanWajib :pesan="pesan.dpp" />
-                    <p v-if="memoDipilih && !pesan.dpp" class="mt-1 text-[11px] text-primary-700 dark:text-primary-300">{{ Number(form.dpp) === memoDipilih.amount ? 'Terisi dari' : 'Nominal' }} Memo Urgent {{ memoDipilih.number }}: {{ fmtRp(memoDipilih.amount) }}</p></div>
+                    <p v-if="memoDipilih && !kunciPajak && !pesan.dpp" class="mt-1 text-[11px] text-primary-700 dark:text-primary-300">{{ Number(form.dpp) === memoDipilih.amount ? 'Terisi dari' : 'Nominal' }} Memo Urgent {{ memoDipilih.number }}: {{ fmtRp(memoDipilih.amount) }}</p></div>
                 <div><label class="mb-1 block text-xs font-medium text-neutral-500">Sifat PPN</label><div class="flex gap-2"><label class="flex flex-1 cursor-pointer items-center justify-center gap-1 rounded-lg border px-2 py-1.5 text-xs" :class="form.ppn_mode==='none' ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20' : 'border-neutral-300 dark:border-neutral-700'"><input v-model="form.ppn_mode" type="radio" value="none" class="sr-only" />Tanpa PPN</label><label class="flex flex-1 cursor-pointer items-center justify-center gap-1 rounded-lg border px-2 py-1.5 text-xs" :class="form.ppn_mode==='with' ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20' : 'border-neutral-300 dark:border-neutral-700'"><input v-model="form.ppn_mode" type="radio" value="with" class="sr-only" />Dengan PPN</label></div>
                     <div v-if="form.ppn_mode==='with'" class="mt-2 space-y-1.5">
                         <!-- #incl-ppn: Exclude = PPN di atas objek · Include = objek sudah termasuk PPN (÷ 1+tarif) -->
@@ -1233,29 +1426,10 @@ const cellArea = 'w-full rounded-md border border-neutral-300 bg-white px-2 py-1
                     <div><div class="text-xs text-neutral-400">{{ pphLabel }}</div><div class="font-mono" :class="pph > 0 ? 'text-danger-600' : 'text-neutral-500'">{{ fmtRp(pph) }}</div></div>
                     <div><div class="text-xs text-neutral-400">Dibayar (net)</div><div class="font-mono font-bold text-primary-700 dark:text-primary-300">{{ fmtRp(net) }}</div></div>
                 </div>
-            </div>
-        </div>
+            </fieldset>
 
-        <!-- Step 3: Detil Tagihan -->
-        <div v-show="step === 3" class="card p-5">
-            <div class="mb-2 flex items-center justify-between"><h2 class="font-semibold">Detil Tagihan</h2><button type="button" @click="addLine" class="inline-flex items-center gap-1 rounded-lg border border-neutral-300 px-2.5 py-1.5 text-xs hover:bg-neutral-50 dark:border-neutral-700"><Plus class="h-3.5 w-3.5" /> Baris</button></div>
-            <table class="w-full text-sm">
-                <thead class="text-left text-xs uppercase text-neutral-500"><tr><th class="py-1">Uraian</th><th class="w-20 py-1 text-right">Qty</th><th class="w-32 py-1 text-right">Harga</th><th class="w-36 py-1 text-right">Jumlah</th><th class="w-8"></th></tr></thead>
-                <tbody>
-                    <tr v-for="(l,i) in form.lines" :key="i" class="border-t border-neutral-100 dark:border-neutral-800">
-                        <td class="py-1 pr-2"><input v-model="l.description" :class="tandai(inputCls, !!pesanUraian(i))" /><PesanWajib :pesan="pesanUraian(i)" /></td>
-                        <td class="py-1 pr-2"><input v-model.number="l.qty" type="number" step="0.01" min="0" :class="[inputCls,'text-right']" @input="l.amount = (Number(l.qty)||0)*(Number(l.unit_price)||0)" /></td>
-                        <td class="py-1 pr-2"><input v-model.number="l.unit_price" type="number" step="1" min="0" :class="[inputCls,'text-right']" @input="l.amount = (Number(l.qty)||0)*(Number(l.unit_price)||0)" /></td>
-                        <td class="py-1 pr-2"><input v-model.number="l.amount" type="number" step="1" min="0" :class="[inputCls,'text-right font-mono']" /></td>
-                        <td class="py-1 text-center"><button type="button" @click="removeLine(i)" class="text-danger-500"><Trash2 class="h-4 w-4" /></button></td>
-                    </tr>
-                </tbody>
-            </table>
-            <p v-if="!form.lines.length" class="py-4 text-center text-sm text-neutral-400">Opsional — rincian tagihan. Total DPP {{ fmtRp(form.dpp) }} bisa dipecah ke baris.</p>
-            <div v-else class="mt-2 flex justify-end gap-6 text-sm"><span class="text-neutral-500">Total baris: <b class="font-mono">{{ fmtRp(linesSum) }}</b></span><span :class="Math.abs(linesSum - form.dpp) < 1 ? 'text-success-600' : 'text-amber-600'">DPP: {{ fmtRp(form.dpp) }}</span></div>
-
-            <!-- Berkas dari Upload Berkas — WAJIB, hanya unggahan user sendiri. -->
-            <div v-if="wajibBerkas" class="mt-5 border-t border-neutral-100 pt-4 dark:border-neutral-800">
+            <!-- Berkas Tagihan — WAJIB, di langkah Input Transaksi (unggah sendiri atau link supplier). -->
+            <div v-if="wajibBerkas" class="card p-5">
                 <label for="berkas-pilih" class="mb-1 block text-sm font-semibold">Berkas Tagihan <span class="text-danger-500">*</span></label>
                 <!-- Dua jalan: unggah sendiri, atau link untuk supplier. Link yang sudah dibuat mengunci pilihan ini. -->
                 <div class="mb-3 grid gap-2 sm:grid-cols-2">
@@ -1288,15 +1462,32 @@ const cellArea = 'w-full rounded-md border border-neutral-300 bg-white px-2 py-1
                         <div class="mt-2 flex items-center gap-2">
                             <input :value="linkAktif.url" readonly class="h-9 min-w-0 flex-1 rounded-lg border border-neutral-300 bg-neutral-50 px-3 font-mono text-xs dark:border-neutral-700 dark:bg-neutral-800" @focus="($event.target as HTMLInputElement).select()" />
                             <button type="button" class="inline-flex h-9 items-center gap-1 rounded-lg border border-neutral-300 px-3 text-xs hover:bg-neutral-50 dark:border-neutral-700 dark:hover:bg-neutral-800" @click="salinLink"><Copy class="h-3.5 w-3.5" />{{ tersalin ? 'Tersalin' : 'Salin' }}</button>
+                            <div class="relative">
+                                <button type="button" class="inline-flex h-9 items-center gap-1 rounded-lg border border-primary-300 px-3 text-xs font-medium text-primary-700 hover:bg-primary-50 dark:border-primary-800 dark:text-primary-300 dark:hover:bg-primary-950/40" @click="bagikanLink"><Share2 class="h-3.5 w-3.5" />Share</button>
+                                <div v-if="menuBagikan" class="absolute right-0 z-20 mt-1 w-48 overflow-hidden rounded-lg border border-neutral-200 bg-white text-xs shadow-lg dark:border-neutral-700 dark:bg-neutral-900">
+                                    <a :href="urlWhatsApp" target="_blank" rel="noopener" class="block px-3 py-2 hover:bg-neutral-50 dark:hover:bg-neutral-800" @click="menuBagikan = false">WhatsApp</a>
+                                    <a :href="urlEmail" class="block px-3 py-2 hover:bg-neutral-50 dark:hover:bg-neutral-800" @click="menuBagikan = false">Email</a>
+                                    <button type="button" class="block w-full px-3 py-2 text-left hover:bg-neutral-50 dark:hover:bg-neutral-800" @click="salinPesan">Salin pesan + link</button>
+                                </div>
+                            </div>
                             <a :href="linkAktif.url" target="_blank" rel="noopener" class="inline-flex h-9 items-center rounded-lg border border-neutral-300 px-3 text-xs hover:bg-neutral-50 dark:border-neutral-700 dark:hover:bg-neutral-800">Buka</a>
                         </div>
                         <div class="mt-2 flex flex-wrap items-center gap-3 text-xs">
                             <button type="button" class="inline-flex items-center gap-1 text-primary-600 hover:underline disabled:opacity-50" :disabled="memprosesLink" @click="cekLink"><RefreshCw class="h-3.5 w-3.5" /> Cek status</button>
                             <span v-if="linkAktif.status === 'menunggu'" class="text-neutral-400">dicek otomatis tiap 15 detik · Anda juga dapat notifikasi saat supplier mengunggah</span>
-                            <span v-else-if="linkAktif.berkas_number" class="text-neutral-500">Berkas {{ linkAktif.berkas_number }} — diajukan ke TTD Dept Head</span>
+                            <span v-else-if="linkAktif.berkas_number" class="text-neutral-500">Berkas {{ linkAktif.berkas_number }} — diajukan ke TTD Dept Head<template v-if="linkAktif.filled_at"> · terakhir diunggah {{ new Date(linkAktif.filled_at).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' }) }}</template></span>
                             <button v-if="linkAktif.status === 'menunggu'" type="button" class="ml-auto text-danger-500 hover:underline" @click="batalLink">Batalkan link</button>
                         </div>
                     </template>
+                    <!-- Link tetap bisa dipakai supplier mengunggah ULANG sampai invoice disimpan; tiap unggahan tercatat. -->
+                    <details v-if="(linkAktif?.riwayat?.length ?? 0) > 0" class="mt-2 text-xs">
+                        <summary class="cursor-pointer text-neutral-500 hover:text-primary-600">Riwayat unggahan supplier ({{ linkAktif!.riwayat!.length }}) — link masih bisa dipakai mengunggah ulang</summary>
+                        <ul class="mt-1 space-y-0.5 pl-4">
+                            <li v-for="(r, i) in linkAktif!.riwayat" :key="i" :class="i === 0 ? 'font-medium' : 'text-neutral-400 line-through decoration-neutral-300'">
+                                {{ new Date(r.at).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' }) }} · {{ r.berkas_number }} · {{ r.file }} file<template v-if="r.no_invoice"> · No. {{ r.no_invoice }}</template>{{ i === 0 ? ' (aktif)' : ' (diganti)' }}
+                            </li>
+                        </ul>
+                    </details>
                     <p v-if="pesanLink" class="mt-2 text-xs text-emerald-700 dark:text-emerald-300">{{ pesanLink }}</p>
                     <p v-if="galatLink" class="mt-2 text-xs text-danger-500">{{ galatLink }}</p>
                 </div>
@@ -1305,17 +1496,10 @@ const cellArea = 'w-full rounded-md border border-neutral-300 bg-white px-2 py-1
                 <!-- Unggah di sini: jadi berkas Anda (supplier, no. tagihan, nilai & keterangan dari isian ini) + diajukan ke TTD Dept Head.
                      Mengunggah lagi = mengganti berkas invoice ini. -->
                 <div class="rounded-lg border border-neutral-200 p-3 dark:border-neutral-700">
-                    <div class="mb-2 text-xs font-medium text-neutral-500">{{ berkasDipilih ? 'Ganti dengan file baru' : 'Unggah file tagihan' }} <span class="font-normal">(PDF/JPG/PNG · maks. 10 MB)</span></div>
-                    <div v-for="(u, i) in unggahan" :key="i" class="mb-2 grid items-center gap-2 sm:grid-cols-[1fr_14rem_auto]">
-                        <input type="file" accept=".pdf,.jpg,.jpeg,.png" class="text-xs" @change="u.file = (($event.target as HTMLInputElement).files ?? [])[0] ?? null" />
-                        <select v-model="u.berkas_id" :class="inputCls">
-                            <option value="">— jenis dokumen —</option>
-                            <option v-for="j in jenisBerkas" :key="j.id" :value="j.id">{{ j.name }}{{ j.is_mandatory ? ' (wajib)' : '' }}</option>
-                        </select>
-                        <button type="button" class="text-neutral-400 hover:text-danger-500 disabled:opacity-40" :disabled="unggahan.length < 2" @click="unggahan.splice(i, 1)"><Trash2 class="h-4 w-4" /></button>
-                    </div>
-                    <div class="flex flex-wrap items-center gap-3">
-                        <button type="button" class="text-xs text-primary-600 hover:underline" @click="unggahan.push({ file: null, berkas_id: '' })">+ Tambah file</button>
+                    <div class="mb-2 text-xs font-medium text-neutral-500">{{ berkasDipilih ? 'Ganti dengan file baru' : 'Unggah file tagihan' }}</div>
+                    <DropBerkas v-model="unggahan" :jenis="jenisBerkas ?? []" />
+                    <div class="mt-3 flex flex-wrap items-center gap-3">
+                        <span v-if="unggahan.length && kurangWajib.length" class="text-xs text-amber-600">Belum ada: {{ kurangWajib.join(', ') }}</span>
                         <Button size="sm" :disabled="!bisaUnggah" @click="unggahBerkas"><template #icon-left><Upload class="h-4 w-4" /></template>{{ mengunggah ? 'Mengunggah…' : 'Upload & Ajukan TTD' }}</Button>
                         <span v-if="galatUnggah" class="text-xs text-danger-500">{{ galatUnggah }}</span>
                     </div>
@@ -1361,6 +1545,25 @@ const cellArea = 'w-full rounded-md border border-neutral-300 bg-white px-2 py-1
             </div>
         </div>
 
+        <!-- Step 3: Detil Tagihan -->
+        <div v-show="step === 3" class="card p-5">
+            <div class="mb-2 flex items-center justify-between"><h2 class="font-semibold">Detil Tagihan</h2><button type="button" @click="addLine" class="inline-flex items-center gap-1 rounded-lg border border-neutral-300 px-2.5 py-1.5 text-xs hover:bg-neutral-50 dark:border-neutral-700"><Plus class="h-3.5 w-3.5" /> Baris</button></div>
+            <table class="w-full text-sm">
+                <thead class="text-left text-xs uppercase text-neutral-500"><tr><th class="py-1">Uraian</th><th class="w-20 py-1 text-right">Qty</th><th class="w-32 py-1 text-right">Harga</th><th class="w-36 py-1 text-right">Jumlah</th><th class="w-8"></th></tr></thead>
+                <tbody>
+                    <tr v-for="(l,i) in form.lines" :key="i" class="border-t border-neutral-100 dark:border-neutral-800">
+                        <td class="py-1 pr-2"><input v-model="l.description" :class="tandai(inputCls, !!pesanUraian(i))" /><PesanWajib :pesan="pesanUraian(i)" /></td>
+                        <td class="py-1 pr-2"><input v-model.number="l.qty" type="number" step="0.01" min="0" :class="[inputCls,'text-right']" @input="l.amount = (Number(l.qty)||0)*(Number(l.unit_price)||0)" /></td>
+                        <td class="py-1 pr-2"><input v-model.number="l.unit_price" type="number" step="1" min="0" :class="[inputCls,'text-right']" @input="l.amount = (Number(l.qty)||0)*(Number(l.unit_price)||0)" /></td>
+                        <td class="py-1 pr-2"><input v-model.number="l.amount" type="number" step="1" min="0" :class="[inputCls,'text-right font-mono']" /></td>
+                        <td class="py-1 text-center"><button type="button" @click="removeLine(i)" class="text-danger-500"><Trash2 class="h-4 w-4" /></button></td>
+                    </tr>
+                </tbody>
+            </table>
+            <p v-if="!form.lines.length" class="py-4 text-center text-sm text-neutral-400">Opsional — rincian tagihan. Total DPP {{ fmtRp(form.dpp) }} bisa dipecah ke baris.</p>
+            <div v-else class="mt-2 flex justify-end gap-6 text-sm"><span class="text-neutral-500">Total baris: <b class="font-mono">{{ fmtRp(linesSum) }}</b></span><span :class="Math.abs(linesSum - form.dpp) < 1 ? 'text-success-600' : 'text-amber-600'">DPP: {{ fmtRp(form.dpp) }}</span></div>
+        </div>
+
         <!-- Step 4: Struktur (Jurnal Dr/Cr) -->
         <div v-show="step === 4" class="space-y-4">
             <!-- Struktur Jurnal — tabel padat (mirip layout eProperty BO) -->
@@ -1381,7 +1584,7 @@ const cellArea = 'w-full rounded-md border border-neutral-300 bg-white px-2 py-1
                 <p v-if="strukturUsang" class="mb-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:bg-amber-900/20 dark:text-amber-300">
                     Struktur ini sudah disunting tangan sehingga tidak lagi mengikuti PPN/PPh pada Input Transaksi.
                     Untuk menyusunnya ulang dari nilai transaksinya: hapus seluruh barisnya, lalu tekan
-                    <b>Sebelumnya</b> dan <b>Berikutnya</b> lagi ke langkah ini.
+                    <b>Sebelumnya</b> dan <b>Selanjutnya</b> lagi ke langkah ini.
                 </p>
                 <!-- Akun yang dibutuhkan aturan PPN/PPh tetapi belum ada: barisnya sengaja tidak
                      dibuat tanpa akun, jadi ketiadaannya disebutkan di sini. -->
@@ -1492,7 +1695,7 @@ const cellArea = 'w-full rounded-md border border-neutral-300 bg-white px-2 py-1
                                             <!-- Pilihan bisa diganti / dilepas selama invoice belum disimpan (diajukan). -->
                                             <div class="mt-1 flex justify-end gap-1" :class="pilihanBudget(l) || (sisaBaris(l) as number) < 0 ? '' : 'opacity-70 hover:opacity-100'">
                                                 <button type="button" :class="['inline-flex h-6 items-center gap-0.5 rounded-md border px-2 text-[10.5px] font-semibold', pilihanBudget(l) === 'alokasi' ? 'border-sky-600 bg-sky-600 text-white' : 'border-sky-300 bg-sky-50 text-sky-700 hover:bg-sky-100 dark:border-sky-800 dark:bg-sky-950/40 dark:text-sky-300']"
-                                                    :title="pilihanBudget(l) === 'alokasi' ? 'Klik untuk melepas alokasi' : 'Ambil dari sisa bulan ini di budget lain — langsung berlaku'" @click="pilihBudget(l, 'alokasi')"><Check v-if="pilihanBudget(l) === 'alokasi'" class="h-3 w-3" />Alokasi</button>
+                                                    :title="pilihanBudget(l) === 'alokasi' ? 'Klik untuk melepas alokasi' : 'Ambil dari sisa bulan ini di budget lain — menunggu Approval Alokasi Budget'" @click="pilihBudget(l, 'alokasi')"><Check v-if="pilihanBudget(l) === 'alokasi'" class="h-3 w-3" />Alokasi</button>
                                                 <button type="button" :class="['inline-flex h-6 items-center gap-0.5 rounded-md border px-2 text-[10.5px] font-semibold', pilihanBudget(l) === 'koreksi' ? 'border-danger-600 bg-danger-600 text-white' : 'border-danger-300 bg-danger-50 text-danger-700 hover:bg-danger-100 dark:border-danger-800 dark:bg-danger-950/40 dark:text-danger-300']"
                                                     :title="pilihanBudget(l) === 'koreksi' ? 'Klik untuk melepas koreksi' : 'Tambah anggaran bulan ini — lewat Approval Inbox'" @click="pilihBudget(l, 'koreksi')"><Check v-if="pilihanBudget(l) === 'koreksi'" class="h-3 w-3" />Koreksi</button>
                                             </div>
@@ -1502,7 +1705,7 @@ const cellArea = 'w-full rounded-md border border-neutral-300 bg-white px-2 py-1
                                 </td>
                                 <td class="px-1 py-2 text-center"><button type="button" @click="removeJournalLine(i)" class="text-danger-500"><Trash2 class="h-4 w-4" /></button></td>
                             </tr>
-                            <tr v-if="!form.journal_lines.length"><td colspan="9" class="px-2 py-6 text-center text-sm text-neutral-400">Belum ada baris. Tekan "Sebelumnya" lalu "Berikutnya" lagi ke langkah ini untuk membentuk jurnal otomatis dari nilai transaksinya, atau klik "Tambah 1 Baris".</td></tr>
+                            <tr v-if="!form.journal_lines.length"><td colspan="9" class="px-2 py-6 text-center text-sm text-neutral-400">Belum ada baris. Tekan "Sebelumnya" lalu "Selanjutnya" lagi ke langkah ini untuk membentuk jurnal otomatis dari nilai transaksinya, atau klik "Tambah 1 Baris".</td></tr>
                         </tbody>
                         <tfoot>
                             <tr class="border-t-2 border-neutral-200 bg-neutral-50 font-semibold dark:border-neutral-700 dark:bg-neutral-800">
@@ -1525,6 +1728,47 @@ const cellArea = 'w-full rounded-md border border-neutral-300 bg-white px-2 py-1
                     <span v-if="jurnalBalanced" class="inline-flex items-center gap-1 rounded-full bg-success-50 px-3 py-1 text-xs font-medium text-success-700 dark:bg-success-900/30 dark:text-success-300"><Check class="h-3.5 w-3.5" /> Balance</span>
                     <span v-else class="inline-flex items-center gap-1 rounded-full bg-amber-50 px-3 py-1 text-xs font-medium text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">Selisih {{ fmtRp(Math.abs(jurnalDebit - jurnalKredit)) }} — Debit ≠ Kredit</span>
                 </div>
+
+                <!-- Sisa Budget Tahunan & Bulanan — dari Master Budget (anggaran berlaku − realisasi), sebelum & sesudah invoice ini. -->
+                <div v-if="ringkasanBudget.length" class="mt-4">
+                    <div class="mb-1 flex flex-wrap items-baseline justify-between gap-2">
+                        <h3 class="text-sm font-semibold">Sisa Budget</h3>
+                        <span class="text-[11px] text-neutral-400">Master Budget · tahunan {{ String(form.invoice_date ?? '').slice(0, 4) }} &amp; bulanan {{ bulanBudget }} · sebelum → sesudah invoice ini</span>
+                    </div>
+                    <div class="overflow-x-auto rounded-lg border border-neutral-200 dark:border-neutral-700">
+                        <table class="w-full text-xs">
+                            <thead class="bg-neutral-50 text-[10px] uppercase tracking-wide text-neutral-500 dark:bg-neutral-800/60">
+                                <tr>
+                                    <th rowspan="2" class="border-b border-neutral-200 px-2 py-2 text-left dark:border-neutral-700">Anggaran (akun · cost center)</th>
+                                    <th rowspan="2" class="border-b border-l border-neutral-200 px-2 py-2 text-right dark:border-neutral-700">Invoice ini</th>
+                                    <th colspan="4" class="border-l border-neutral-200 px-2 pt-2 text-center dark:border-neutral-700">Tahunan</th>
+                                    <th colspan="4" class="border-l border-neutral-200 px-2 pt-2 text-center dark:border-neutral-700">Bulanan</th>
+                                </tr>
+                                <tr>
+                                    <template v-for="g in 2" :key="g">
+                                        <th class="border-b border-l border-neutral-200 px-2 py-1 text-right dark:border-neutral-700">Anggaran</th>
+                                        <th class="border-b border-neutral-200 px-2 py-1 text-right dark:border-neutral-700">Realisasi</th>
+                                        <th class="border-b border-neutral-200 px-2 py-1 text-right dark:border-neutral-700">Sisa sebelum</th>
+                                        <th class="border-b border-neutral-200 px-2 py-1 text-right dark:border-neutral-700">Sisa sesudah</th>
+                                    </template>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr v-for="b in ringkasanBudget" :key="b.budget_id" class="border-b border-neutral-100 last:border-0 dark:border-neutral-800">
+                                    <td class="px-2 py-2">{{ b.label }}</td>
+                                    <td class="border-l border-neutral-200 px-2 py-2 text-right font-mono dark:border-neutral-700">{{ b.invoice ? '− ' + fmtNum(b.invoice) : '0' }}</td>
+                                    <template v-for="p in [b.tahun, b.bulan]" :key="p === b.tahun ? 't' : 'b'">
+                                        <td class="border-l border-neutral-200 px-2 py-2 text-right font-mono text-neutral-500 dark:border-neutral-700">{{ fmtNum(p.anggaran) }}</td>
+                                        <td class="px-2 py-2 text-right font-mono text-neutral-500">{{ fmtNum(p.realisasi) }}</td>
+                                        <td :class="['px-2 py-2 text-right font-mono', p.sebelum < 0 ? 'text-danger-600' : '']">{{ fmtNum(p.sebelum) }}</td>
+                                        <td :class="['px-2 py-2 text-right font-mono font-semibold', p.sesudah < 0 ? 'text-danger-600' : 'text-success-700 dark:text-success-400']">{{ fmtNum(p.sesudah) }}</td>
+                                    </template>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <p class="mt-1 text-[11px] text-neutral-400">Penjaga budget memakai sisa <b>bulanan</b> — sisa bulanan minus wajib diselesaikan dengan Alokasi atau Koreksi Budget.</p>
+                </div>
             </div>
 
             <!-- Koreksi Budget — baris yang melewati sisa budget bulan ini -->
@@ -1533,7 +1777,8 @@ const cellArea = 'w-full rounded-md border border-neutral-300 bg-white px-2 py-1
                     <h2 class="font-semibold">Koreksi Budget</h2>
                     <span class="text-[11px] text-neutral-400">{{ bulanBudget }}</span>
                 </div>
-                <p class="mb-2 text-[11px] text-neutral-500">Diajukan bersama invoice ini ke Approval Inbox (Accounting → GM). Setelah disetujui, nilai pengajuan ditambahkan ke budget bulan ini.</p>
+                <p v-if="butuhPengajuan" class="mb-2 text-[11px] text-neutral-500">Invoice dari Memo Urgent: klik "Selanjutnya" lalu ajukan ke Finance — setelah disetujui, nilainya ditambahkan ke budget bulan ini dan invoice bisa diselesaikan.</p>
+                <p v-else class="mb-2 text-[11px] text-neutral-500">Diajukan ke Finance (Approval Koreksi Budget / Approval Inbox) bersama invoice ini saat disimpan — invoice tetap berjalan.</p>
                 <div class="overflow-x-auto rounded-lg border border-neutral-200 dark:border-neutral-800">
                     <table class="w-full text-sm">
                         <thead class="bg-neutral-50 text-left text-[11px] uppercase tracking-wide text-neutral-500 dark:bg-neutral-800">
@@ -1571,7 +1816,8 @@ const cellArea = 'w-full rounded-md border border-neutral-300 bg-white px-2 py-1
                     <h2 class="font-semibold">Alokasi Budget</h2>
                     <span class="text-[11px] text-neutral-400">{{ bulanBudget }}</span>
                 </div>
-                <p class="mb-2 text-[11px] text-neutral-500">Anggaran {{ bulanBudget || 'bulan ini' }} dipindah dari budget asal ke budget baris ini saat invoice disimpan — langsung berlaku, tanpa approval.</p>
+                <p v-if="butuhPengajuan" class="mb-2 text-[11px] text-neutral-500">Invoice dari Memo Urgent: klik "Selanjutnya" lalu ajukan ke Finance — anggaran {{ bulanBudget || 'bulan ini' }} dipindah dari budget asal setelah disetujui, lalu invoice bisa diselesaikan.</p>
+                <p v-else class="mb-2 text-[11px] text-neutral-500">Diajukan ke Finance (Approval Alokasi Budget / Approval Inbox) bersama invoice ini saat disimpan — anggaran {{ bulanBudget || 'bulan ini' }} dipindah setelah disetujui; invoice tetap berjalan.</p>
                 <div class="overflow-x-auto rounded-lg border border-neutral-200 dark:border-neutral-800">
                     <table class="w-full text-sm">
                         <thead class="bg-neutral-50 text-left text-[11px] uppercase tracking-wide text-neutral-500 dark:bg-neutral-800">
@@ -1643,6 +1889,8 @@ const cellArea = 'w-full rounded-md border border-neutral-300 bg-white px-2 py-1
             </div>
         </div>
 
+        </fieldset>
+
         <!-- Step 5: Selesai -->
         <div v-show="step === 5" class="card p-5 text-sm">
             <h2 class="mb-3 font-semibold">Ringkasan</h2>
@@ -1679,12 +1927,12 @@ const cellArea = 'w-full rounded-md border border-neutral-300 bg-white px-2 py-1
             </div>
             <div v-if="form.alokasi.length" class="mt-4 rounded-lg border border-sky-200 bg-sky-50 p-3 dark:border-sky-900 dark:bg-sky-950/30">
                 <p class="text-sm font-semibold text-sky-800 dark:text-sky-200">Ada alokasi budget</p>
-                <p class="mt-0.5 text-xs text-sky-800/90 dark:text-sky-200/90">{{ form.alokasi.length }} alokasi di bawah ini memindah anggaran {{ bulanBudget || 'bulan ini' }} dari budget asal begitu invoice disimpan.</p>
+                <p class="mt-0.5 text-xs text-sky-800/90 dark:text-sky-200/90"><template v-if="pengajuanBudget">{{ form.alokasi.length }} alokasi di bawah ini sudah disetujui Finance — anggaran {{ bulanBudget || 'bulan ini' }} sudah dipindah dari budget asal.</template><template v-else>{{ form.alokasi.length }} alokasi di bawah ini diajukan ke Finance bersama invoice ini — invoice tetap berjalan.</template></p>
             </div>
             <!-- Koreksi budget yang ikut diajukan -->
             <div v-if="form.koreksi.length" class="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3 dark:border-amber-900 dark:bg-amber-950/30">
                 <p class="text-sm font-semibold text-amber-800 dark:text-amber-200">Ada koreksi budget</p>
-                <p class="mt-0.5 text-xs text-amber-800/90 dark:text-amber-200/90">Sebagian baris jurnal melewati sisa budget {{ bulanBudget || 'bulan ini' }}. Invoice tetap disimpan dan berjalan; {{ form.koreksi.length }} koreksi budget di bawah ini ikut diajukan ke <b>Approval Inbox</b> (Accounting → GM) dan menambah budget bulan ini setelah disetujui.</p>
+                <p class="mt-0.5 text-xs text-amber-800/90 dark:text-amber-200/90"><template v-if="pengajuanBudget">{{ form.koreksi.length }} koreksi budget di bawah ini sudah disetujui Finance dan menambah budget {{ bulanBudget || 'bulan ini' }}.</template><template v-else>{{ form.koreksi.length }} koreksi budget di bawah ini diajukan ke Finance bersama invoice ini — invoice tetap berjalan.</template></p>
             </div>
         </div>
 
@@ -1694,7 +1942,7 @@ const cellArea = 'w-full rounded-md border border-neutral-300 bg-white px-2 py-1
                 <h2 class="font-semibold">Koreksi Budget</h2>
                 <span class="text-[11px] text-neutral-400">{{ bulanBudget }}</span>
             </div>
-            <p class="mb-2 text-[11px] text-neutral-500">Diajukan bersama invoice ini ke Approval Inbox (Accounting → GM). Setelah disetujui, nilai pengajuan ditambahkan ke budget bulan ini.</p>
+            <p class="mb-2 text-[11px] text-neutral-500">{{ pengajuanBudget ? 'Sudah disetujui Finance — tambahannya sudah masuk ke budget bulan ini.' : 'Diajukan ke Finance bersama invoice ini — menambah budget bulan ini setelah disetujui.' }}</p>
             <div class="overflow-x-auto rounded-lg border border-neutral-200 dark:border-neutral-800">
                 <table class="w-full text-sm">
                     <thead class="bg-neutral-50 text-left text-[11px] uppercase tracking-wide text-neutral-500 dark:bg-neutral-800">
@@ -1733,7 +1981,7 @@ const cellArea = 'w-full rounded-md border border-neutral-300 bg-white px-2 py-1
                 <h2 class="font-semibold">Alokasi Budget</h2>
                 <span class="text-[11px] text-neutral-400">{{ bulanBudget }}</span>
             </div>
-            <p class="mb-2 text-[11px] text-neutral-500">Anggaran {{ bulanBudget || 'bulan ini' }} dipindah dari budget asal ke budget baris ini saat invoice disimpan — langsung berlaku, tanpa approval.</p>
+            <p class="mb-2 text-[11px] text-neutral-500">{{ pengajuanBudget ? 'Sudah disetujui Finance — anggaran sudah dipindah dari budget asal ke budget baris ini.' : 'Diajukan ke Finance bersama invoice ini — anggaran dipindah setelah disetujui.' }}</p>
             <div class="overflow-x-auto rounded-lg border border-neutral-200 dark:border-neutral-800">
                 <table class="w-full text-sm">
                     <thead class="bg-neutral-50 text-left text-[11px] uppercase tracking-wide text-neutral-500 dark:bg-neutral-800">
@@ -1778,18 +2026,39 @@ const cellArea = 'w-full rounded-md border border-neutral-300 bg-white px-2 py-1
             <span v-else></span>
             <!-- Alasan tombolnya mati DISEBUTKAN, bukan dibiarkan ditebak. Tombol nonaktif tanpa
                  keterangan pada wizard berlangkah membuat orang menyangka layarnya rusak. -->
-            <span v-if="step === 4 && !kurangCc.length && koreksiBelumCukup.length" class="self-center text-xs text-danger-500">
+            <span v-if="step === 4 && !kurangCc.length && koreksiBelumCukup.length && statusPengajuan !== 'disetujui'" class="self-center text-xs text-danger-500">
                 Melebihi sisa budget — klik "Alokasi" atau "Koreksi" pada baris merah{{ form.koreksi.length || form.alokasi.length ? ', pilih budget asal alokasi, dan isi nilainya minimal sebesar kekurangan' : '' }}.
             </span>
             <span v-if="step === 4 && kurangCc.length" class="self-center text-xs text-danger-500">
                 Cost center wajib diisi untuk akun: {{ kurangCc.join(', ') }}.
             </span>
-            <span v-if="step === 3 && wajibBerkas && !berkasDipilih" class="self-center text-xs text-danger-500">Pilih berkas tagihan dulu.</span>
+            <span v-if="step === 2 && wajibBerkas && !berkasDipilih" class="self-center text-xs text-danger-500">Pilih berkas tagihan dulu.</span>
             <span v-if="step === 5 && berkasBelumSiap" class="self-center text-xs text-amber-600">Berkas belum di-TTD Dept Head — simpan sebagai draft dulu.</span>
             <div class="flex items-center gap-2">
-            <button v-if="wajibBerkas" type="button" :disabled="menyimpanDraft" class="inline-flex items-center gap-1.5 rounded-lg border border-neutral-300 px-4 py-2 text-sm hover:bg-neutral-50 disabled:opacity-60 dark:border-neutral-700 dark:hover:bg-neutral-800" @click="simpanDraft()">Simpan Draft</button>
-            <Button v-if="step < 5" :disabled="!canNext()" @click="next"><template #icon-left><ArrowRight class="h-4 w-4" /></template>Berikutnya</Button>
+            <button v-if="wajibBerkas && !pengajuanBudget" type="button" :disabled="menyimpanDraft" class="inline-flex items-center gap-1.5 rounded-lg border border-neutral-300 px-4 py-2 text-sm hover:bg-neutral-50 disabled:opacity-60 dark:border-neutral-700 dark:hover:bg-neutral-800" @click="simpanDraft()">Simpan Draft</button>
+            <span v-if="galatPengajuan" class="self-center text-xs text-danger-500">{{ galatPengajuan }}</span>
+            <span v-if="step === 4 && statusPengajuan === 'menunggu'" class="self-center text-xs text-amber-600">Menunggu persetujuan Finance.</span>
+            <!-- Ada alokasi / koreksi yang belum disetujui: Selanjutnya membuka konfirmasi pengajuan ke Finance. -->
+            <Button v-if="step === 4 && butuhPengajuan && statusPengajuan !== 'disetujui' && statusPengajuan !== 'menunggu'" :disabled="!bisaAjukan || mengajukan" @click="konfirmasiFinance = true">
+                <template #icon-left><ArrowRight class="h-4 w-4" /></template>{{ mengajukan ? 'Mengajukan…' : 'Selanjutnya' }}</Button>
+            <Button v-else-if="step < 5" :disabled="!canNext()" @click="next"><template #icon-left><ArrowRight class="h-4 w-4" /></template>Selanjutnya</Button>
             <Button v-else :disabled="form.processing || berkasBelumSiap" @click="submit"><template #icon-left><Save class="h-4 w-4" /></template>{{ modeEdit ? 'Simpan Perubahan' : 'Simpan & Buat Jurnal' }}</Button>
+            </div>
+        </div>
+
+        <!-- Konfirmasi pengajuan alokasi / koreksi budget ke Finance -->
+        <div v-if="konfirmasiFinance" class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" @click.self="konfirmasiFinance = false">
+            <div class="relative w-full max-w-md rounded-xl bg-white p-6 shadow-xl dark:bg-neutral-900">
+                <button type="button" class="absolute right-3 top-3 rounded-full p-1 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700 dark:hover:bg-neutral-800" title="Tutup" @click="konfirmasiFinance = false"><X class="h-5 w-5" /></button>
+                <h2 class="pr-8 text-lg font-bold">Pengajuan {{ jenisPengajuan }} budget</h2>
+                <p class="mt-2 text-sm text-neutral-600 dark:text-neutral-300">
+                    Anda mengajukan <b>{{ jenisPengajuan }} budget</b>. Permintaan Anda akan disetujui <b>Finance</b> terlebih dahulu agar dapat diselesaikan.
+                </p>
+                <div class="mt-6 flex flex-wrap justify-end gap-2">
+                    <button v-if="wajibBerkas && !pengajuanBudget" type="button" :disabled="menyimpanDraft" class="inline-flex h-10 items-center rounded-lg border border-neutral-300 px-4 text-sm font-medium hover:bg-neutral-50 disabled:opacity-60 dark:border-neutral-700 dark:hover:bg-neutral-800"
+                        @click="konfirmasiFinance = false; simpanDraft()">Simpan ke Draft</button>
+                    <Button :disabled="mengajukan" @click="konfirmasiFinance = false; ajukanFinance()"><template #icon-left><ArrowRight class="h-4 w-4" /></template>{{ mengajukan ? 'Mengajukan…' : 'Selanjutnya (Finance)' }}</Button>
+                </div>
             </div>
         </div>
 

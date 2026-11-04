@@ -6,6 +6,7 @@ import Sidebar from '@/Components/Layout/Sidebar.vue';
 import Topbar from '@/Components/Layout/Topbar.vue';
 import Toaster from '@/Components/UI/Toaster.vue';
 import DialogBudget from '@/Components/UI/DialogBudget.vue';
+import PengingatMemo from '@/Components/UI/PengingatMemo.vue';
 import { pageQuery, applyPageFilter, resetPageFilter } from '@/Composables/usePageSearch';
 
 defineProps<{ title?: string }>();
@@ -60,5 +61,7 @@ onUnmounted(() => {
              (AP, Bon Sementara, Jurnal Umum) — dipasang sekali di sini supaya tidak ada layar
              yang terlewat. -->
         <DialogBudget />
+        <!-- Pop-up sekali tiap login: Memo Urgent dibayar yang invoice hutangnya belum dibuat. -->
+        <PengingatMemo />
     </div>
 </template>

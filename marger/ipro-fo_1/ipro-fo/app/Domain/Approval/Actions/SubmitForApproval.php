@@ -49,6 +49,10 @@ final class SubmitForApproval
                     'approval_id' => $approval->id,
                     'level'       => $step->level,
                     'approver_id' => $assigned,   // 'assigned' = ditunjuk sekarang; lainnya di-assign saat approver acts
+                    // Snapshot: approval ini tetap mengikuti susunan chain saat diajukan.
+                    'approver_type'  => $step->approver_type,
+                    'approver_value' => $step->approver_value,
+                    'label'          => $step->label,
                     'status'      => 'pending',
                 ]);
             }

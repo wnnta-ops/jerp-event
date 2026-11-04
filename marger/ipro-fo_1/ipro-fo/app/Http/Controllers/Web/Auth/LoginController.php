@@ -44,6 +44,8 @@ class LoginController extends Controller
         }
 
         $request->session()->regenerate();
+        // Pop-up pengingat Memo Urgent dibayar tanpa invoice — tampil lagi tiap login.
+        $request->session()->put(\App\Domain\BusinessSupport\Services\PembayaranMemoUrgent::SESI_PENGINGAT, true);
 
         $user = $request->user();
         $user->update(['last_login_at' => now(), 'last_login_ip' => $request->ip(), 'failed_login_count' => 0]);

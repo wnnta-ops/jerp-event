@@ -1,5 +1,7 @@
 <script setup lang="ts">
+import { ref, watch } from 'vue';
 import { Head, Link, router } from '@inertiajs/vue3';
+import { ShieldCheck, Search, X, FileText } from 'lucide-vue-next';
 import Badge from '@/Components/UI/Badge.vue';
 import Button from '@/Components/UI/Button.vue';
 import EmptyState from '@/Components/UI/EmptyState.vue';
@@ -15,8 +17,25 @@ const props = defineProps<{
     tab: 'perlu' | 'pengajuan' | 'riwayat';
     counts: Record<string, number>;
     rows: Row[];
+    filters: { q: string; jenis: string; status: string; dari: string; sampai: string };
+    pilihanJenis: Record<string, string>;
     canSubmit: boolean;
 }>();
+
+/* Cari & filter (sama dengan daftar Memo Urgent) — dikirim ke server, tab tetap. */
+const f = ref({ ...props.filters });
+let jeda: ReturnType<typeof setTimeout> | null = null;
+function saring(segera = false) {
+    if (jeda) clearTimeout(jeda);
+    const kirim = () => router.get(route('approval-inbox.index'), { tab: props.tab, ...Object.fromEntries(Object.entries(f.value).filter(([, v]) => v !== '')) },
+        { preserveState: true, preserveScroll: true, replace: true });
+    segera ? kirim() : (jeda = setTimeout(kirim, 400));
+}
+watch(() => f.value.q, () => saring());
+watch(() => [f.value.jenis, f.value.status, f.value.dari, f.value.sampai], () => saring(true));
+const adaFilter = () => Object.values(f.value).some((v) => v !== '');
+function reset() { f.value = { q: '', jenis: '', status: '', dari: '', sampai: '' }; }
+const inputCls = 'h-9 rounded-lg border border-neutral-300 bg-white px-3 text-sm dark:border-neutral-700 dark:bg-neutral-900';
 
 const tabs = [
     { key: 'perlu', label: 'Perlu Persetujuan Saya' },
@@ -31,7 +50,7 @@ const emptyText: Record<string, string> = {
 };
 
 function go(tab: string) {
-    router.get(route('approval-inbox.index'), { tab }, { preserveState: true, replace: true });
+    router.get(route('approval-inbox.index'), { tab, ...Object.fromEntries(Object.entries(f.value).filter(([, v]) => v !== '')) }, { preserveState: true, replace: true });
 }
 
 const rupiah = (v: number) => 'Rp ' + v.toLocaleString('id-ID');
@@ -57,22 +76,41 @@ const dot: Record<Stage['state'], string> = {
 <template>
     <Head title="Approval Inbox" />
     <div class="space-y-4">
-        <div class="flex flex-wrap items-center justify-between gap-3">
+        <div class="flex flex-wrap items-start justify-between gap-3">
             <div>
-                <h1 class="text-2xl font-bold">Approval Inbox</h1>
-                <p class="text-sm text-neutral-500">Memo Urgent, TTD Berkas, Invoice Hutang & Koreksi Budget — Accounting → Finance → GM → Direktur → MW / BA</p>
+                <h1 class="flex items-center gap-2 text-2xl font-bold"><ShieldCheck class="h-6 w-6 text-primary-600" /> Approval Inbox</h1>
+                <p class="text-sm text-neutral-500">Memo Urgent, TTD Berkas, Invoice Hutang, Alokasi &amp; Koreksi Budget — alur tiap dokumen diatur di System › Approval Chain.</p>
             </div>
-            <Link v-if="canSubmit" :href="route('approval-inbox.create')"><Button>+ Memo Urgent</Button></Link>
+            <Link v-if="canSubmit" :href="route('approval-inbox.memo')"><Button><template #icon-left><FileText class="h-4 w-4" /></template>Memo Urgent Saya</Button></Link>
         </div>
 
-        <div class="flex gap-2 overflow-x-auto border-b border-neutral-200 dark:border-neutral-800">
-            <button
-                v-for="t in tabs" :key="t.key" @click="go(t.key)"
-                :class="['whitespace-nowrap px-4 py-2 text-sm font-medium', props.tab === t.key ? 'border-b-2 border-primary-600 text-primary-600' : 'text-neutral-500 hover:text-neutral-700']"
-            >
-                {{ t.label }}
-                <span class="ml-1 rounded-full bg-neutral-100 px-2 py-0.5 text-xs dark:bg-neutral-800">{{ counts[t.key] ?? 0 }}</span>
-            </button>
+        <div class="card space-y-3 p-4">
+            <div class="flex gap-1 overflow-x-auto border-b border-neutral-200 dark:border-neutral-800">
+                <button v-for="t in tabs" :key="t.key" type="button" @click="go(t.key)"
+                    :class="['-mb-px whitespace-nowrap border-b-2 px-3 py-2 text-sm font-medium', props.tab === t.key ? 'border-primary-600 text-primary-700 dark:text-primary-300' : 'border-transparent text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200']">
+                    {{ t.label }} <span class="ml-1 rounded-full bg-neutral-100 px-1.5 text-[11px] dark:bg-neutral-800">{{ counts[t.key] ?? 0 }}</span>
+                </button>
+            </div>
+            <div class="flex flex-wrap items-center gap-2">
+                <div class="relative min-w-[16rem] flex-1">
+                    <Search class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" />
+                    <input v-model="f.q" type="search" placeholder="Cari no. dokumen, perihal, pengaju…" :class="[inputCls, 'w-full pl-9']" />
+                </div>
+                <select v-model="f.jenis" :class="inputCls" title="Jenis dokumen">
+                    <option value="">Semua jenis dokumen</option>
+                    <option v-for="(label, k) in pilihanJenis" :key="k" :value="k">{{ label }}</option>
+                </select>
+                <select v-model="f.status" :class="inputCls" title="Status">
+                    <option value="">Semua status</option>
+                    <option value="diproses">Diproses</option>
+                    <option value="disetujui">Disetujui</option>
+                    <option value="ditolak">Ditolak</option>
+                    <option value="dibatalkan">Dibatalkan</option>
+                </select>
+                <label class="flex items-center gap-1.5 text-xs text-neutral-500">Dari <input v-model="f.dari" type="date" :class="inputCls" /></label>
+                <label class="flex items-center gap-1.5 text-xs text-neutral-500">s.d. <input v-model="f.sampai" type="date" :class="inputCls" /></label>
+                <button v-if="adaFilter()" type="button" class="inline-flex items-center gap-1 text-xs text-neutral-500 hover:text-danger-600" @click="reset"><X class="h-3.5 w-3.5" /> Reset</button>
+            </div>
         </div>
 
         <div class="card overflow-x-auto">
@@ -120,7 +158,7 @@ const dot: Record<Stage['state'], string> = {
                     </tr>
                 </tbody>
             </table>
-            <EmptyState v-if="!rows.length" :title="emptyText[props.tab]" />
+            <EmptyState v-if="!rows.length" :title="adaFilter() ? 'Tidak ada dokumen yang cocok dengan pencarian / filter.' : emptyText[props.tab]" />
         </div>
     </div>
 </template>

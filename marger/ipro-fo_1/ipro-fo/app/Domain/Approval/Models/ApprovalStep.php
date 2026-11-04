@@ -9,7 +9,8 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class ApprovalStep extends Model
 {
-    protected $fillable = ['approval_id', 'level', 'approver_id', 'status', 'notes', 'acted_at'];
+    // approver_type/value/label = snapshot chain step saat diajukan (perubahan chain tidak menyusul).
+    protected $fillable = ['approval_id', 'level', 'approver_id', 'approver_type', 'approver_value', 'label', 'status', 'notes', 'acted_at'];
 
     protected $casts = ['acted_at' => 'datetime'];
 

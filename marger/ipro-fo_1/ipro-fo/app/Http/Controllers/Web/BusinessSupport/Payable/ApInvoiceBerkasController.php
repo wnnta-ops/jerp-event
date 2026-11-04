@@ -29,7 +29,8 @@ class ApInvoiceBerkasController extends Controller
             'data' => ['required', 'string'], // form.data() wizard (JSON — multipart tidak membawa objek bersarang dengan rapi)
             'files' => ['required', 'array', 'min:1', 'max:'.ApBerkasService::MAX_FILES],
             'files.*.file' => ['required', 'file', 'mimes:pdf,jpg,jpeg,png', 'max:10240'],
-            'files.*.berkas_id' => ['required', 'integer', 'exists:bs_ap_berkas,id'],
+            'files.*.berkas_id' => ['required', 'integer', \Illuminate\Validation\Rule::in(\App\Domain\BusinessSupport\Models\BsApBerkas::jenisTetap()->pluck('id')->all())],
+            'files.*.keterangan' => ['nullable', 'string', 'max:100'],
         ], [
             'files.required' => 'Unggah minimal satu file.',
             'files.*.file.mimes' => 'File harus PDF, JPG, atau PNG.',
@@ -39,7 +40,7 @@ class ApInvoiceBerkasController extends Controller
 
         try {
             $berkas = $this->svc->upload($request->user(), (array) json_decode($v['data'], true),
-                array_map(fn ($f) => ['file' => $f['file'], 'berkas_id' => (int) $f['berkas_id']], $v['files']));
+                \App\Domain\BusinessSupport\Models\BsApBerkas::rapikanUnggahan($v['files']));
         } catch (BusinessRuleException $e) {
             return response()->json(['message' => $e->getMessage()], 422);
         }
@@ -102,6 +103,10 @@ class ApInvoiceBerkasController extends Controller
             'id' => $link->id, 'url' => $link->url(), 'invoice_number' => $link->invoice_number, 'status' => $link->status,
             'filled_at' => $link->filled_at?->toIso8601String(),
             'berkas_upload_id' => $link->berkas_upload_id, 'berkas_number' => $link->berkas?->berkas_number,
+            // No. invoice yang diketik supplier (ada setelah link terisi) → No. Invoice Supplier di wizard.
+            'supplier_invoice_no' => $link->status === 'menunggu' ? null : ($link->data['supplier_invoice_no'] ?? null),
+            // Riwayat unggahan supplier (link bisa dipakai mengunggah ulang).
+            'riwayat' => array_values(array_reverse($link->riwayat ?? [])),
         ];
     }
 }

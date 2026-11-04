@@ -53,15 +53,37 @@ class ApprovalInboxSeeder extends Seeder
         Role::query()->with('permissions')->whereNotIn('name', ['Agent', 'Viewer'])->get()
             ->each(fn (Role $r) => $r->givePermissionTo(['approvalinbox.view', 'approvalinbox.submit']));
 
-        $chain = ApprovalChain::updateOrCreate(
-            ['tenant_id' => $tenant->id, 'project_id' => null, 'document_type' => MemoInternal::DOCUMENT_TYPE, 'code' => 'MI-DEFAULT'],
-            ['name' => 'Memo Internal', 'match_conditions' => null, 'is_active' => true],
-        );
-        foreach (MemoInternal::STEPS as $level => [$role]) {
-            ApprovalChainStep::updateOrCreate(
-                ['approval_chain_id' => $chain->id, 'level' => $level],
-                ['approver_type' => 'role', 'approver_value' => $role, 'is_final' => $level === array_key_last(MemoInternal::STEPS)],
+        // Chain lama (per peran) dinonaktifkan — memo baru memakai MI-URGENT / MI-REGULER (per user,
+        // diatur di System › Approval Chain). Approval yang sudah berjalan tetap memakai snapshot-nya.
+        ApprovalChain::query()->where('tenant_id', $tenant->id)->where('document_type', MemoInternal::DOCUMENT_TYPE)
+            ->where('code', 'MI-DEFAULT')->update(['is_active' => false]);
+
+        $alur = [
+            'MI-URGENT' => ['Memo Urgent', 'urgent', array_slice(MemoInternal::STEPS, 0, 4, true)],   // tanpa MW / BA
+            'MI-REGULER' => ['Memo Reguler', 'reguler', MemoInternal::STEPS],                          // lengkap
+        ];
+        foreach ($alur as $code => [$nama, $jenis, $steps]) {
+            $chain = ApprovalChain::firstOrCreate(
+                ['tenant_id' => $tenant->id, 'project_id' => null, 'document_type' => MemoInternal::DOCUMENT_TYPE, 'code' => $code],
+                ['name' => $nama, 'match_conditions' => ['jenis' => $jenis], 'is_active' => true],
             );
+            // Level hanya diisi saat chain baru — susunan yang sudah diatur admin tidak ditimpa.
+            if (! $chain->wasRecentlyCreated) {
+                continue;
+            }
+            $level = 0;
+            foreach ($steps as [$role, $label]) {
+                $userId = \App\Models\User::role($role)->where('tenant_id', $tenant->id)->where('is_active', true)->orderBy('id')->value('id');
+                ApprovalChainStep::create([
+                    'approval_chain_id' => $chain->id,
+                    'level' => ++$level,
+                    // Per user bila ada pemegang peran; kalau belum ada user-nya, sementara per peran.
+                    'approver_type' => $userId ? 'user' : 'role',
+                    'approver_value' => (string) ($userId ?? $role),
+                    'label' => $label,
+                    'is_final' => $level === count($steps),
+                ]);
+            }
         }
 
         Numerator::updateOrCreate(

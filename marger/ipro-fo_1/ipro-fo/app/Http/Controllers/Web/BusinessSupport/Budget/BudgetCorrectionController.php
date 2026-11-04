@@ -4,9 +4,12 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Web\BusinessSupport\Budget;
 
+use App\Domain\Approval\Actions\ActOnApproval;
+use App\Domain\ApprovalInbox\Services\ApprovalInboxQuery;
 use App\Domain\BusinessSupport\Models\BsBudget;
 use App\Domain\BusinessSupport\Models\BsBudgetCorrection;
 use App\Domain\BusinessSupport\Services\BudgetCorrectionService;
+use App\Exceptions\BusinessRuleException;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -69,7 +72,7 @@ class BudgetCorrectionController extends Controller
 
     /**
      * Simpan koreksi PER BULAN: isian = nilai baru tiap bulan; yang disimpan selisihnya terhadap
-     * anggaran bulan itu saat ini. Masuk Approval Inbox (Accounting → GM), berlaku setelah disetujui.
+     * anggaran bulan itu saat ini. Masuk Approval Inbox (Finance — chain KB-DEFAULT), berlaku setelah disetujui.
      */
     public function store(Request $request, BudgetCorrectionService $service): RedirectResponse
     {
@@ -102,25 +105,47 @@ class BudgetCorrectionController extends Controller
         $c = DB::transaction(fn () => $service->ajukanManual($budget, $tambahan, $v['corr_date'], $v['note'] ?? null, $request->user()->id));
 
         return to_route('bs.budget.correction.index', ['status' => 'baru'])
-            ->with('success', "Koreksi {$c->doc_no} diajukan ke Approval Inbox (Accounting → GM).");
+            ->with('success', "Koreksi {$c->doc_no} diajukan ke Approval Inbox (Finance).");
     }
 
-    /** Inbox approval batch koreksi. */
-    public function approvals(Request $request): Response
+    /**
+     * Inbox approval batch koreksi — termasuk koreksi dari invoice hutang & layar Koreksi Budget
+     * yang berjalan di Approval Inbox (approval_id). Untuk yang itu, Setujui/Tolak di sini =
+     * bertindak di tahap yang sedang menunggu (approval yang sama, dua pintu); kolom "Tahap"
+     * menunjukkan siapa gilirannya.
+     */
+    public function approvals(Request $request, ApprovalInboxQuery $inbox): Response
     {
-        abort_unless($request->user()?->can('budget.correction.approve'), 403);
+        $user = $request->user();
+        $koreksi = BsBudgetCorrection::with(['account:id,code,name', 'costCenter:id,code,name', 'approval.steps'])
+            ->where('status', 'baru')->orderBy('doc_no')->get();
+        $bisa = fn (BsBudgetCorrection $c) => $c->approval ? $inbox->canAct($user, $c->approval)
+            : (bool) $user?->canAny(['budget.correction.approve', 'businesssupport.approval.act']);
+        abort_unless($user?->can('budget.correction.approve') || $koreksi->contains(fn ($c) => $c->approval && $bisa($c)), 403);
 
-        $rows = BsBudgetCorrection::with(['account:id,code,name', 'costCenter:id,code,name'])
-            ->where('status', 'baru')->whereNull('approval_id')->orderBy('doc_no')->get()
-            ->map(fn ($c) => [
+        $invoice = \App\Domain\BusinessSupport\Models\BsApInvoice::query();
+        $rows = $koreksi->map(function ($c) use ($bisa, $inbox, $invoice) {
+            $tahap = $c->approval ? collect($inbox->stages($c->approval))->firstWhere('state', 'current') : null;
+
+            return [
                 'id' => $c->id, 'doc_no' => $c->doc_no, 'date' => $c->corr_date?->format('Y-m-d'),
                 'account' => $c->account?->code.' - '.$c->account?->name, 'cost_center' => $c->costCenter?->name ?? 'Semua',
                 'period' => self::labelPeriode($c),
                 'old_amount' => (float) $c->old_amount, 'new_amount' => (float) $c->new_amount,
-            ])->values();
+                'tambahan' => round(array_sum($c->tambahanBulan()), 2),
+                'invoice' => match ($c->source_type) {
+                    BsBudgetCorrection::SOURCE_INVOICE => (clone $invoice)->whereKey($c->source_id)->value('invoice_number'),
+                    \App\Domain\BusinessSupport\Models\BsApBudgetRequest::SOURCE => \App\Domain\BusinessSupport\Models\BsApBudgetRequest::query()->whereKey($c->source_id)->value('invoice_number'),
+                    default => null,
+                },
+                'tahap' => $tahap ? trim($tahap['label'].($tahap['role'] ? ' — '.$tahap['role'] : '')) : null,
+                'approval_url' => $c->approval_id ? route('approval-inbox.show', $c->approval_id) : null,
+                'bisa' => $bisa($c),
+            ];
+        })->values();
 
         return Inertia::render('BusinessSupport/Budget/Corrections/Approvals', [
-            'rows' => $rows, 'canApprove' => (bool) $request->user()?->canAny(['budget.correction.approve', 'businesssupport.approval.act']),
+            'rows' => $rows, 'canApprove' => $rows->contains('bisa', true),
             'summary' => ['count' => $rows->count()],
         ]);
     }
@@ -128,24 +153,39 @@ class BudgetCorrectionController extends Controller
     /** Approve menerapkan Nilai Baru ke master budget; reject hanya menandai. */
     public function approveBatch(Request $request): RedirectResponse
     {
-        abort_unless($request->user()?->canAny(['budget.correction.approve', 'businesssupport.approval.act']), 403);
         $v = $request->validate([
             'ids'      => ['required', 'array', 'min:1'],
             'ids.*'    => ['integer', 'exists:bs_budget_corrections,id'],
             'decision' => ['required', 'in:approve,reject'],
         ]);
         $approve = $v['decision'] === 'approve';
+        $bolehLama = (bool) $request->user()?->canAny(['budget.correction.approve', 'businesssupport.approval.act']);
 
-        // Koreksi yang diajukan dari invoice hutang diputuskan di Approval Inbox (approval_id) —
-        // tidak ikut di sini, supaya satu koreksi tidak punya dua jalur keputusan.
-        DB::transaction(function () use ($v, $request, $approve): void {
-            $corrections = BsBudgetCorrection::whereIn('id', $v['ids'])->where('status', 'baru')->whereNull('approval_id')->get();
-            foreach ($corrections as $c) {
-                app(BudgetCorrectionService::class)->putuskan($c, $approve, $request->user()->id);
+        // Koreksi di Approval Inbox (approval_id): bertindak di tahap yang menunggu lewat ActOnApproval —
+        // hak per tahap sama dengan Inbox; tahap terakhir disetujui → diterapkan (SyncBudgetCorrectionStatus).
+        // Koreksi lama tanpa approval_id: diputuskan langsung seperti dulu.
+        $hasil = ['final' => 0, 'tahap' => 0];
+        $gagal = [];
+        foreach (BsBudgetCorrection::with('approval.steps')->whereIn('id', $v['ids'])->where('status', 'baru')->orderBy('id')->get() as $c) {
+            try {
+                if ($c->approval) {
+                    app(ActOnApproval::class)->execute($c->approval, $approve ? 'approve' : 'reject');
+                    $c->refresh()->status !== 'baru' ? $hasil['final']++ : $hasil['tahap']++;
+                } elseif ($bolehLama) {
+                    DB::transaction(fn () => app(BudgetCorrectionService::class)->putuskan($c, $approve, $request->user()->id));
+                    $hasil['final']++;
+                } else {
+                    $gagal[] = $c->doc_no.': tidak berhak';
+                }
+            } catch (BusinessRuleException $e) {
+                $gagal[] = $c->doc_no.': '.$e->getMessage();
             }
-        });
+        }
+        $pesan = trim(($hasil['final'] ? $hasil['final'].' koreksi '.($approve ? 'disetujui & diterapkan ke master budget. ' : 'ditolak. ') : '')
+            .($hasil['tahap'] ? $hasil['tahap'].' koreksi disetujui di tahap Anda — lanjut ke tahap berikutnya. ' : ''));
 
-        return back()->with('success', $approve ? 'Koreksi disetujui & diterapkan.' : 'Koreksi ditolak.');
+        return $gagal ? back()->with($pesan !== '' ? 'warning' : 'error', trim($pesan.' Gagal: '.implode(' · ', $gagal)))
+            : back()->with('success', $pesan);
     }
 
     /** "Nov, Des 2026" untuk koreksi per bulan; koreksi lama "Jan s/d Des 2026". */

@@ -18,29 +18,33 @@ use Illuminate\Support\Facades\DB;
 /**
  * Memo Urgent dibayar di Registrasi Pengeluaran Kas & Bank (AP) SEBELUM invoice hutangnya ada.
  *
- *   Bayar memo : Dr Uang Muka (dipilih kasir, 10107…) / Cr Kas/Bank — kuitansi langsung aktif
+ *   Bayar memo : Dr AKUN MEMO URGENT (pakem, 10107030304) / Cr Kas/Bank — kuitansi langsung aktif
  *                (memo sudah disetujui sampai Direktur; TTD MW / BA menyusul di cetakan).
  *   Invoice    : WAJIB menyusul, menarik memo itu (total ≥ yang sudah dibayar). Saat invoice dibayar
  *                di Kuitansi, uang muka memo WAJIB dipotong: Dr Hutang / Cr Uang Muka (+ Cr Kas sisanya).
  *   Penegakan  : pengaju yang punya memo dibayar tanpa invoice lewat N hari (parameter
- *                memo.batas_hari_invoice) tidak bisa mengajukan memo baru.
+ *                memo.batas_hari_invoice, default 7) tidak bisa mengajukan memo baru. Selama
+ *                belum ada invoice, pengaju diingatkan lewat pop-up tiap login (hitung mundur).
  *
  * Satu memo dibayar sekali, paling banyak sebesar nominal memo.
  */
 final class PembayaranMemoUrgent
 {
-    public const BATAS_HARI_DEFAULT = 14;
+    public const BATAS_HARI_DEFAULT = 7;
 
-    /** Akun uang muka yang boleh didebit saat membayar memo (UANG MUKA … di aset lancar). */
-    public const PREFIX_AKUN_UANG_MUKA = '10107';
+    /** Penanda sesi: pop-up pengingat memo dibayar tanpa invoice tampil sekali tiap login. */
+    public const SESI_PENGINGAT = 'pengingat_memo_urgent';
+
+    /** Akun pakem yang didebit saat membayar memo: 10107030304 AKUN MEMO URGENT (di bawah Uang Muka Lainnya). */
+    public const KODE_AKUN_MEMO = '10107030304';
 
     public function __construct(private readonly JournalService $journal) {}
 
-    /** Akun uang muka yang bisa dipilih kasir. */
-    public function akunUangMuka(): Collection
+    /** Akun pakem Memo Urgent (null bila COA-nya belum ada / nonaktif). */
+    public function akunMemo(): ?BsAccount
     {
         return BsAccount::query()->where('is_active', true)->where('is_postable', true)
-            ->where('code', 'like', self::PREFIX_AKUN_UANG_MUKA.'%')->orderBy('code')->get(['id', 'code', 'name']);
+            ->where('code', self::KODE_AKUN_MEMO)->first(['id', 'code', 'name']);
     }
 
     /**
@@ -53,9 +57,10 @@ final class PembayaranMemoUrgent
         $berinvoice = BsApInvoice::query()->whereNotNull('memo_internal_id')->where('status', '!=', BsApInvoice::STATUS_BATAL)->pluck('memo_internal_id');
 
         return MemoInternal::query()
+            ->where('jenis', 'urgent')
             ->where('status', '!=', 'ditolak')->whereNotNull('supplier_id')
             ->whereNotIn('id', $dibayar->merge($berinvoice)->all() ?: [0])
-            ->whereHas('approval.steps', fn ($q) => $q->where('level', MemoUntukInvoice::LEVEL_DIREKTUR)->where('status', 'approved'))
+            ->lewatDirektur()
             ->with(['approval.steps', 'supplier:id,code,name'])
             ->orderByDesc('memo_date')->orderByDesc('id')->get();
     }
@@ -63,7 +68,7 @@ final class PembayaranMemoUrgent
     /**
      * Bayar satu memo. Kuitansi langsung aktif + jurnal terposting.
      *
-     * @param  array{memo_internal_id:int, kuitansi_date:string, cash_account_id:int, advance_account_id:int, amount:float|int|string,
+     * @param  array{memo_internal_id:int, kuitansi_date:string, cash_account_id:int, advance_account_id?:int, amount:float|int|string,
      *               alat_transaksi?:string, kasir?:?string, manual_no?:?string, bg_number?:?string, description?:?string}  $data
      *
      * @throws BusinessRuleException
@@ -82,9 +87,12 @@ final class PembayaranMemoUrgent
             if ($nilai > (float) $memo->amount + 0.001) {
                 throw new BusinessRuleException('Nominal dibayar melebihi nominal memo (Rp '.number_format((float) $memo->amount, 0, ',', '.').').', errorCode: 'MEMO_BAYAR_LEBIH');
             }
-            if (! $this->akunUangMuka()->contains('id', (int) $data['advance_account_id'])) {
-                throw new BusinessRuleException('Pilih akun uang muka (10107…).', errorCode: 'MEMO_BAYAR_AKUN');
+            // Akun debit selalu AKUN MEMO URGENT — pilihan dari layar (bila ada) diabaikan.
+            $akunMemo = $this->akunMemo();
+            if (! $akunMemo) {
+                throw new BusinessRuleException('Akun '.self::KODE_AKUN_MEMO.' AKUN MEMO URGENT belum ada / nonaktif di COA.', errorCode: 'MEMO_BAYAR_AKUN');
             }
+            $data['advance_account_id'] = $akunMemo->id;
 
             $kui = BsApKuitansi::create([
                 'kuitansi_number' => app(ApKuitansiService::class)->nextNumber($data['kuitansi_date']),
@@ -166,7 +174,7 @@ final class PembayaranMemoUrgent
      * Memo sudah dibayar tapi invoice hutangnya belum masuk (opsional: milik satu pengaju).
      *
      * @return Collection<int, array{memo_id:int, memo_number:string, subject:string, supplier:?string, pengaju:?string, pengaju_id:int,
-     *                               kuitansi_id:int, kuitansi_number:string, tanggal_bayar:string, nilai:float, umur:int, lewat:bool, approval_url:?string}>
+     *                               kuitansi_id:int, kuitansi_number:string, tanggal_bayar:string, nilai:float, umur:int, sisa:int, lewat:bool, approval_url:?string}>
      */
     public function outstanding(?int $pengajuId = null): Collection
     {
@@ -185,7 +193,7 @@ final class PembayaranMemoUrgent
                     'memo_id' => $k->memo->id, 'memo_number' => $k->memo->memo_number, 'subject' => (string) $k->memo->subject,
                     'supplier' => $k->supplier?->name, 'pengaju' => $k->memo->creator?->name, 'pengaju_id' => (int) $k->memo->created_by,
                     'kuitansi_id' => $k->id, 'kuitansi_number' => $k->kuitansi_number, 'tanggal_bayar' => $k->kuitansi_date->toDateString(),
-                    'nilai' => (float) $k->total, 'umur' => $umur, 'lewat' => $umur > $batas,
+                    'nilai' => (float) $k->total, 'umur' => $umur, 'sisa' => $batas - $umur, 'lewat' => $umur > $batas,
                     'approval_url' => $k->memo->approval_id ? route('approval-inbox.show', $k->memo->approval_id) : null,
                 ];
             })->values();
@@ -223,10 +231,12 @@ final class PembayaranMemoUrgent
         $kasir = $k->created_by ? User::find($k->created_by) : null;
         $kotak = [['title' => 'Kasir', 'name' => $k->kasir ?? $kasir?->name, 'signed' => true, 'at' => $k->created_at?->format('d/m/Y H:i'), 'img' => $img($kasir)]];
         $steps = $k->memo?->approval?->steps ?? collect();
-        foreach ([MemoUntukInvoice::LEVEL_DIREKTUR, array_key_last(MemoInternal::STEPS)] as $level) {
-            $st = $steps->firstWhere('level', $level);
+        // Dicari per NAMA tahap (chain bisa diatur). Memo yang chain-nya tanpa MW / BA (Memo Urgent)
+        // tetap mendapat kotaknya, kosong untuk TTD basah.
+        foreach ([MemoInternal::LABEL_DIREKTUR, MemoInternal::LABEL_MW_BA] as $label) {
+            $st = $steps->first(fn ($s) => MemoInternal::labelTahap($s) === $label);
             $u = $st?->status === 'approved' && $st->approver_id ? User::find($st->approver_id) : null;
-            $kotak[] = ['title' => MemoInternal::STEPS[$level][1], 'name' => $u?->name, 'signed' => $u !== null,
+            $kotak[] = ['title' => $label, 'name' => $u?->name, 'signed' => $u !== null,
                 'at' => $u ? $st->acted_at?->format('d/m/Y H:i') : null, 'img' => $img($u)];
         }
 

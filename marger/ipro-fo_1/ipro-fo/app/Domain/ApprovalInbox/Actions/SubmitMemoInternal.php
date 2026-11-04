@@ -21,19 +21,27 @@ final class SubmitMemoInternal
     ) {}
 
     /**
-     * @param array{memo_date:string, department:string, supplier_id:int, subject:string, body:string, amount?:float|null} $data
+     * @param array{memo_date:string, jenis:string, department:string, supplier_id:int, subject:string, body:string, amount?:float|null} $data
      */
     public function execute(array $data): MemoInternal
     {
+        // Dengan rincian pajak: nominal memo = Dibayar (net) — dihitung di server, bukan dari layar.
+        if (isset($data['dpp'])) {
+            $data['amount'] = \App\Domain\BusinessSupport\Support\PajakHutang::hitung($data)['net'];
+        }
+
         return DB::transaction(function () use ($data): MemoInternal {
             $memo = MemoInternal::create([
                 ...$data,
+                'jenis' => $data['jenis'] ?? 'urgent',
                 'memo_number' => $this->numerator->next('MI'),
                 'status' => 'diajukan',
                 'created_by' => auth()->id(),
             ]);
 
+            // 'jenis' juga konteks pemilihan chain (match_conditions {"jenis": "urgent"|"reguler"}).
             $approval = $this->submit->execute(MemoInternal::DOCUMENT_TYPE, $memo, [
+                'jenis' => $memo->jenis,
                 'memo_number' => $memo->memo_number,
                 'subject' => $memo->subject,
                 'department' => $memo->department,
