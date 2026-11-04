@@ -28,7 +28,7 @@ class KontrakResource extends Resource
     // Menu SPRS hanya menampilkan kontrak tahap SPRS; yang sudah final ada di menu SPR.
     public static function getEloquentQuery(): Builder
     {
-        return parent::getEloquentQuery()->where('tahap', 'SPRS')->with('skema');
+        return parent::getEloquentQuery()->where('tahap', 'SPRS')->with(['skema', 'agent']);
     }
 
     protected static ?string $navigationIcon = 'heroicon-o-document-text';
@@ -385,7 +385,15 @@ class KontrakResource extends Resource
                         ->orderBy('tgl_kontrak', $direction)
                         ->orderBy('id', $direction)),
                 Tables\Columns\TextColumn::make('tgl_kontrak')->label('Tgl')->date('d M Y')->sortable(),
-                Tables\Columns\TextColumn::make('customer.full_name')->label('Customer')->searchable(),
+                // Di bawah nama customer: sales SPR (master agent_id) · kantor agensinya (puncak rantai atasan).
+                // Pencarian ikut nama sales.
+                Tables\Columns\TextColumn::make('customer.full_name')->label('Customer')
+                    ->description(fn (Kontrak $r) => $r->agent
+                        ? '👤 '.collect([$r->agent->name, $r->agent->kantorId() !== $r->agent->id ? $r->agent->namaKantor() : null])->filter()->implode(' · ')
+                        : null)
+                    ->searchable(query: fn (Builder $query, string $search) => $query->where(fn (Builder $w) => $w
+                        ->whereHas('customer', fn (Builder $c) => $c->where('full_name', 'like', "%{$search}%"))
+                        ->orWhereHas('agent', fn (Builder $a) => $a->where('name', 'like', "%{$search}%")))),
                 Tables\Columns\TextColumn::make('unit.kode_unit')
                     ->label('Unit')
                     ->placeholder('—')
