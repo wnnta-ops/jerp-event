@@ -224,7 +224,8 @@ class ApprovalResource extends Resource
         $rows = \App\Modules\FO\Komisi\Models\Blt::query()
             ->with(['agent', 'kontrak.customer', 'kontrak.unit'])
             ->where('no_pengajuan', $no)
-            ->orderByRaw("FIELD(level_type,'SALES','KOORDINATOR','KANTOR')")->get();
+            ->orderBy('id')->get()
+            ->sortBy(fn ($b) => [\App\Modules\FO\Komisi\Models\Blt::urutLevel($b->level_type), $b->id]);
         $rp = fn ($v) => 'Rp '.number_format((float) $v, 0, ',', '.');
         $th = fn ($t, $align = 'left') => '<th style="padding:5px 8px;border-bottom:1px solid #334155;text-align:'.$align.';white-space:nowrap;">'.$t.'</th>';
         $td = fn ($t, $align = 'left') => '<td style="padding:4px 8px;border-bottom:1px solid #1e293b;text-align:'.$align.';'.($align !== 'left' ? 'white-space:nowrap;' : '').'">'.$t.'</td>';
