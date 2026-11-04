@@ -76,7 +76,8 @@ class RealisasiBlt extends Page implements HasTable
                             $poster = app(\App\Modules\BO\IproBridge\Services\IproApPoster::class);
                             $rows = Blt::query()->where('no_pengajuan', $r->no_pengajuan)->where('status', 'PAID')
                                 ->with(['kontrak.customer:id,full_name', 'kontrak.unit:id,kode_unit,blok,no_unit'])
-                                ->orderByRaw("FIELD(level_type,'SALES','KOORDINATOR','KANTOR')")->orderBy('id')->get();
+                                ->orderBy('id')->get()
+                                ->sortBy(fn (Blt $b) => [Blt::urutLevel($b->level_type), $b->id])->values();
 
                             $ok = 0;
                             $lewat = [];
