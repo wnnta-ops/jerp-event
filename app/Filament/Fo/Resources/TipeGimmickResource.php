@@ -5,8 +5,10 @@ namespace App\Filament\Fo\Resources;
 use App\Filament\Concerns\MematuhiIzin;
 use App\Filament\Fo\Resources\TipeGimmickResource\Pages;
 use App\Modules\FO\Adminjual\Models\TipeGimmick;
+use App\Modules\FO\MarketingSales\Models\Lokasi;
 use Filament\Forms;
 use Filament\Forms\Form;
+use Filament\Forms\Get;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
@@ -38,7 +40,16 @@ class TipeGimmickResource extends Resource
                     Forms\Components\TextInput::make('kode')->label('No. ID')
                         ->default('#AUTO')->disabled()->dehydrated(false),
                     Forms\Components\Select::make('project_id')->label('Project')
-                        ->relationship('project', 'name')->searchable()->preload()->placeholder('Semua'),
+                        ->relationship('project', 'name')->searchable()->preload()->placeholder('Semua')
+                        ->live()->afterStateUpdated(fn (callable $set) => $set('lokasi_id', null)),
+                    // Closing NUP & tab Gimmick SPR hanya menawarkan paket milik cluster unit.
+                    Forms\Components\Select::make('lokasi_id')->label('Cluster')
+                        ->options(fn (Get $get) => Lokasi::query()->where('is_active', true)
+                            ->when($get('project_id'), fn ($q, $pid) => $q->where('project_id', $pid))
+                            ->orderBy('kode')->pluck('nama', 'id'))
+                        ->searchable()->preload()
+                        ->placeholder('— Semua cluster')
+                        ->helperText('Kosong → paket muncul di semua cluster.'),
                     Forms\Components\TextInput::make('nama')->label('Nama')->required()->maxLength(255)
                         ->placeholder('mis. CLUSTER 3.3, REGULER, PRIORITAS')->columnSpanFull(),
                     Forms\Components\Toggle::make('is_active')->label('Aktif')->default(true),
@@ -52,6 +63,7 @@ class TipeGimmickResource extends Resource
             Tables\Columns\TextColumn::make('kode')->label('No. ID')->badge()->searchable()->sortable(),
             Tables\Columns\TextColumn::make('nama')->label('Nama')->searchable()->sortable(),
             Tables\Columns\TextColumn::make('project.name')->label('Project')->placeholder('Semua')->toggleable(),
+            Tables\Columns\TextColumn::make('lokasi.nama')->label('Cluster')->placeholder('Semua')->toggleable(),
             Tables\Columns\TextColumn::make('gimmicks_count')->counts('gimmicks')->label('# Item')->alignEnd(),
             Tables\Columns\IconColumn::make('is_active')->label('Aktif')->boolean(),
         ])->filters([

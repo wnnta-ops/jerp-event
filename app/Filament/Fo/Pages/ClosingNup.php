@@ -9,6 +9,8 @@ use App\Modules\FO\FinanceAR\Models\Tts;
 use App\Modules\FO\FinanceAR\Services\TtsToBkmService;
 use App\Modules\FO\Launching\Models\NupRegistration;
 use App\Modules\FO\Launching\Services\ClosingNupService;
+use App\Modules\FO\MarketingSales\Services\PaketGimmickService;
+use App\Support\Rupiah;
 use Filament\Forms;
 use Filament\Forms\Concerns\InteractsWithForms;
 use Filament\Forms\Contracts\HasForms;
@@ -19,6 +21,7 @@ use Filament\Tables;
 use Filament\Tables\Concerns\InteractsWithTable;
 use Filament\Tables\Contracts\HasTable;
 use Filament\Tables\Table;
+use Livewire\Attributes\Locked;
 use Livewire\Attributes\On;
 
 /**
@@ -47,8 +50,32 @@ class ClosingNup extends Page implements HasForms, HasTable
      * Kwitansi — operator hari-H tak perlu berpindah ke Finance AR → TTS.
      * Idempoten: TTS yang sudah jadi BKM hanya menampilkan tombol cetaknya.
      */
-    #[On('bukaKwitansi')]
-    public function bukaKwitansi(int $ttsId): void
+    /**
+     * Hasil closing terakhir — isi jendela "Closing Berhasil" (kwitansi, SPR, jadwal).
+     *
+     * @var array<string,mixed>|null
+     */
+    #[Locked]
+    public ?array $hasil = null;
+
+    /** Tombol "Buka Kwitansi" di jendela hasil closing. */
+    public function bukaKwitansiHasil(): void
+    {
+        if (! $this->hasil || $this->hasil['bkm_id']) {
+            return;
+        }
+        $bkm = $this->konversiTts((int) $this->hasil['tts_id']);
+        if ($bkm) {
+            $this->hasil['bkm_id'] = $bkm->id;
+            $this->hasil['no_bkm'] = $bkm->no_bkm;
+        }
+    }
+
+    /**
+     * TTS → BKM dengan batasan keamanan (lihat bukaKwitansi). Null bila gagal —
+     * notifikasi error sudah dikirim.
+     */
+    private function konversiTts(int $ttsId): ?Bkm
     {
         // KEAMANAN: metode Livewire publik bisa dipanggil langsung dari browser
         // dengan id sembarang. Tanpa batasan, siapa pun yang membuka halaman ini
@@ -67,7 +94,7 @@ class ClosingNup extends Page implements HasForms, HasTable
             Notification::make()->danger()->title('TTS tidak ditemukan')
                 ->body('Kwitansi hanya bisa dibuka untuk TTS booking dari Closing NUP.')->send();
 
-            return;
+            return null;
         }
 
         try {
@@ -76,18 +103,30 @@ class ClosingNup extends Page implements HasForms, HasTable
                 throw new \RuntimeException('Kwitansi gagal dibuat.');
             }
 
-            Notification::make()->success()
-                ->title('Kwitansi '.$bkm->no_bkm.' siap')
-                ->body($tts->bkm_id ? 'Kwitansi untuk TTS ini sudah pernah dibuka.' : 'TTS '.$tts->no_tts.' berhasil dibuka menjadi kwitansi.')
-                ->actions([
-                    NotificationAction::make('cetak_kwitansi')->label('Cetak Kwitansi')->button()
-                        ->url(route('fo.cetak.kwitansi', $bkm), shouldOpenInNewTab: true),
-                ])
-                ->persistent()
-                ->send();
+            return $bkm;
         } catch (\Throwable $e) {
             Notification::make()->danger()->title('Gagal buka kwitansi')->body($e->getMessage())->send();
+
+            return null;
         }
+    }
+
+    #[On('bukaKwitansi')]
+    public function bukaKwitansi(int $ttsId): void
+    {
+        $bkm = $this->konversiTts($ttsId);
+        if (! $bkm) {
+            return;
+        }
+
+        Notification::make()->success()
+            ->title('Kwitansi '.$bkm->no_bkm.' siap')
+            ->actions([
+                NotificationAction::make('cetak_kwitansi')->label('Cetak Kwitansi')->button()
+                    ->url(route('fo.cetak.kwitansi', $bkm), shouldOpenInNewTab: true),
+            ])
+            ->persistent()
+            ->send();
     }
 
     public function table(Table $table): Table
@@ -174,7 +213,7 @@ class ClosingNup extends Page implements HasForms, HasTable
                         Forms\Components\Select::make('cara_bayar')
                             ->label('Cara Bayar')
                             ->options(['KPR' => 'KPR', 'CASH_BERTAHAP' => 'Cash bertahap', 'CASH' => 'Cash keras'])
-                            ->default('KPR')->required(),
+                            ->default('KPR')->required()->live(),
                         // Sales TIDAK bisa dipilih di sini: yang berhak adalah sales yang
                         // mendaftarkan NUP-nya, dan itu sudah tercatat sejak form NUP. Dulu ini
                         // dropdown bebas, sehingga closing bisa memindahkan komisi ke sales lain
@@ -186,31 +225,74 @@ class ClosingNup extends Page implements HasForms, HasTable
                             ->content(fn (NupRegistration $r) => $r->agent
                                 ? trim(($r->agent->code ? $r->agent->code.' — ' : '').$r->agent->name)
                                 : ($r->ref_sales_name ?: '— tidak ada sales pada NUP ini —')),
+
+                        // Paket Gimmick (Tipe Gimmick) — semua item tercentang, yang tidak
+                        // didapat customer tinggal dilepas. Yang tercentang tercetak di SPR.
+                        Forms\Components\Section::make('Gimmick')
+                            ->collapsible()
+                            ->schema([
+                                Forms\Components\Select::make('tipe_gimmick_id')->label('Paket Gimmick')
+                                    ->options(fn (NupRegistration $r) => app(PaketGimmickService::class)->opsiPaket($r->reservasi?->unit))
+                                    ->searchable()->placeholder('— Tanpa gimmick')
+                                    ->live()
+                                    ->afterStateUpdated(fn ($state, Forms\Set $set) => $set('gimmick_ids',
+                                        array_map('strval', array_keys(app(PaketGimmickService::class)->itemPaket($state ? (int) $state : null))))),
+                                Forms\Components\CheckboxList::make('gimmick_ids')->label('Item yang didapat customer')
+                                    ->options(fn (Forms\Get $get) => app(PaketGimmickService::class)->itemPaket($get('tipe_gimmick_id') ? (int) $get('tipe_gimmick_id') : null))
+                                    ->visible(fn (Forms\Get $get) => filled($get('tipe_gimmick_id')))
+                                    ->bulkToggleable()->columns(2),
+                            ]),
+
+                        // Tambah DP — sama dengan tombol "Tambah DP" di Edit SPR: tiap baris
+                        // jadi tagihan TAMBAH DP & Pencairan KPR otomatis berkurang.
+                        Forms\Components\Section::make('Tambah DP (opsional)')
+                            ->description('DP tambahan dari customer. Pencairan KPR otomatis berkurang sebesar nominalnya, total tetap = harga unit.')
+                            ->visible(fn (Forms\Get $get) => $get('cara_bayar') === 'KPR')
+                            ->collapsible()
+                            ->schema([
+                                Forms\Components\Repeater::make('tambah_dp')->label('')
+                                    ->defaultItems(0)->addActionLabel('Tambah DP')
+                                    ->columns(2)
+                                    ->schema([
+                                        Forms\Components\TextInput::make('nominal')->label('Nominal Tambah DP')->numeric()->rupiah()->required(),
+                                        Forms\Components\DatePicker::make('jatuh_tempo')->label('Jatuh Tempo')->default(now())->required(),
+                                    ]),
+                            ]),
                     ])
-                    ->action(function (NupRegistration $r, array $data) {
+                    ->action(function (NupRegistration $r, array $data, ClosingNup $livewire) {
                         try {
+                            $caraBayar = $data['cara_bayar'] ?? 'KPR';
                             $result = app(ClosingNupService::class)->close($r, [
                                 'skema_id' => (int) $data['skema_id'],
                                 // Dari NUP-nya, bukan dari form — bidangnya memang tidak bisa diisi.
                                 'agent_id' => $r->agent_id,
-                                'cara_bayar' => $data['cara_bayar'] ?? 'KPR',
+                                'cara_bayar' => $caraBayar,
                                 'tgl_kontrak' => $data['tgl_kontrak'] ?? now()->toDateString(),
+                                'gimmick_ids' => filled($data['tipe_gimmick_id'] ?? null) ? ($data['gimmick_ids'] ?? []) : [],
+                                'tambah_dp' => $caraBayar === 'KPR'
+                                    ? collect($data['tambah_dp'] ?? [])->map(fn ($row) => [
+                                        'nominal' => (float) Rupiah::toFloat($row['nominal'] ?? 0),
+                                        'jatuh_tempo' => $row['jatuh_tempo'] ?? null,
+                                    ])->values()->all()
+                                    : [],
                             ]);
-                            Notification::make()
-                                ->success()
-                                ->title('Closing berhasil — Kontrak '.$result['kontrak']->no_kontrak)
-                                ->body('TTS '.$result['tts']->no_tts.' dibuat. Kwitansi bisa dibuka langsung dari sini.')
-                                ->actions([
-                                    // Buka kwitansi TANPA pindah ke Finance AR → TTS.
-                                    NotificationAction::make('buka_kwitansi')->label('Buka Kwitansi')->button()
-                                        ->dispatch('bukaKwitansi', [$result['tts']->id]),
-                                    NotificationAction::make('spr')->label('Cetak SPR')
-                                        ->url(route('fo.cetak.spr', $result['kontrak']), shouldOpenInNewTab: true),
-                                    NotificationAction::make('jadwal')->label('Jadwal Pembayaran')
-                                        ->url(route('fo.cetak.jadwal', $result['kontrak']), shouldOpenInNewTab: true),
-                                ])
-                                ->persistent()
-                                ->send();
+
+                            // Jendela "Closing Berhasil": kwitansi, SPR & jadwal di satu tempat —
+                            // dulu hanya toast kecil di pojok yang mudah terlewat.
+                            $k = $result['kontrak'];
+                            $livewire->hasil = [
+                                'kontrak_id' => $k->id,
+                                'no_kontrak' => $k->no_kontrak,
+                                'tts_id' => $result['tts']->id,
+                                'no_tts' => $result['tts']->no_tts,
+                                'bkm_id' => null,
+                                'no_bkm' => null,
+                                'customer' => $r->customer?->full_name ?: $r->nama_pendaftar,
+                                'unit' => $k->unit?->kode_unit ?: $k->unit?->label,
+                                'gimmick' => $result['gimmick'] ?? 0,
+                                'tambah_dp' => $result['tambah_dp'] ?? 0,
+                            ];
+                            $livewire->dispatch('open-modal', id: 'hasil-closing');
                         } catch (\Throwable $e) {
                             Notification::make()->danger()->title('Gagal closing')->body($e->getMessage())->send();
                         }

@@ -8,6 +8,7 @@ use App\Modules\FO\Approval\Services\ApprovalService;
 use App\Modules\FO\MarketingSales\Models\Kontrak;
 use App\Modules\FO\MarketingSales\Models\Unit;
 use App\Modules\FO\MarketingSales\Services\KontrakGeneratorService;
+use App\Modules\FO\MarketingSales\Services\TambahDpService;
 use App\Support\Rupiah;
 use Filament\Actions;
 use Filament\Forms\Components\DatePicker;
@@ -108,27 +109,7 @@ class EditKontrak extends EditRecord
      */
     private function recomputePencairanKprDb(): bool
     {
-        if ($this->record->dariDataLama() || strtoupper((string) $this->record->cara_bayar) !== 'KPR') {
-            return false;
-        }
-        $tagihan = $this->record->tagihan()->get();
-        $kpr = $tagihan->first(fn ($t) => $t->tipe === 'ANG' && str_contains(strtoupper((string) $t->nama_tagihan), 'PENCAIRAN'))
-            ?? $tagihan->first(fn ($t) => $t->tipe === 'ANG');
-        if (! $kpr) {
-            return false;
-        }
-        $harga = (float) $this->record->total_kontrak;
-        $lain = $tagihan->reject(fn ($t) => $t->id === $kpr->id || $t->tipe === 'GMC')
-            ->sum(fn ($t) => (float) $t->nilai);
-        $baru = max(0, round($harga - $lain));
-
-        if (abs((float) $kpr->nilai - $baru) >= 1) {
-            $kpr->update(['nilai' => $baru]);
-
-            return true;
-        }
-
-        return false;
+        return app(TambahDpService::class)->recomputePencairanKpr($this->record);
     }
 
     /**
@@ -194,15 +175,6 @@ class EditKontrak extends EditRecord
             });
     }
 
-    /** Data lama: tambah/kurangi nilai baris Pencairan KPR sebesar $selisih (tanpa hitung ulang dari harga). */
-    private function geserPencairanKpr(float $selisih): void
-    {
-        $tagihan = $this->record->tagihan()->get();
-        $kpr = $tagihan->first(fn ($t) => $t->tipe === 'ANG' && str_contains(strtoupper((string) $t->nama_tagihan), 'PENCAIRAN'))
-            ?? $tagihan->first(fn ($t) => $t->tipe === 'ANG');
-        $kpr?->update(['nilai' => max(0, round((float) $kpr->nilai + $selisih))]);
-    }
-
     /**
      * Tombol "Tambah DP" — DP tambahan dari customer yang OTOMATIS mengurangi
      * Pencairan KPR. Membuat baris tipe TDP + hitung ulang Pencairan + reload.
@@ -223,19 +195,7 @@ class EditKontrak extends EditRecord
                 if ($nominal <= 0) {
                     return;
                 }
-                $urut = (int) ($this->record->tagihan()->max('urutan') ?? 0) + 1;
-                $this->record->tagihan()->create([
-                    'urutan' => max(60, $urut),
-                    'tipe' => 'TDP',
-                    'nama_tagihan' => 'TAMBAH DP',
-                    'jatuh_tempo' => $data['jatuh_tempo'] ?? now(),
-                    'nilai' => $nominal,
-                    'pelunasan' => 0,
-                ]);
-                // Data lama: Pencairan KPR dikurangi sebesar Tambah DP (bukan dihitung ulang dari harga).
-                $this->record->dariDataLama()
-                    ? $this->geserPencairanKpr(-$nominal)
-                    : $this->recomputePencairanKprDb();
+                app(TambahDpService::class)->tambah($this->record, $nominal, $data['jatuh_tempo'] ?? null);
                 Notification::make()->success()->title('Tambah DP Rp '.number_format($nominal, 0, ',', '.'))
                     ->body('Pencairan KPR otomatis dikurangi.')->send();
                 $this->redirect($this->getResource()::getUrl('edit', ['record' => $this->getRecord()]));
@@ -252,11 +212,7 @@ class EditKontrak extends EditRecord
             ->modalHeading('Batalkan Tambah DP')
             ->modalDescription('Semua baris Tambah DP dihapus & Pencairan KPR dikembalikan.')
             ->action(function () {
-                $tdp = (float) $this->record->tagihan()->where('tipe', 'TDP')->sum('nilai');
-                $this->record->tagihan()->where('tipe', 'TDP')->delete();
-                $this->record->dariDataLama()
-                    ? $this->geserPencairanKpr($tdp)
-                    : $this->recomputePencairanKprDb();
+                app(TambahDpService::class)->batal($this->record);
                 Notification::make()->success()->title('Tambah DP dibatalkan')
                     ->body('Pencairan KPR dikembalikan.')->send();
                 $this->redirect($this->getResource()::getUrl('edit', ['record' => $this->getRecord()]));

@@ -10,6 +10,8 @@ use App\Modules\FO\MarketingSales\Models\Reservasi;
 use App\Modules\FO\MarketingSales\Models\Unit;
 use App\Modules\FO\MarketingSales\Models\UnitPricelist;
 use App\Modules\FO\MarketingSales\Services\KontrakGeneratorService;
+use App\Modules\FO\MarketingSales\Services\PaketGimmickService;
+use App\Modules\FO\MarketingSales\Services\TambahDpService;
 use App\Services\Numerator\NumeratorServiceInterface;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
@@ -32,8 +34,8 @@ class ClosingNupService
     ) {}
 
     /**
-     * @param  array{skema_id:int,agent_id?:int|null,cara_bayar?:string,tgl_kontrak?:string}  $data
-     * @return array{kontrak:Kontrak,tts:Tts}
+     * @param  array{skema_id:int,agent_id?:int|null,cara_bayar?:string,tgl_kontrak?:string,gimmick_ids?:array<int|string>,tambah_dp?:array<int,array{nominal:float,jatuh_tempo?:string|null}>}  $data
+     * @return array{kontrak:Kontrak,tts:Tts,gimmick:int,tambah_dp:int}
      */
     public function close(NupRegistration $reg, array $data): array
     {
@@ -104,6 +106,21 @@ class ClosingNupService
             // Jadwal Komisi (skema komisi), & Gimmick (master).
             app(KontrakGeneratorService::class)->all($kontrak);
 
+            // Gimmick paket yang dicentang operator → DIBERIKAN (tercetak di SPR).
+            $gimmick = app(PaketGimmickService::class)->berikan($kontrak, $data['gimmick_ids'] ?? []);
+
+            // Tambah DP (KPR) — sama dengan tombol Tambah DP di Edit SPR.
+            $tambahDp = 0;
+            if (strtoupper($caraBayar) === 'KPR') {
+                foreach ($data['tambah_dp'] ?? [] as $row) {
+                    $nominal = (float) ($row['nominal'] ?? 0);
+                    if ($nominal > 0) {
+                        app(TambahDpService::class)->tambah($kontrak, $nominal, $row['jatuh_tempo'] ?? null);
+                        $tambahDp++;
+                    }
+                }
+            }
+
             // Tahap SPR (final) → Faktur Penjualan terbit — selaras promoteToSpr /
             // tombol "Simpan sebagai SPR" (idempotent: skip bila sudah ada).
             \App\Modules\FO\FinanceAR\Services\FakturPenjualanService::ensureForKontrak($kontrak);
@@ -127,7 +144,7 @@ class ClosingNupService
 
             $reg->update(['tts_id' => $tts->id]);
 
-            return ['kontrak' => $kontrak->refresh(), 'tts' => $tts->refresh()];
+            return ['kontrak' => $kontrak->refresh(), 'tts' => $tts->refresh(), 'gimmick' => $gimmick, 'tambah_dp' => $tambahDp];
         });
     }
 

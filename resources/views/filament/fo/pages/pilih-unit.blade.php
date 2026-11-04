@@ -25,13 +25,37 @@
         .pu-cluster:hover { transform: translateY(-5px) scale(1.02); box-shadow: 0 20px 40px -10px rgba(0,0,0,.3); }
         .pu-stage { position: relative; }
         #pu-map { width: 100%; height: calc(100vh - 200px); min-height: 520px; border-radius: 1rem; overflow: hidden; background: #1e293b; border: 1px solid rgba(255,255,255,.1); }
-        #pu-scanner { width: 100%; aspect-ratio: 4 / 3; border-radius: .75rem; overflow: hidden; background: #0f172a; border: 1px solid rgba(255,255,255,.15); }
+        /* position:relative WAJIB — lapisan bayangan kotak bidik html5-qrcode berposisi
+           absolute; tanpa ini ia menempel ke panel & meluber menutupi seluruh panel
+           (bug "panel gelap + kotak putih" sesudah pilih unit). */
+        #pu-scanner { position: relative; width: 100%; aspect-ratio: 4 / 3; border-radius: .75rem; overflow: hidden; background: #0f172a; border: 1px solid rgba(255,255,255,.15); }
+        #pu-scanner video { object-fit: cover; }
         .pu-panel { background: var(--gray-50, rgb(249 250 251)); border: 1px solid var(--gray-200, rgb(229 231 235)); border-radius: 1rem; padding: 1rem; }
         .dark .pu-panel { background: rgba(30,41,59,.6); border-color: rgba(255,255,255,.1); }
         /* Panel mengambang di pojok kiri bawah, di atas siteplan */
-        .pu-float { position: absolute; left: 1rem; bottom: 1rem; z-index: 600; width: 340px; max-width: calc(100% - 2rem); box-shadow: 0 18px 44px -10px rgba(0,0,0,.55); backdrop-filter: blur(10px); }
-        .pu-float.pu-panel { background: rgba(255,255,255,.94); }
-        .dark .pu-float.pu-panel { background: rgba(15,23,42,.88); border-color: rgba(255,255,255,.14); }
+        /* Tanpa backdrop-filter: blur di atas peta Leaflet yang ber-transform membuat
+           Chrome HP/tablet salah gambar (kotak putih/abu di panel). Latar dibuat pekat. */
+        .pu-float { position: absolute; left: 1rem; bottom: 1rem; z-index: 600; width: 340px; max-width: calc(100% - 2rem); box-shadow: 0 18px 44px -10px rgba(0,0,0,.55); }
+        .pu-float.pu-panel { background: rgba(255,255,255,.98); }
+        .dark .pu-float.pu-panel { background: rgba(15,23,42,.97); border-color: rgba(255,255,255,.14); }
+        .pu-min-btn { font-size: 18px; line-height: 1; padding: 0 6px; color: #94a3b8; }
+        .pu-min-btn:hover { color: #334155; }
+        /* Panel diperkecil → tombol kecil di pojok kiri bawah. */
+        .pu-mini { position: absolute; left: 1rem; bottom: 1rem; z-index: 600; display: flex; align-items: center; gap: 8px;
+            padding: 10px 14px; border-radius: 999px; background: #2563eb; color: #fff; font-weight: 700; font-size: 13px;
+            box-shadow: 0 10px 28px -6px rgba(0,0,0,.55); border: 0; cursor: pointer; max-width: calc(100% - 2rem); }
+        .pu-mini span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .pu-scan-msg { margin-top: .5rem; border-radius: .5rem; padding: .4rem .6rem; font-size: 12px; line-height: 1.35; }
+        .pu-scan-msg.err { background: #fef2f2; color: #b91c1c; border: 1px solid #fecaca; }
+        .pu-scan-msg.hint { background: #fffbeb; color: #92400e; border: 1px solid #fde68a; }
+
+        /* HP / tablet kecil: panel bawah selebar layar & tak menutup separuh peta. */
+        @media (max-width: 640px) {
+            .pu-float.pu-bottom { left: .5rem; right: .5rem; bottom: .5rem; width: auto; max-width: none; max-height: 60vh; overflow-y: auto; padding: .75rem; }
+            .pu-bottom #pu-scanner { width: 72%; margin: 0 auto; }
+            .pu-mini { left: .5rem; bottom: .5rem; }
+            .pu-bottom .pu-timer { font-size: 1.75rem; padding: .6rem; }
+        }
 
         /* Full layar seperti /siteplan: stage menutupi seluruh viewport, map isi penuh.
            Panel scan (kiri-bawah) & Ganti Cluster (kanan-atas) mengambang di atasnya. */
@@ -41,7 +65,7 @@
         /* Popup info — kartu putih meniru /siteplan (lebih enak dilihat). */
         .leaflet-popup-content-wrapper { background:#fff; color:#0f172a; border-radius:16px; padding:0; box-shadow:0 20px 50px rgba(15,23,42,.25); border:1px solid #e2e8f0; }
         .leaflet-popup-tip { background:#fff; border:1px solid #e2e8f0; box-shadow:none; }
-        .leaflet-popup-content { margin:0; min-width:330px; }
+        .leaflet-popup-content { margin:0; min-width:min(330px, 78vw); }
         .leaflet-popup-close-button { color:#94a3b8 !important; font-size:20px !important; width:26px !important; height:26px !important; padding:4px 0 0 0 !important; }
         .leaflet-popup-close-button:hover { color:#334155 !important; }
         .sp-card { padding:16px; font-family:inherit; }
@@ -153,7 +177,8 @@
              wire:key="pu-stage"
              x-data="pilihUnitState()"
              x-init="init()"
-             x-effect="phase = $wire.phase">
+             x-effect="phase = $wire.phase"
+             @pu-scan-gagal.window="onScanGagal()">
 
             {{-- JANGAN pakai @json di sini: direktifnya memecah argumen pada koma
                  (slot flags/depth) → array literal terpotong → ParseError. JSON_HEX_TAG
@@ -188,14 +213,24 @@
 
             {{-- ───── Panel mengambang pojok kiri bawah (scanner / customer / timer) ───── --}}
             {{-- Phase: SCAN --}}
-            <div x-show="phase === 'scan'" class="pu-float pu-panel" x-cloak>
+            {{-- Panel diperkecil: tombol kecil (isi menyesuaikan fase) --}}
+            <button x-show="panelMin && phase !== 'done'" x-cloak @click="setMin(false)" class="pu-mini" title="Tampilkan panel">
+                <span x-text="phase === 'scan' ? '📷 Scan Barcode' : ((phase === 'choosing' ? '⏱ ' + timerDisplay + ' · ' : '👤 ') + ($wire.regCustomerName || ''))"></span>
+            </button>
+
+            <div x-show="phase === 'scan' && !panelMin" class="pu-float pu-bottom pu-panel" x-cloak>
                 <div class="flex items-center justify-between mb-3">
                     <div class="text-sm font-semibold">📷 Scan Barcode NUP</div>
-                    <button @click="toggleScanner()" class="text-xs hover:underline" style="color:#60a5fa;">
-                        <span x-text="scannerOn ? 'Matikan' : 'Hidupkan'"></span>
-                    </button>
+                    <div class="flex items-center gap-2">
+                        <button @click="toggleScanner()" class="text-xs hover:underline" style="color:#60a5fa;">
+                            <span x-text="scannerOn ? 'Matikan' : 'Hidupkan'"></span>
+                        </button>
+                        <button @click="setMin(true)" class="pu-min-btn" title="Perkecil">—</button>
+                    </div>
                 </div>
                 <div id="pu-scanner"></div>
+                <div x-show="scanError" x-cloak class="pu-scan-msg err" x-text="scanError"></div>
+                <div x-show="!scanError && scanHint" x-cloak class="pu-scan-msg hint" x-text="scanHint"></div>
 
                 {{-- Pemilih kamera: mendukung WEBCAM USB tambahan. Baru muncul bila
                      terdeteksi lebih dari satu kamera. Pilihan diingat per komputer. --}}
@@ -225,8 +260,11 @@
             </div>
 
             {{-- Phase: CUSTOMER --}}
-            <div x-show="phase === 'customer'" class="pu-float pu-panel" x-cloak>
-                <div class="text-xs uppercase tracking-wider text-gray-500">Data Customer</div>
+            <div x-show="phase === 'customer' && !panelMin" class="pu-float pu-bottom pu-panel" x-cloak>
+                <div class="flex items-center justify-between">
+                    <div class="text-xs uppercase tracking-wider text-gray-500">Data Customer</div>
+                    <button @click="setMin(true)" class="pu-min-btn" title="Perkecil">—</button>
+                </div>
                 <div class="text-lg font-bold mt-1" style="color:#0369a1;">{{ $regNoNup }}</div>
                 <div class="mt-3 space-y-2 text-sm">
                     <div><div class="text-xs text-gray-500">Nama</div><div class="font-semibold">{{ $regCustomerName }}</div></div>
@@ -268,7 +306,10 @@
             </div>
 
             {{-- Phase: CHOOSING (timer aktif) --}}
-            <div x-show="phase === 'choosing'" class="pu-float pu-panel" x-cloak>
+            <div x-show="phase === 'choosing' && !panelMin" class="pu-float pu-bottom pu-panel" x-cloak>
+                <div class="flex justify-end -mt-1 -mb-2">
+                    <button @click="setMin(true)" class="pu-min-btn" title="Perkecil">—</button>
+                </div>
                 <div class="text-center mb-3">
                     <div class="text-xs uppercase tracking-wider text-gray-500">{{ $regNoNup }}</div>
                     <div class="text-base font-bold">{{ $regCustomerName }}</div>
@@ -338,6 +379,11 @@
                 // di localStorage agar operator cukup memilih sekali per komputer.
                 cameras: [], camId: '',
                 camTersimpan: (() => { try { return localStorage.getItem('pu_cam_id') || ''; } catch (e) { return ''; } })(),
+                // Panel bawah diperkecil (diingat per perangkat).
+                panelMin: (() => { try { return localStorage.getItem('pu_panel_min') === '1'; } catch (e) { return false; } })(),
+                scanError: '',  // kamera gagal menyala (izin/tidak ada/dipakai aplikasi lain)
+                scanHint: '',   // petunjuk bila QR tak kunjung terbaca
+                _hintTimer: null,
                 timerSec: 120, timerId: null, timerDisplay: '02:00',
 
                 map: null,
@@ -371,7 +417,7 @@
                     this.initRealtime();
 
                     this.$watch('phase', (v) => {
-                        if (v === 'scan') { this.scanLocked = false; window.__puLastScan = null; this.startScanner(); } else this.stopScanner();
+                        if (v === 'scan') { this.scanLocked = false; window.__puLastScan = null; this.nyalakanSaatTampil(); } else this.stopScanner();
                         if (v === 'choosing') this.startTimer(); else this.stopTimer();
                         this.refreshPolygonStyles();
                         // Ganti fase = round-trip Livewire yang mem-MORPH DOM. Sesudah morph,
@@ -386,8 +432,39 @@
                     // Error/timeout kini tampil sebagai notifikasi Filament (toast),
                     // bukan alert() bawaan browser — lihat PilihUnit.php.
 
-                    if (this.phase === 'scan') this.$nextTick(() => this.startScanner());
+                    if (this.phase === 'scan') this.nyalakanSaatTampil();
                     else if (this.phase === 'choosing') this.startTimer();
+                },
+
+                /** Perkecil / tampilkan panel bawah. Kamera ikut mati saat diperkecil. */
+                setMin(v) {
+                    this.panelMin = v;
+                    try { localStorage.setItem('pu_panel_min', v ? '1' : '0'); } catch (e) {}
+                    if (v) this.stopScanner();
+                    else if (this.phase === 'scan') this.nyalakanSaatTampil();
+                },
+
+                /**
+                 * Nyalakan kamera HANYA setelah kotak scanner benar-benar tampil (lebar > 0).
+                 * Dulu kamera dinyalakan saat panel masih tersembunyi (x-show belum
+                 * diterapkan sesudah DONE) → html5-qrcode mengukur kotak 0 px → lapisan
+                 * bayangan kotak bidik salah ukuran & meluber menutupi panel.
+                 */
+                nyalakanSaatTampil(attempt = 0) {
+                    if (this.phase !== 'scan' || this.panelMin) return;
+                    const el = document.getElementById('pu-scanner');
+                    if (el && el.offsetWidth > 0 && el.offsetHeight > 0) { this.startScanner(); return; }
+                    if (attempt < 30) setTimeout(() => this.nyalakanSaatTampil(attempt + 1), 100);
+                },
+
+                /** Server menolak hasil scan → kamera menyala lagi (fase tetap 'scan'). */
+                onScanGagal() {
+                    this.scanLocked = false;
+                    // Kode yang SAMA baru dicoba lagi setelah 4 dtk — QR yang ditolak dan
+                    // masih di depan kamera tak memicu banjir notifikasi error.
+                    const kode = window.__puLastScan;
+                    setTimeout(() => { if (window.__puLastScan === kode) window.__puLastScan = null; }, 4000);
+                    this.nyalakanSaatTampil();
                 },
 
                 initLeaflet() {
@@ -431,6 +508,8 @@
                     }
                     this.frameW = W; this.frameH = H;
                     const bounds = [[0, 0], [H, W]];
+                    this._bounds = bounds;
+                    this._userMoved = false;
 
                     // Zoom BERTAHAP & halus: zoomSnap 0 → tak "loncat" ke kelipatan level;
                     // zoomDelta .25 → tombol +/- & keyboard melangkah kecil; wheel butuh
@@ -482,17 +561,27 @@
                             if (Math.abs(r.width - lastW) < 1 && Math.abs(r.height - lastH) < 1) return;
                             lastW = r.width; lastH = r.height;
                             this.map.invalidateSize({ animate: false, pan: false });
+                            // HP/tablet: ukuran layout baru mantap SETELAH init (address bar,
+                            // rotasi layar) → peta terpotong/tergeser (screenshot JRS5). Selama
+                            // operator belum menyentuh peta, paskan ulang ke ukuran terkini.
+                            if (!this._userMoved && r.width > 0 && r.height > 0) this.map.fitBounds(bounds, { animate: false });
                         });
                         this._ro.observe(document.getElementById('pu-map'));
                         window.__puRO = this._ro; // ref global — diputus saat re-init
                     }
 
+                    // Operator mulai menggeser/zoom → berhenti paskan ulang otomatis.
+                    const mapEl = document.getElementById('pu-map');
+                    ['mousedown', 'touchstart', 'wheel'].forEach(ev =>
+                        mapEl.addEventListener(ev, () => { this._userMoved = true; }, { passive: true }));
+
                     this.renderPolygons();
 
                     // Map full-width → recalc ukuran setelah layout, lalu re-fit + reskala stempel.
                     setTimeout(() => {
+                        if (!this.map) return;
                         this.map.invalidateSize();
-                        this.map.fitBounds(bounds);
+                        if (!this._userMoved) this.map.fitBounds(bounds);
                         this.baseZoom = this.map.getZoom();
                         this.updateSoldScale();
                     }, 250);
@@ -602,10 +691,17 @@
                     this.updateSoldScale();
                 },
 
-                /** Skala stempel SOLD mengikuti zoom (k = 2^(zoom − baseZoom)) — identik /siteplan. */
+                /**
+                 * Skala stempel SOLD SEBANDING lebar gambar siteplan di layar
+                 * (frameW × 2^zoom px), acuan 1280 px ≈ tampilan desktop saat fit.
+                 * Dulu k = 2^(zoom − baseZoom) → saat fit stempel selalu berukuran sama
+                 * berapa pun lebar layar: di HP gambar mengecil tapi stempel tidak, jadi
+                 * saling tumpuk menutup unit. baseZoom juga bisa basi bila ukuran layout
+                 * berubah sesudah init → stempel membesar tak wajar.
+                 */
                 updateSoldScale() {
                     if (!this.map) return;
-                    const k = Math.pow(2, this.map.getZoom() - this.baseZoom);
+                    const k = (this.frameW * Math.pow(2, this.map.getZoom())) / 1280;
                     this.soldStamps.forEach(s => {
                         s.style.transform = 'translate(-50%, -50%) rotate(-12deg) scale(' + k.toFixed(3) + ')';
                     });
@@ -791,7 +887,7 @@
                     }
                     card.appendChild(btn);
 
-                    polygon.bindPopup(card, { maxWidth: 340, autoPan: true }).openPopup();
+                    polygon.bindPopup(card, { maxWidth: Math.min(340, window.innerWidth - 40), autoPan: true }).openPopup();
                 },
 
                 doConfirm() {
@@ -824,27 +920,104 @@
                     await this.startScanner();
                 },
 
-                async startScanner() {
-                    if (this.scannerOn || !window.Html5Qrcode) return;
-                    try {
-                        this.scannerInstance = new Html5Qrcode('pu-scanner');
+                /**
+                 * Start/stop kamera DIANTREKAN (satu per satu). Dulu stop tak ditunggu lalu
+                 * start langsung jalan → dua tampilan kamera bertumpuk / kamera "sibuk".
+                 */
+                _antreKamera(fn) {
+                    window.__puCamQueue = (window.__puCamQueue || Promise.resolve()).then(fn).catch((e) => console.warn('Kamera:', e));
+                    return window.__puCamQueue;
+                },
+
+                /** Pesan error kamera yang dimengerti operator. */
+                pesanKamera(e) {
+                    const s = String((e && (e.name || e.message)) || e || '');
+                    if (!window.isSecureContext) return 'Kamera hanya bisa dipakai lewat HTTPS. Buka alamat https:// atau ketik kode manual.';
+                    if (/NotAllowed|Permission/i.test(s)) return 'Izin kamera ditolak. Izinkan kamera untuk situs ini di pengaturan browser, lalu klik Hidupkan.';
+                    if (/NotFound|DevicesNotFound|Requested device not found/i.test(s)) return 'Kamera tidak ditemukan. Pasang kamera / pilih kamera lain, atau ketik kode manual.';
+                    if (/NotReadable|TrackStart|Could not start/i.test(s)) return 'Kamera sedang dipakai aplikasi lain. Tutup aplikasi itu, lalu klik Hidupkan.';
+                    return 'Kamera gagal menyala (' + s.slice(0, 80) + '). Klik Hidupkan untuk mencoba lagi, atau ketik kode manual.';
+                },
+
+                startScanner() {
+                    return this._antreKamera(async () => {
+                        if (this.scannerOn || !window.Html5Qrcode || this.phase !== 'scan' || this.panelMin) return;
+                        const el = document.getElementById('pu-scanner');
+                        if (!el || el.offsetWidth === 0) return;
+                        this.scanError = ''; this.scanHint = '';
+
+                        // Hanya QR (barcode customer memang QR) + pembaca BAWAAN browser
+                        // (BarcodeDetector — Chrome Android/desktop) yang jauh lebih cepat &
+                        // tahan silau layar HP. Browser tanpa dukungan (Safari iOS) otomatis
+                        // memakai pembaca JavaScript seperti sebelumnya.
+                        // Instance lama (mis. milik komponen sebelum Ganti Cluster) masih
+                        // memegang kamera → lepas dulu.
+                        if (window.__puQr) { try { await window.__puQr.stop(); } catch (e) {} try { window.__puQr.clear(); } catch (e) {} window.__puQr = null; }
+
+                        const fmt = window.Html5QrcodeSupportedFormats;
+                        const config = {
+                            fps: 15,
+                            // Kotak bidik ikut ukuran video (dulu tetap 250 px).
+                            qrbox: (w, h) => { const s = Math.max(120, Math.floor(Math.min(w, h) * 0.7)); return { width: s, height: s }; },
+                        };
+                        const onOk = (decoded) => this.onScanned(decoded);
+                        // Satu percobaan = instance baru; gagal → dibersihkan.
+                        const coba = async (src, cfg) => {
+                            const inst = new Html5Qrcode('pu-scanner', {
+                                verbose: false,
+                                formatsToSupport: fmt ? [fmt.QR_CODE] : undefined,
+                                experimentalFeatures: { useBarCodeDetectorIfSupported: true },
+                            });
+                            try { await inst.start(src, cfg, onOk, () => {}); return inst; }
+                            catch (e) { try { inst.clear(); } catch (x) {} throw e; }
+                        };
                         // Pakai kamera pilihan operator bila ada (mis. webcam USB);
                         // bila belum memilih, jatuh ke kamera belakang seperti semula.
                         const sumber = this.camId ? { deviceId: { exact: this.camId } } : { facingMode: 'environment' };
-                        await this.scannerInstance.start(
-                            sumber,
-                            { fps: 10, qrbox: 250 },
-                            (decoded) => this.onScanned(decoded),
-                            () => {},
-                        );
+                        let inst = null;
+                        try {
+                            // Resolusi lebih tinggi → QR kecil/jauh tetap tajam.
+                            inst = await coba(sumber, { ...config, videoConstraints: { ...sumber, width: { ideal: 1280 }, height: { ideal: 720 } } });
+                        } catch (e1) {
+                            try {
+                                // Constraint resolusi ditolak kamera → pengaturan bawaan.
+                                inst = await coba(sumber, config);
+                            } catch (e2) {
+                                // Webcam pilihan tersimpan sudah dicabut → kembali ke kamera bawaan.
+                                if (this.camId && /NotFound|Overconstrained/i.test(String(e2 && (e2.name || e2)))) {
+                                    this.camId = ''; try { localStorage.setItem('pu_cam_id', ''); } catch (e) {}
+                                    try { inst = await coba({ facingMode: 'environment' }, config); }
+                                    catch (e3) { this.scanError = this.pesanKamera(e3); return; }
+                                } else { this.scanError = this.pesanKamera(e2); return; }
+                            }
+                        }
+                        this.scannerInstance = inst;
+                        window.__puQr = inst;
                         this.scannerOn = true;
+                        // Fokus otomatis terus-menerus bila kamera mendukung (diabaikan bila tidak).
+                        try { await this.scannerInstance.applyVideoConstraints({ advanced: [{ focusMode: 'continuous' }] }); } catch (e) {}
+                        this.mulaiPetunjuk();
                         this.muatKamera();
-                    } catch (e) { console.warn('Scanner gagal start:', e); }
+                    });
                 },
-                async stopScanner() {
-                    if (!this.scannerOn || !this.scannerInstance) return;
-                    try { await this.scannerInstance.stop(); this.scannerInstance.clear(); } catch (e) {}
-                    this.scannerOn = false;
+                stopScanner() {
+                    clearTimeout(this._hintTimer); this.scanHint = '';
+                    return this._antreKamera(async () => {
+                        if (!this.scannerOn || !this.scannerInstance) return;
+                        try { await this.scannerInstance.stop(); } catch (e) {}
+                        try { this.scannerInstance.clear(); } catch (e) {}
+                        if (window.__puQr === this.scannerInstance) window.__puQr = null;
+                        this.scannerOn = false;
+                    });
+                },
+                /** Petunjuk bila ±6 dtk QR belum juga terbaca. */
+                mulaiPetunjuk() {
+                    clearTimeout(this._hintTimer);
+                    this._hintTimer = setTimeout(() => {
+                        if (this.scannerOn && this.phase === 'scan') {
+                            this.scanHint = 'Belum terbaca? Turunkan kecerahan layar HP customer, jauhkan ±15–25 cm dari kamera, hindari pantulan lampu — atau ketik kode manual.';
+                        }
+                    }, 6000);
                 },
                 async toggleScanner() { this.scannerOn ? await this.stopScanner() : await this.startScanner(); },
                 onScanned(code) {
@@ -860,7 +1033,9 @@
                     // fase kembali ke 'scan' (Scan Ulang/DONE → __puLastScan di-reset)
                     // atau kode QR berganti. Cegah re-scan QR yg masih nyangkut di
                     // kamera (mis. customer sudah pilih unit → error berulang).
-                    if (window.__puLastScan === c) { this.stopScanner(); return; }
+                    // Diabaikan saja — kamera TIDAK dimatikan (dulu dimatikan → setelah scan
+                    // gagal kamera mati & operator harus klik Hidupkan sendiri).
+                    if (window.__puLastScan === c) return;
                     window.__puLastScan = c;
                     this.scanLocked = true;
                     this.stopScanner();
