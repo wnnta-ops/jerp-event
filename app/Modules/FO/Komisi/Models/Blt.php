@@ -42,6 +42,28 @@ class Blt extends TenantAwareModel
         });
     }
 
+    /**
+     * Kelompok level: SALES / KOORDINATOR / KANTOR. BLT kontrak lama (eProperty) menyimpan
+     * nama level aslinya (SALES AREBI, KOORDINATOR AREBI, KANTOR AGENT, LEAD …) — disatukan
+     * di sini supaya satu pengajuan tak terpecah per teks level.
+     */
+    public static function kelompokLevel(?string $levelType): string
+    {
+        $level = strtoupper((string) $levelType);
+
+        return match (true) {
+            str_contains($level, 'KANTOR') => 'KANTOR',
+            str_contains($level, 'KOOR'), str_contains($level, 'LEAD') => 'KOORDINATOR',
+            default => 'SALES',
+        };
+    }
+
+    /** Urutan cetak/posting: Sales → Koordinator → Kantor. */
+    public static function urutLevel(?string $levelType): int
+    {
+        return ['SALES' => 0, 'KOORDINATOR' => 1, 'KANTOR' => 2][self::kelompokLevel($levelType)];
+    }
+
     public function kontrak(): BelongsTo
     {
         return $this->belongsTo(Kontrak::class);
