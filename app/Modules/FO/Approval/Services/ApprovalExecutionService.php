@@ -9,6 +9,7 @@ use App\Modules\FO\FinanceAR\Models\Refund;
 use App\Modules\FO\FinanceAR\Services\FakturPenjualanService;
 use App\Modules\FO\Komisi\Models\Blt;
 use App\Modules\FO\Komisi\Models\Komisi;
+use App\Modules\FO\Komisi\Services\BltBatalKontrak;
 use App\Modules\FO\MarketingSales\Models\Kontrak;
 use App\Modules\FO\MarketingSales\Models\Unit;
 use App\Modules\FO\MarketingSales\Services\HitungPembatalan;
@@ -193,62 +194,16 @@ class ApprovalExecutionService
             $extra = ' Refund '.$refund->no_refund.' (Rp '.number_format($pengembalian, 0, ',', '.').') dibuat.';
         }
 
-        $extra .= $this->bltBatalSepihak($k, (string) ($baru['alasan'] ?? ''));
+        // Penjualan batal → BLT/Komisi DRAFT-nya tak boleh ikut diajukan. Batal Sepihak saja
+        // yang memberi sales BLT (nilai tetap); batal karena bank menolak/kolektibilitas bukan
+        // kegagalan sales, jadi tak ada BLT-nya.
+        $blt = app(BltBatalKontrak::class);
+        $extra .= BltBatalKontrak::pesan($blt->bersihkan($k));
+        if ((string) ($baru['alasan'] ?? '') === HitungPembatalan::ALASAN_SEPIHAK) {
+            $extra .= $blt->terbitkanSepihak($k);
+        }
 
         return 'Kontrak '.$k->no_kontrak.' DIBATALKAN; unit dikembalikan TERSEDIA.'.$extra;
-    }
-
-    /**
-     * BLT untuk sales pada pembatalan SEPIHAK — nilainya tetap, diatur di Pengaturan FO.
-     *
-     * HANYA untuk Batal Sepihak. Batal karena bank menolak atau kolektibilitas bukan kegagalan
-     * sales, jadi tidak ada BLT-nya; menerbitkannya di situ berarti membayar orang atas
-     * peristiwa yang di luar kendalinya.
-     *
-     * Dibuat berstatus DRAFT, bukan langsung diajukan: pencairannya tetap melewati Pengajuan
-     * BLT seperti BLT mana pun, dan approval pembatalan tidak berwenang memutuskan pembayaran.
-     *
-     * Tanpa sales pada kontraknya, tidak ada yang bisa dibayar — dilewati, dan dikatakan pada
-     * pesan hasilnya supaya tidak hilang tanpa jejak.
-     */
-    private function bltBatalSepihak(Kontrak $k, string $alasan): string
-    {
-        if ($alasan !== HitungPembatalan::ALASAN_SEPIHAK) {
-            return '';
-        }
-
-        $k->loadMissing('agent.salesLevel');
-        $agent = $k->agent;
-        if (! $agent) {
-            return ' BLT Batal Sepihak DILEWATI — kontrak ini tidak punya sales.';
-        }
-
-        $h = app(HitungPembatalan::class)->bltBatalSepihak();
-        if ($h['nilai'] <= 0) {
-            return ' BLT Batal Sepihak DILEWATI — nilainya 0 di Pengaturan FO.';
-        }
-
-        $blt = Blt::create([
-            'tenant_id' => $k->tenant_id ?? 1,
-            'tgl_blt' => now()->toDateString(),
-            'kontrak_id' => $k->id,
-            'agent_id' => $agent->id,
-            'sales_level_id' => $agent->sales_level_id,
-            'level_type' => 'SALES',
-            'nama_user' => $agent->name,
-            'nilai_blt' => $h['nilai'],
-            'pph_jenis' => 'PPh21',
-            'pph_persen' => $h['pph_persen'],
-            'pph_amount' => $h['pph'],
-            'nett' => $h['nett'],
-            'rek_bank' => $agent->rekening_bank,
-            'rek_number' => $agent->rekening_number,
-            'rek_holder' => $agent->rekening_holder ?: $agent->name,
-            'status' => 'DRAFT',
-            'keterangan' => 'BLT Batal Sepihak — kontrak '.$k->no_kontrak,
-        ]);
-
-        return ' BLT '.$blt->no_blt.' (nett Rp '.number_format($h['nett'], 0, ',', '.').') dibuat untuk '.$agent->name.'.';
     }
 
     private function applyGantiNama(Kontrak $k, array $baru): string
