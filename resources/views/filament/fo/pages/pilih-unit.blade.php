@@ -47,7 +47,6 @@
         .pu-mini span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
         .pu-scan-msg { margin-top: .5rem; border-radius: .5rem; padding: .4rem .6rem; font-size: 12px; line-height: 1.35; }
         .pu-scan-msg.err { background: #fef2f2; color: #b91c1c; border: 1px solid #fecaca; }
-        .pu-scan-msg.hint { background: #fffbeb; color: #92400e; border: 1px solid #fde68a; }
 
         /* HP / tablet kecil: panel bawah selebar layar & tak menutup separuh peta. */
         @media (max-width: 640px) {
@@ -230,7 +229,6 @@
                 </div>
                 <div id="pu-scanner"></div>
                 <div x-show="scanError" x-cloak class="pu-scan-msg err" x-text="scanError"></div>
-                <div x-show="!scanError && scanHint" x-cloak class="pu-scan-msg hint" x-text="scanHint"></div>
 
                 {{-- Pemilih kamera: mendukung WEBCAM USB tambahan. Baru muncul bila
                      terdeteksi lebih dari satu kamera. Pilihan diingat per komputer. --}}
@@ -382,8 +380,6 @@
                 // Panel bawah diperkecil (diingat per perangkat).
                 panelMin: (() => { try { return localStorage.getItem('pu_panel_min') === '1'; } catch (e) { return false; } })(),
                 scanError: '',  // kamera gagal menyala (izin/tidak ada/dipakai aplikasi lain)
-                scanHint: '',   // petunjuk bila QR tak kunjung terbaca
-                _hintTimer: null,
                 timerSec: 120, timerId: null, timerDisplay: '02:00',
 
                 map: null,
@@ -944,7 +940,7 @@
                         if (this.scannerOn || !window.Html5Qrcode || this.phase !== 'scan' || this.panelMin) return;
                         const el = document.getElementById('pu-scanner');
                         if (!el || el.offsetWidth === 0) return;
-                        this.scanError = ''; this.scanHint = '';
+                        this.scanError = '';
 
                         // Hanya QR (barcode customer memang QR) + pembaca BAWAAN browser
                         // (BarcodeDetector — Chrome Android/desktop) yang jauh lebih cepat &
@@ -955,11 +951,8 @@
                         if (window.__puQr) { try { await window.__puQr.stop(); } catch (e) {} try { window.__puQr.clear(); } catch (e) {} window.__puQr = null; }
 
                         const fmt = window.Html5QrcodeSupportedFormats;
-                        const config = {
-                            fps: 15,
-                            // Kotak bidik ikut ukuran video (dulu tetap 250 px).
-                            qrbox: (w, h) => { const s = Math.max(120, Math.floor(Math.min(w, h) * 0.7)); return { width: s, height: s }; },
-                        };
+                        // Tanpa qrbox → seluruh gambar kamera dibaca, tanpa kotak bidik.
+                        const config = { fps: 15 };
                         const onOk = (decoded) => this.onScanned(decoded);
                         // Satu percobaan = instance baru; gagal → dibersihkan.
                         const coba = async (src, cfg) => {
@@ -996,12 +989,10 @@
                         this.scannerOn = true;
                         // Fokus otomatis terus-menerus bila kamera mendukung (diabaikan bila tidak).
                         try { await this.scannerInstance.applyVideoConstraints({ advanced: [{ focusMode: 'continuous' }] }); } catch (e) {}
-                        this.mulaiPetunjuk();
                         this.muatKamera();
                     });
                 },
                 stopScanner() {
-                    clearTimeout(this._hintTimer); this.scanHint = '';
                     return this._antreKamera(async () => {
                         if (!this.scannerOn || !this.scannerInstance) return;
                         try { await this.scannerInstance.stop(); } catch (e) {}
@@ -1009,15 +1000,6 @@
                         if (window.__puQr === this.scannerInstance) window.__puQr = null;
                         this.scannerOn = false;
                     });
-                },
-                /** Petunjuk bila ±6 dtk QR belum juga terbaca. */
-                mulaiPetunjuk() {
-                    clearTimeout(this._hintTimer);
-                    this._hintTimer = setTimeout(() => {
-                        if (this.scannerOn && this.phase === 'scan') {
-                            this.scanHint = 'Belum terbaca? Turunkan kecerahan layar HP customer, jauhkan ±15–25 cm dari kamera, hindari pantulan lampu — atau ketik kode manual.';
-                        }
-                    }, 6000);
                 },
                 async toggleScanner() { this.scannerOn ? await this.stopScanner() : await this.startScanner(); },
                 onScanned(code) {
