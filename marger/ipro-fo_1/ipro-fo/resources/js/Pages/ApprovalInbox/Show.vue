@@ -15,7 +15,7 @@ const props = defineProps<{
         fields: Array<{ label: string; value: string | null }>;
         body: string | null;
         files: Array<{ name: string; jenis: string | null; url: string }>;
-        links: Array<{ label: string; url: string }>;
+        links: Array<{ label: string; url: string; tab_baru?: boolean }>;
     };
     stages: Stage[];
     canAct: boolean;
@@ -109,7 +109,10 @@ const statusBadge: Record<string, { variant: string; text: string }> = {
                     </div>
                 </div>
                 <div v-if="doc.links.length" class="flex flex-wrap gap-3 text-sm">
-                    <Link v-for="l in doc.links" :key="l.url" :href="l.url" class="text-primary-600 hover:underline">{{ l.label }} →</Link>
+                    <template v-for="l in doc.links" :key="l.url">
+                        <a v-if="l.tab_baru" :href="l.url" target="_blank" rel="noopener" class="text-primary-600 hover:underline">{{ l.label }} ↗</a>
+                        <Link v-else :href="l.url" class="text-primary-600 hover:underline">{{ l.label }} →</Link>
+                    </template>
                 </div>
 
                 <!-- Keputusan -->

@@ -331,17 +331,17 @@ const korLabel: Record<string, string> = { baru: 'Menunggu', approved: 'Disetuju
                                     </div>
                                     <div v-if="d.koreksi.length">
                                         <div class="mb-1 text-xs font-medium text-neutral-500">Koreksi Budget</div>
-                                        <a v-for="k in d.koreksi" :key="k.doc_no" :href="k.url" class="flex items-center justify-between gap-2 rounded-lg border border-neutral-200 px-3 py-1.5 text-xs hover:border-primary-300 dark:border-neutral-800">
+                                        <a v-for="k in d.koreksi" :key="k.doc_no" :href="k.lampiran_url ?? k.url" target="_blank" rel="noopener" title="Buka lampiran perubahan budget" class="flex items-center justify-between gap-2 rounded-lg border border-neutral-200 px-3 py-1.5 text-xs hover:border-primary-300 dark:border-neutral-800">
                                             <span><span class="font-mono">{{ k.doc_no }}</span> · {{ k.tanggal }} · {{ k.periode }}<span v-if="k.note" class="text-neutral-400"> · {{ k.note }}</span></span>
                                             <span class="flex items-center gap-2"><span class="font-mono" :class="k.nilai < 0 ? 'text-danger-600' : 'text-success-700'">{{ k.nilai > 0 ? '+' : '' }}{{ fmtAngka(k.nilai) }}</span><Badge :variant="korStatus[k.status]" size="sm">{{ korLabel[k.status] ?? k.status }}</Badge><ExternalLink class="h-3 w-3 text-neutral-400" /></span>
                                         </a>
                                     </div>
                                     <div v-if="d.alokasi?.length">
                                         <div class="mb-1 text-xs font-medium text-neutral-500">Alokasi Budget</div>
-                                        <Link v-for="k in d.alokasi" :key="k.doc_no" :href="route('bs.budget.allocation.index')" class="flex items-center justify-between gap-2 rounded-lg border border-neutral-200 px-3 py-1.5 text-xs hover:border-primary-300 dark:border-neutral-800">
+                                        <a v-for="k in d.alokasi" :key="k.doc_no" :href="k.lampiran_url" target="_blank" rel="noopener" title="Buka lampiran perubahan budget" class="flex items-center justify-between gap-2 rounded-lg border border-neutral-200 px-3 py-1.5 text-xs hover:border-primary-300 dark:border-neutral-800">
                                             <span><span class="font-mono">{{ k.doc_no }}</span> · {{ k.tanggal }} · {{ k.periode }} · {{ k.arah === 'keluar' ? 'ke' : 'dari' }} {{ k.lawan }}<span v-if="k.note" class="text-neutral-400"> · {{ k.note }}</span></span>
-                                            <span class="font-mono" :class="k.nilai < 0 ? 'text-danger-600' : 'text-success-700'">{{ k.nilai > 0 ? '+' : '' }}{{ fmtAngka(k.nilai) }}</span>
-                                        </Link>
+                                            <span class="flex items-center gap-2"><span class="font-mono" :class="k.nilai < 0 ? 'text-danger-600' : 'text-success-700'">{{ k.nilai > 0 ? '+' : '' }}{{ fmtAngka(k.nilai) }}</span><ExternalLink class="h-3 w-3 text-neutral-400" /></span>
+                                        </a>
                                     </div>
                                 </div>
                             </template>

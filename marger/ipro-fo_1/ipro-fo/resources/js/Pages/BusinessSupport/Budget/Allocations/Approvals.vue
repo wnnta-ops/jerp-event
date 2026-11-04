@@ -67,7 +67,7 @@ function decide(decision: 'approve' | 'reject') {
         <tbody class="divide-y divide-neutral-200 dark:divide-neutral-800">
           <tr v-for="r in rows" :key="r.id">
             <td class="px-3 py-2"><input type="checkbox" :disabled="!r.bisa" :checked="sel.includes(r.id)" @change="toggle(r.id)" /></td>
-            <td class="px-3 py-2 font-medium"><a v-if="r.approval_url" :href="r.approval_url" class="text-primary-600 hover:underline">{{ r.doc_no }}</a><template v-else>{{ r.doc_no }}</template></td>
+            <td class="px-3 py-2 font-medium"><a v-if="r.approval_url" :href="r.approval_url" class="text-primary-600 hover:underline">{{ r.doc_no }}</a><template v-else>{{ r.doc_no }}</template><a v-if="r.lampiran_url" :href="r.lampiran_url" target="_blank" rel="noopener" class="ml-1.5 whitespace-nowrap text-[11px] font-normal text-primary-600 hover:underline" title="Lampiran perubahan budget">Lampiran ↗</a></td>
             <td class="px-3 py-2">{{ r.year }}</td>
             <td class="px-3 py-2">{{ fmtDate(r.date) }}</td>
             <td class="px-3 py-2">{{ r.account }}<div class="text-[11px] text-neutral-500">{{ r.cost_center }}<template v-if="r.ref"> · {{ r.ref }}</template></div></td>

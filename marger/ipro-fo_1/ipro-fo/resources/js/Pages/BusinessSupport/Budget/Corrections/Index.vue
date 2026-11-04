@@ -78,7 +78,7 @@ function reload() {
         </thead>
         <tbody class="divide-y divide-neutral-200 dark:divide-neutral-800">
           <tr v-for="r in rows" :key="r.id">
-            <td class="px-3 py-2 font-mono text-xs">{{ r.doc_no }}</td>
+            <td class="px-3 py-2 font-mono text-xs">{{ r.doc_no }}<a v-if="r.lampiran_url" :href="r.lampiran_url" target="_blank" rel="noopener" class="ml-1.5 whitespace-nowrap font-sans text-[11px] text-primary-600 hover:underline" title="Lampiran perubahan budget">Lampiran ↗</a></td>
             <td class="px-3 py-2">{{ fmtDate(r.date) }}</td>
             <td class="px-3 py-2">{{ r.ref }}</td>
             <td class="px-3 py-2">{{ r.account }}</td>

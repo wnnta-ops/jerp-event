@@ -243,6 +243,7 @@ final class ApprovalInboxQuery
                 ['label' => 'Invoice asal', 'value' => $inv?->invoice_number],
             ];
             $out['body'] = $m->note;
+            $out['links'][] = ['label' => 'Lampiran perubahan budget', 'url' => \App\Domain\BusinessSupport\Services\LampiranPerubahanBudget::url($m), 'tab_baru' => true];
             if ($inv) {
                 $out['links'][] = ['label' => 'Buka invoice', 'url' => route('bs.ap.show', $inv->id)];
             }
@@ -256,6 +257,7 @@ final class ApprovalInboxQuery
                 ['label' => 'Total dipindah', 'value' => $rp($m->amount)],
             ];
             $out['body'] = $m->notes;
+            $out['links'][] = ['label' => 'Lampiran perubahan budget', 'url' => \App\Domain\BusinessSupport\Services\LampiranPerubahanBudget::url($m), 'tab_baru' => true];
         }
 
         return $out;

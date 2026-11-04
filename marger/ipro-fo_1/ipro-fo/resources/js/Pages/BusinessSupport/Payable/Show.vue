@@ -12,6 +12,7 @@ const props = defineProps<{
     outstanding: number;
     cashAccounts: Array<any>;
     defaultCash: number | null;
+    perubahanBudget?: Array<{ jenis: string; doc_no: string; nilai: number; status: string; url: string }>;
     writeoffs?: Array<{ memorial_number: string; memorial_date: string; amount: number; reason: string; journal_id: number | null; journal_number: string | null }>;
     writeoffTotal?: number;
     journal?: { id: number; number: string | null; date: string | null; lines: Array<{ account_code: string | null; account_name: string | null; dimensi: string | null; description: string | null; debit: number; credit: number }>; total_debit: number; total_credit: number } | null;
@@ -157,6 +158,22 @@ const justCreated = computed(() => Boolean(usePage().props.flash?.created));
                         <td class="px-4 py-2.5 text-right font-mono">{{ fmtRp(journal.total_credit) }}</td>
                     </tr>
                 </tfoot>
+            </table>
+        </div>
+
+        <!-- Alokasi / Koreksi Budget untuk invoice ini — tiap baris membuka Lampiran Perubahan Budget (cetak). -->
+        <div v-if="perubahanBudget?.length" class="card overflow-hidden">
+            <div class="border-b border-neutral-200 px-4 py-3 dark:border-neutral-800"><h2 class="font-semibold">Perubahan Budget (Alokasi / Koreksi)</h2></div>
+            <table class="w-full text-sm">
+                <tbody class="divide-y divide-neutral-100 dark:divide-neutral-800">
+                    <tr v-for="p in perubahanBudget" :key="p.url">
+                        <td class="px-4 py-2">{{ p.jenis }}</td>
+                        <td class="px-4 py-2 font-mono text-xs">{{ p.doc_no }}</td>
+                        <td class="px-4 py-2 text-right font-mono">{{ Math.round(p.nilai).toLocaleString('id-ID') }}</td>
+                        <td class="px-4 py-2">{{ p.status }}</td>
+                        <td class="px-4 py-2 text-right"><a :href="p.url" target="_blank" rel="noopener" class="text-primary-600 hover:underline">Lampiran ↗</a></td>
+                    </tr>
+                </tbody>
             </table>
         </div>
 

@@ -456,6 +456,7 @@ class BudgetController extends Controller
                     'doc_no' => $c->doc_no, 'tanggal' => $c->corr_date?->format('Y-m-d') ?? substr((string) $c->corr_date, 0, 10),
                     'periode' => BudgetCorrectionController::labelPeriode($c),
                     'nilai' => round(array_sum($c->tambahanBulan()), 2),
+                    'lampiran_url' => \App\Domain\BusinessSupport\Services\LampiranPerubahanBudget::url($c),
                     'status' => $c->status, 'note' => $c->note,
                     // Koreksi yang diajukan ke Approval Inbox dibuka di sana; yang lama di layar Koreksi Budget.
                     'url' => $c->approval_id ? route('approval-inbox.show', $c->approval_id) : route('bs.budget.correction.index'),
@@ -467,6 +468,7 @@ class BudgetController extends Controller
                     'lawan' => $a->budget_id === $b->id ? ($a->toBudget?->doc_no.' · '.$a->toBudget?->account?->code) : ($a->budget?->doc_no.' · '.$a->budget?->account?->code),
                     'periode' => collect(array_keys((array) $a->months))->map(fn ($m) => BsBudget::MONTHS[(int) $m - 1])->implode(', '),
                     'nilai' => ($a->budget_id === $b->id ? -1 : 1) * (float) $a->amount, 'note' => $a->notes,
+                    'lampiran_url' => \App\Domain\BusinessSupport\Services\LampiranPerubahanBudget::url($a),
                 ]),
             ] + $this->perBulan($b)),
             'jurnal' => array_map(fn ($j) => $j + [

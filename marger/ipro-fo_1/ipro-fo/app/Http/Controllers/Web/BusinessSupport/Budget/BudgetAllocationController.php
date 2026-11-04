@@ -55,6 +55,7 @@ class BudgetAllocationController extends Controller
                 'dari_invoice' => $a->source_type === BsBudgetAllocation::SOURCE_INVOICE ? $a->source_id : null,
                 'notes' => $a->notes,
                 'amount' => (float) $a->amount, 'total_budget' => (float) $a->total_budget, 'status' => $a->status,
+                'lampiran_url' => \App\Domain\BusinessSupport\Services\LampiranPerubahanBudget::url($a),
             ])->values();
 
         return Inertia::render('BusinessSupport/Budget/Allocations/Index', [
@@ -143,6 +144,7 @@ class BudgetAllocationController extends Controller
                 'amount' => (float) $a->amount, 'total_budget' => (float) $a->total_budget,
                 'tahap' => $tahap ? trim($tahap['label'].($tahap['role'] ? ' — '.$tahap['role'] : '')) : null,
                 'approval_url' => $a->approval_id ? route('approval-inbox.show', $a->approval_id) : null,
+                'lampiran_url' => \App\Domain\BusinessSupport\Services\LampiranPerubahanBudget::url($a),
                 'bisa' => $bisa($a),
             ];
         })->values();

@@ -1187,6 +1187,10 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::get('/business-support/budget-correction-approval', [BsBudgetCorrectionController::class, 'approvals'])->name('bs.budget.correction.approvals');
     Route::post('/business-support/budget-correction-approval', [BsBudgetCorrectionController::class, 'approveBatch'])->name('bs.budget.correction.approve-batch');
 
+    // Lampiran Perubahan Budget (cetak) — dibuka dari Approval Inbox, Approval Alokasi/Koreksi, invoice, rincian budget
+    Route::get('/business-support/budget-lampiran/alokasi/{allocation}', [\App\Http\Controllers\Web\BusinessSupport\Budget\BudgetLampiranController::class, 'alokasi'])->name('bs.budget.lampiran.alokasi');
+    Route::get('/business-support/budget-lampiran/koreksi/{correction}', [\App\Http\Controllers\Web\BusinessSupport\Budget\BudgetLampiranController::class, 'koreksi'])->name('bs.budget.lampiran.koreksi');
+
     // Query / Laporan
     Route::get('/business-support/budget-query/master', [BsBudgetQueryController::class, 'master'])->name('bs.budget.query.master');
     Route::get('/business-support/budget-query/realization', [BsBudgetQueryController::class, 'realization'])->name('bs.budget.query.realization');

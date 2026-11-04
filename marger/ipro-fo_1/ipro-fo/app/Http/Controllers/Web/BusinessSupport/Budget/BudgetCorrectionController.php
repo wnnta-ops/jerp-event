@@ -41,6 +41,7 @@ class BudgetCorrectionController extends Controller
                 'period' => self::labelPeriode($c),
                 'old_amount' => (float) $c->old_amount, 'new_amount' => (float) $c->new_amount, 'status' => $c->status,
                 'approval_url' => $c->approval_id ? route('approval-inbox.show', $c->approval_id) : null,
+                'lampiran_url' => \App\Domain\BusinessSupport\Services\LampiranPerubahanBudget::url($c),
             ])->values();
 
         return Inertia::render('BusinessSupport/Budget/Corrections/Index', [
@@ -140,6 +141,7 @@ class BudgetCorrectionController extends Controller
                 },
                 'tahap' => $tahap ? trim($tahap['label'].($tahap['role'] ? ' — '.$tahap['role'] : '')) : null,
                 'approval_url' => $c->approval_id ? route('approval-inbox.show', $c->approval_id) : null,
+                'lampiran_url' => \App\Domain\BusinessSupport\Services\LampiranPerubahanBudget::url($c),
                 'bisa' => $bisa($c),
             ];
         })->values();

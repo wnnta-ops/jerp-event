@@ -1166,6 +1166,8 @@ class ApInvoiceController extends Controller
             'outstanding' => (float) $invoice->outstanding,
             'cashAccounts' => BsAccount::where('is_active', true)->where('is_postable', true)->where('code', 'like', '101010%')->orderBy('code')->get(['id', 'code', 'name']),
             'defaultCash' => $this->accId('cash'),
+            // Alokasi / Koreksi Budget yang diajukan untuk invoice ini → tautan Lampiran Perubahan Budget.
+            'perubahanBudget' => \App\Domain\BusinessSupport\Services\LampiranPerubahanBudget::untukInvoice($invoice),
             'writeoffs' => $writeoffs,
             'writeoffTotal' => round((float) $writeoffs->sum('amount'), 2),
             // Tombol Edit / Batal — keputusannya di server, layar hanya mencerminkannya.
