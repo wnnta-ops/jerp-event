@@ -291,9 +291,27 @@ class ApprovalInboxController extends Controller
             'stages' => $this->inbox->stages($approval),
             'status' => $approval->status,
             'dicetakOleh' => $user->name,
+            'pembayaran' => $this->pembayaranMemo($approval),
             // ?preview=1 — ditampilkan di halaman detail (iframe), tanpa membuka dialog cetak.
             'preview' => $request->boolean('preview'),
         ])->render());
+    }
+
+    /**
+     * Finance tidak menyetujui Memo Urgent — Finance yang MEMBAYARKAN. Kolom TTD paling kanan lembar
+     * memo terisi begitu memo dibayar (kuitansi Bayar Memo Urgent aktif): pembuat kuitansinya.
+     *
+     * @return array{oleh:?string, ttd:?string, tanggal:?string, nomor:string}|null
+     */
+    private function pembayaranMemo(Approval $approval): ?array
+    {
+        $kui = app(\App\Domain\BusinessSupport\Services\PembayaranMemoUrgent::class)->kuitansiMemo((int) $approval->approvable_id);
+        if (! $kui) {
+            return null;
+        }
+        $kasir = \App\Models\User::query()->find($kui->created_by);
+
+        return ['oleh' => $kasir?->name, 'ttd' => $kasir?->signatureUrl(), 'tanggal' => $kui->kuitansi_date?->format('d/m/Y'), 'nomor' => $kui->kuitansi_number];
     }
 
     /** "Nilai Transaksi Rp … · PPN 11% Rp … · PPh 23 dipotong Rp …" — null untuk memo lama tanpa rincian. */

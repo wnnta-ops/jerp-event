@@ -2,7 +2,8 @@
      Dipanggil ApprovalInboxController::cetak; ?preview=1 dipakai iframe di halaman detail (tanpa dialog cetak).
        Kepada Yth : approver tahap yang sedang menunggu (tahap berikutnya).
        Tembusan   : approver tahap TERAKHIR chain Memo Urgent.
-       TTD        : pengaju (Hormat Kami) + tiap tahap chain; terisi hanya untuk tahap yang SUDAH menyetujui. --}}
+       TTD        : pengaju (Hormat Kami) + tiap tahap chain; terisi hanya untuk tahap yang SUDAH menyetujui.
+                    Paling kanan: "Dibayarkan oleh" Finance — bukan tahap approval; terisi setelah memo dibayar. --}}
 @php
     $e = fn ($v) => e((string) ($v ?? ''));
     $rp = fn ($v) => $v === null ? '—' : 'Rp '.number_format((float) $v, 0, ',', '.');
@@ -123,7 +124,7 @@
     <div class="isi"><div class="h">Isi Memo</div><div class="b">{{ $memo['body'] }}</div></div>
 
     <table class="ttd">
-        <tr>@foreach ($tahap as $i => $s)<td class="cap">{{ $kelompok($s['label'], $i) }}</td>@endforeach</tr>
+        <tr>@foreach ($tahap as $i => $s)<td class="cap">{{ $kelompok($s['label'], $i) }}</td>@endforeach<td class="cap">Dibayarkan oleh,</td></tr>
         <tr>
             @foreach ($tahap as $s)
                 <td>
@@ -139,6 +140,16 @@
                     <div class="wkt">{{ in_array($s['state'], ['done', 'rejected'], true) ? ($jam($s['at']) ?? "\u{00a0}") : "\u{00a0}" }}</div>
                 </td>
             @endforeach
+            <td>
+                <div class="ruang">
+                    @if ($pembayaran && $pembayaran['ttd'])<img src="{{ $pembayaran['ttd'] }}" alt="TTD {{ $pembayaran['oleh'] }}">
+                    @elseif ($pembayaran)<span class="cap-ok">DIBAYAR</span>
+                    @endif
+                </div>
+                <div class="garis">{{ $pembayaran['oleh'] ?? '(………………)' }}</div>
+                <div class="jab">Finance</div>
+                <div class="wkt">{{ $pembayaran ? $pembayaran['nomor'].' · '.$pembayaran['tanggal'] : 'Belum dibayar' }}</div>
+            </td>
         </tr>
     </table>
 
