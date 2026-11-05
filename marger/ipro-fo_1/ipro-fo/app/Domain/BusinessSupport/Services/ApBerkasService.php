@@ -343,8 +343,11 @@ final class ApBerkasService
      * Tautkan invoice yang baru diregistrasi ke berkasnya lalu ajukan approval invoice.
      * Dipanggil DI DALAM transaksi yang sama dengan registrasi invoice. Satu berkas boleh
      * diinvoice beberapa kali sampai nominalnya habis.
+     *
+     * $ajukanApproval false: invoice Memo Urgent yang Pengajuan Budget-nya sudah disetujui penuh lewat
+     * chain Invoice Hutang — tidak diajukan approval lagi (tanpa approval = boleh dibayar).
      */
-    public function ajukanInvoice(BsApBerkasUpload $berkas, BsApInvoice $invoice): Approval
+    public function ajukanInvoice(BsApBerkasUpload $berkas, BsApInvoice $invoice, bool $ajukanApproval = true): ?Approval
     {
         $berkas = BsApBerkasUpload::query()->lockForUpdate()->findOrFail($berkas->id);
         $this->assertSiapInvoice($berkas);
@@ -364,6 +367,9 @@ final class ApBerkasService
             'ap_invoice_id' => $invoice->id,
         ]);
         $this->log($berkas, 'diinvoice', $invoice->invoice_number);
+        if (! $ajukanApproval) {
+            return null;
+        }
 
         return $this->submit->execute(BsApInvoice::APPROVAL_DOCUMENT_TYPE, $invoice, [
             'invoice_number' => $invoice->invoice_number,

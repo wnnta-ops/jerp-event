@@ -1056,7 +1056,8 @@ class ApInvoiceController extends Controller
                 // di invoice (no. PO, master barang) dibangkitkan sistem — lihat actionnya.
                 $po = app(\App\Domain\BusinessSupport\Actions\GeneratePoFromApInvoice::class)->execute($inv, $request->user()->id);
                 if ($berkas !== null) {
-                    app(\App\Domain\BusinessSupport\Services\ApBerkasService::class)->ajukanInvoice($berkas, $inv);
+                    // Pengajuan Budget (Memo Urgent) sudah disetujui penuh lewat chain Invoice Hutang → tidak diulang.
+                    app(\App\Domain\BusinessSupport\Services\ApBerkasService::class)->ajukanInvoice($berkas, $inv, ajukanApproval: $pengajuan === null);
                 }
 
                 return [$inv, $po];
