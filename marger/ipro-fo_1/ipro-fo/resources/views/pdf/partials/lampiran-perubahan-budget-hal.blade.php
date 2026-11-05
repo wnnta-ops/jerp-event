@@ -23,6 +23,7 @@
     .lpb .lpb-rinci th, .lpb .lpb-rinci td { border: 1px solid #9ca3af; padding: 3px 6px; }
     .lpb .lpb-rinci th { background: #f3f4f6; font-size: 9px; text-transform: uppercase; }
     .lpb .lpb-rinci tr.lpb-tot td { font-weight: bold; background: #f3f4f6; }
+    .lpb .lpb-rinci tr.lpb-batas td { border-top: 2px solid #111; }
     .lpb .lpb-r { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; } .lpb .lpb-c { text-align: center; }
     .lpb .lpb-min { color: #b91c1c; } .lpb .lpb-plus { color: #047857; }
     .lpb .lpb-alasan { border: 1px solid #9ca3af; padding: 5px 8px; min-height: 34px; white-space: pre-line; background: #fff7ed; }
@@ -51,6 +52,29 @@
 
     <h2>Alasan / Keterangan</h2>
     <div class="lpb-alasan">{{ $alasan ?: '—' }}</div>
+
+    {{-- ALOKASI: ringkasan per budget — awal, nilai alokasi (Dari −, Ke +), setelah alokasi; garis tebal memisahkan Dari & Ke. --}}
+    @if ($jenis === 'Alokasi Budget' && count($budgets))
+        <h2>Ringkasan Alokasi</h2>
+        <table class="lpb-rinci">
+            <thead><tr><th style="width:9%">Arah</th><th>Budget</th><th style="width:17%">Budget awal (Rp)</th><th style="width:17%">Nilai alokasi (Rp)</th><th style="width:17%">Setelah alokasi (Rp)</th></tr></thead>
+            <tbody>
+                @foreach ($budgets as $i => $b)
+                    @php
+                        $awal = array_sum(array_column($b['bulan'], 'sebelum'));
+                        $ubah = array_sum(array_column($b['bulan'], 'ubah'));
+                    @endphp
+                    <tr @if ($i > 0) class="lpb-batas" @endif>
+                        <td class="lpb-c"><b>{{ $ubah < 0 ? 'Dari' : 'Ke' }}</b></td>
+                        <td>{{ $b['akun'] }}<br><span style="color:#6b7280">{{ $b['cost_center'] }} · {{ collect($b['bulan'])->pluck('bulan')->implode(', ') }} {{ $b['year'] }}</span></td>
+                        <td class="lpb-r">{{ $rp($awal) }}</td>
+                        <td class="lpb-r {{ $ubah < 0 ? 'lpb-min' : 'lpb-plus' }}"><b>{{ $tanda($ubah) }}</b></td>
+                        <td class="lpb-r"><b>{{ $rp($awal + $ubah) }}</b></td>
+                    </tr>
+                @endforeach
+            </tbody>
+        </table>
+    @endif
 
     @foreach ($budgets as $b)
         <h2>{{ $b['peran'] }}</h2>

@@ -558,6 +558,12 @@ class ApInvoiceController extends Controller
             'pengajuan_id' => ['nullable', 'integer'],
         ]);
         $edit = ! empty($v['invoice_id']) ? BsApInvoice::query()->findOrFail((int) $v['invoice_id']) : null;
+        // Akun tanpa anggaran (budget_id negatif = anggaran 0) → Master Budget nol dibuat dulu.
+        try {
+            $v['data'] = app(\App\Domain\BusinessSupport\Services\BudgetNol::class)->siapkan($v['data'], $request->user()?->id);
+        } catch (BusinessRuleException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
         if ($edit) {
             $this->pastikanBolehEdit($request, $edit);
         } else {
@@ -617,6 +623,10 @@ class ApInvoiceController extends Controller
         foreach (array_unique($v['pairs'] ?? []) as $pair) {
             [$acc, $cc] = explode('|', $pair);
             $out[$pair] = $guard->sisaBulan((int) $acc, $cc !== '' ? (int) $cc : null, $v['date'], $v['exclude_journal_id'] ?? null);
+            // Akun wajib-anggaran yang belum punya anggaran → dianggap anggaran 0 (wajib Alokasi / Koreksi).
+            if ($out[$pair] === null && $cc !== '' && $guard->wajibAnggaran((int) $acc)) {
+                $out[$pair] = $guard->sisaBulanNol((int) $acc, (int) $cc, $v['date'], $v['exclude_journal_id'] ?? null);
+            }
         }
 
         return response()->json(['bulan' => \App\Domain\BusinessSupport\Models\BsBudget::MONTHS[\Illuminate\Support\Carbon::parse($v['date'])->month - 1].' '.\Illuminate\Support\Carbon::parse($v['date'])->year, 'sisa' => $out]);
@@ -979,6 +989,13 @@ class ApInvoiceController extends Controller
 
         // KOREKSI / ALOKASI BUDGET (langkah Struktur) dikirim layar untuk ditampilkan; keputusannya lewat
         // Pengajuan Budget Invoice (lihat di bawah) — di sini hanya penanda bahwa invoice ini memakainya.
+        // Akun tanpa anggaran (budget_id negatif = anggaran 0) → Master Budget nol dibuat dulu.
+        try {
+            $request->merge(\Illuminate\Support\Arr::only(app(\App\Domain\BusinessSupport\Services\BudgetNol::class)
+                ->siapkan($request->only(['koreksi', 'alokasi', 'invoice_date']), $request->user()?->id), ['koreksi', 'alokasi']));
+        } catch (BusinessRuleException $e) {
+            return back()->withInput()->with('error', $e->getMessage());
+        }
         $koreksi = $request->validate([
             'koreksi' => ['nullable', 'array'],
             'koreksi.*.budget_id' => ['required', 'integer', 'exists:bs_budgets,id'],
