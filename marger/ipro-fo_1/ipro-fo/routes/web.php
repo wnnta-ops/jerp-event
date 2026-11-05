@@ -710,6 +710,7 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::post('/business-support/payable', [BsApController::class, 'store'])->name('bs.ap.store');
     // Draft Registrasi Invoice Hutang (dipakai tombol "Edit" berkas di langkah Detil Tagihan).
     Route::post('/business-support/payable/draft', [BsApController::class, 'simpanDraft'])->name('bs.ap.draft.store');
+    Route::post('/business-support/payable/ajukan-dept-head', [BsApController::class, 'ajukanDeptHead'])->name('bs.ap.ajukan-dept-head'); // langkah Struktur: simpan draft + ajukan berkas ke TTD Dept Head
     // Detil Tagihan: berkas langsung dari wizard — Upload File / Generate Link supplier.
     Route::post('/business-support/payable/berkas-upload', [App\Http\Controllers\Web\BusinessSupport\Payable\ApInvoiceBerkasController::class, 'upload'])->name('bs.ap.berkas-langsung.upload');
     Route::post('/business-support/payable/berkas-link', [App\Http\Controllers\Web\BusinessSupport\Payable\ApInvoiceBerkasController::class, 'buatLink'])->name('bs.ap.berkas-link.store');
@@ -863,6 +864,9 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::post('/business-support/payable/{invoice}/batal', [BsApController::class, 'batal'])->name('bs.ap.batal');
     Route::get('/business-support/payable/{invoice}/memo', [BsApController::class, 'memo'])->name('bs.ap.memo'); // cetak Memo Internal + Bukti Permohonan Pembayaran
     Route::post('/business-support/payable/{invoice}/berkas-notes', [BsApController::class, 'updateBerkasNotes'])->name('bs.ap.berkas-notes'); // catatan kelengkapan berkas (free-text)
+    Route::post('/business-support/payable/{invoice}/kelengkapan-file', [BsApController::class, 'tambahKelengkapanFile'])->name('bs.ap.kelengkapan-file.store'); // file kelengkapan berkas
+    Route::delete('/business-support/payable/{invoice}/kelengkapan-file/{file}', [BsApController::class, 'hapusKelengkapanFile'])->whereNumber('file')->name('bs.ap.kelengkapan-file.destroy');
+    Route::get('/business-support/payable/{invoice}/kelengkapan-file/{file}', [BsApController::class, 'lihatKelengkapanFile'])->whereNumber('file')->name('bs.ap.kelengkapan-file.show')->withTrashed();
     Route::post('/business-support/payable/{invoice}/berkas-finance', [BsApController::class, 'updateBerkasFinance'])->name('bs.ap.berkas-finance'); // tanggal berkas diterima Finance (khusus Dept Finance)
     Route::post('/business-support/payable/{invoice}/pay', [BsApController::class, 'pay'])->name('bs.ap.pay');
 
@@ -1576,6 +1580,7 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
         Route::post('/{approval}/act', [$c, 'act'])->whereNumber('approval')->name('act');
         Route::post('/{approval}/revisi-budget', [$c, 'revisiBudget'])->whereNumber('approval')->name('revisi-budget'); // Finance: ubah alokasi / koreksi turunan invoice
         Route::get('/{approval}/cetak', [$c, 'cetak'])->whereNumber('approval')->name('cetak'); // lembar Memo Urgent
+        Route::get('/{approval}/memo-internal', [$c, 'memoInternal'])->whereNumber('approval')->name('memo-internal'); // Memo Internal + Lampiran Perubahan Budget (invoice hutang)
         Route::post('/pengingat-memo/tutup', [$c, 'tutupPengingat'])->name('pengingat.tutup'); // pop-up login
     });
 

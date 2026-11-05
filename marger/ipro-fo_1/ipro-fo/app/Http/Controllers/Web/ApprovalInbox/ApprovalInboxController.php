@@ -386,6 +386,25 @@ class ApprovalInboxController extends Controller
         return implode(' · ', $bag);
     }
 
+    /**
+     * Memo Internal invoice hutang (halaman 1) + Lampiran Perubahan Budget alokasi / koreksinya — satu
+     * dokumen untuk approver. Akses mengikuti Approval Inbox (approver tidak perlu izin ap.memo).
+     */
+    public function memoInternal(Request $request, Approval $approval): \Illuminate\Http\Response
+    {
+        abort_unless($request->user()?->can('approvalinbox.view'), 403);
+        abort_unless($approval->approvable_type === (new \App\Domain\BusinessSupport\Models\BsApInvoice)->getMorphClass(), 404);
+        abort_unless($this->inbox->canView($request->user(), $approval), 403);
+        $invoice = \App\Domain\BusinessSupport\Models\BsApInvoice::withTrashed()->with([
+            'supplier:id,code,name,bank_name,bank_account_no,bank_account_name',
+            'payableAccount:id,code,name', 'category.payableAccount:id,code,name', 'lines',
+        ])->findOrFail($approval->approvable_id);
+
+        return response(app(\App\Http\Controllers\Web\BusinessSupport\Payable\ApInvoiceController::class)
+            ->renderMemoPrint($invoice, $request->user(), route('approval-inbox.show', $approval->id), $request->boolean('preview')))
+            ->header('Content-Type', 'text/html; charset=UTF-8');
+    }
+
     /** Isi lembar Memo Urgent untuk preview & cetak; null bila dokumennya bukan memo. */
     private function lembarMemo(Approval $approval): ?array
     {

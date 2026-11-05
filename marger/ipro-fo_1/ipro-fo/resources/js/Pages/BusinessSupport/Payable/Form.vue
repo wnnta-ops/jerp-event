@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, nextTick, onMounted, onBeforeUnmount } from 'vue';
 import { useForm, Link, router } from '@inertiajs/vue3';
-import { ArrowLeft, ArrowRight, Save, HandCoins, Plus, Trash2, Check, Search, Copy, Share2, ClipboardPaste, Files, FileText, ChevronDown, Building2, Upload, Link2, RefreshCw, X } from 'lucide-vue-next';
+import { ArrowLeft, ArrowRight, Save, HandCoins, Plus, Trash2, Check, Search, Copy, Share2, ClipboardPaste, Files, FileText, ChevronDown, Building2, Upload, Link2, RefreshCw, X, Signature, CircleCheck } from 'lucide-vue-next';
 import Button from '@/Components/UI/Button.vue';
 import MoneyInput from '@/Components/UI/MoneyInput.vue';
 import SearchSelect from '@/Components/UI/SearchSelect.vue';
@@ -59,7 +59,9 @@ const props = defineProps<{
     /** Registrasi baru Invoice Hutang: berkas unggahan user sendiri — WAJIB dipilih di langkah Input Transaksi. null = tidak dipakai. */
     berkasSaya?: BerkasPilihan[] | null;
     /** Draft isian wizard (disimpan saat user menekan "Edit" berkas, atau "Simpan Draft"). */
-    draftInvoice?: { data: Record<string, any>; step: number; updated_at: string | null } | null;
+    draftInvoice?: { id?: number | null; data: Record<string, any>; step: number; updated_at: string | null } | null;
+    /** TTD Dept Head: saya = pembuat adalah Dept Head (TTD otomatis); nama = Dept Head (atasan) pembuat. */
+    ttdDeptHead?: { saya: boolean; nama: string | null } | null;
     /** Pengajuan Budget (alokasi / koreksi langkah Struktur) yang sedang dilanjutkan — dibuka dari ?pengajuan=. */
     pengajuanBudget?: {
         id: number; status: 'menunggu' | 'disetujui' | 'ditolak'; catatan: string | null; invoice_number: string | null;
@@ -127,6 +129,8 @@ const form = useForm<any>({
     ...(props.invoiceEdit?.data ?? {}),
     ...(pakaiDraft ? props.draftInvoice!.data : {}),
     ...(props.pengajuanBudget?.data ?? {}),
+    // Draft yang sedang dibuka (Simpan Draft / Ajukan ke Dept Head menulis ke sini; dihapus saat invoice tersimpan).
+    draft_id: (pakaiDraft ? props.draftInvoice!.id : null) ?? '',
 });
 
 /* PENERIMA — satu-satunya bagian yang berbeda antarmodul. Invoice Hutang memilih supplier,
@@ -823,26 +827,37 @@ function tutupSemua() {
 }
 onBeforeUnmount(tutupSemua);
 
-/* DRAFT. "Simpan Draft" menyimpan isian wizard; dipulihkan saat Registrasi Invoice Hutang dibuka lagi. */
+/* DRAFT. "Simpan Draft" menyimpan isian wizard; dipulihkan saat Registrasi Invoice Hutang dibuka lagi.
+   Tombolnya redup selama tidak ada perubahan sejak terakhir tersimpan; sesudah disimpan ada tanda "Tersimpan". */
 const menyimpanDraft = ref(false);
-function simpanDraft() {
-    menyimpanDraft.value = true;
-    // Menunggu supplier: draft disimpan di link-nya sendiri (satu user bisa menunggu beberapa link).
-    if (form.link_id) {
-        (window as any).axios.put(route('bs.ap.berkas-link.draft', form.link_id), { data: form.data(), step: step.value })
-            .then(() => { pesanLink.value = 'Draft tersimpan di link ' + (linkAktif.value?.invoice_number ?? '') + '.'; })
-            .finally(() => { menyimpanDraft.value = false; });
-        return;
-    }
-    router.post(route('bs.ap.draft.store'), { data: form.data(), step: step.value }, {
-        preserveScroll: true,
-        preserveState: true,
-        onFinish: () => { menyimpanDraft.value = false; },
-    });
+const jepret = () => JSON.stringify({ ...form.data(), draft_id: undefined });
+const tersimpanIsi = ref(pakaiDraft || props.linkBerkas ? jepret() : '');
+const tersimpanPada = ref<string | null>(props.draftInvoice?.updated_at ?? null);
+const draftBerubah = computed(() => jepret() !== tersimpanIsi.value);
+const jamTersimpan = computed(() => tersimpanPada.value
+    ? new Date(tersimpanPada.value).toLocaleString('id-ID', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '');
+const galatDraft = ref('');
+function tandaiTersimpan(at?: string | null) { tersimpanIsi.value = jepret(); tersimpanPada.value = at ?? new Date().toISOString(); }
+async function simpanDraft(diam = false) {
+    if (menyimpanDraft.value) return;
+    menyimpanDraft.value = true; galatDraft.value = '';
+    try {
+        // Menunggu supplier: draft disimpan di link-nya sendiri (satu user bisa menunggu beberapa link).
+        if (form.link_id) {
+            await (window as any).axios.put(route('bs.ap.berkas-link.draft', form.link_id), { data: form.data(), step: step.value });
+            tandaiTersimpan();
+        } else {
+            const { data } = await (window as any).axios.post(route('bs.ap.draft.store'), { data: form.data(), step: step.value, draft_id: form.draft_id || null });
+            form.draft_id = data.id;
+            tandaiTersimpan(data.updated_at);
+        }
+    } catch (e: any) {
+        if (!diam) galatDraft.value = e?.response?.data?.message ?? 'Draft gagal disimpan — coba lagi.';
+    } finally { menyimpanDraft.value = false; }
 }
 function buangDraft() {
     if (!confirm('Buang draft ini? Isian yang tersimpan akan dihapus dan wizard dimulai dari awal.')) return;
-    router.delete(route('bs.ap.draft.destroy'));
+    router.delete(route('bs.ap.draft.destroy', form.draft_id ? { draft: form.draft_id } : {}));
 }
 const draftPada = props.draftInvoice?.updated_at
     ? new Date(props.draftInvoice.updated_at).toLocaleString('id-ID', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' })
@@ -1102,6 +1117,46 @@ function muatUlangMemo() {
     router.reload({ only: ['memoUrgent', 'memoMenungguBayar'], onFinish: () => { memuatMemo.value = false; } });
 }
 
+/* ── TTD DEPT HEAD ──
+   Staf: "Ajukan ke Dept Head" (aktif di langkah Struktur) menyimpan isian sebagai draft lalu mengajukan
+   berkasnya ke TTD atasan. Lanjut ke Selesai baru bisa setelah Dept Head menyetujui (status dicek
+   berkala; pembuat juga mendapat notifikasi). Pembuat yang Dept Head: TTD otomatis saat disimpan. */
+const sayaDeptHead = !!props.ttdDeptHead?.saya;
+const perluTtd = computed(() => wajibBerkas && !sayaDeptHead);
+const statusTtd = computed<'belum' | 'menunggu' | 'disetujui' | 'ditolak'>(() => {
+    const st = berkasDipilih.value?.status;
+    if (berkasDipilih.value?.bisa_diinvoice) return 'disetujui';
+    return st === 'menunggu_ttd' ? 'menunggu' : (st === 'ditolak' ? 'ditolak' : 'belum');
+});
+const mengajukanDh = ref(false);
+const galatDh = ref('');
+const bisaAjukanDh = computed(() => perluTtd.value && step.value === 4 && !!berkasDipilih.value && !mengajukanDh.value
+    && (statusTtd.value === 'belum' || statusTtd.value === 'ditolak') && jurnalBalanced.value && kurangCc.value.length === 0);
+async function ajukanDeptHead() {
+    if (!bisaAjukanDh.value) return;
+    mengajukanDh.value = true; galatDh.value = '';
+    try {
+        const { data } = await (window as any).axios.post(route('bs.ap.ajukan-dept-head'), {
+            data: form.data(), step: step.value, draft_id: form.draft_id || null, link_id: form.link_id || null,
+        });
+        if (data.draft_id) form.draft_id = data.draft_id;
+        tandaiTersimpan(data.updated_at);
+        router.reload({ only: ['berkasSaya'] });
+    } catch (e: any) {
+        const r = e?.response?.data;
+        galatDh.value = r?.message && !r?.errors ? r.message : (r?.errors ? String(Object.values(r.errors)[0]) : 'Gagal mengajukan — coba lagi.');
+    } finally { mengajukanDh.value = false; }
+}
+// Selagi menunggu TTD: status berkas dicek tiap 20 detik.
+let pantauTtd: ReturnType<typeof setInterval> | null = null;
+watch(statusTtd, (st) => {
+    if (pantauTtd) { clearInterval(pantauTtd); pantauTtd = null; }
+    if (st === 'menunggu') pantauTtd = setInterval(() => router.reload({ only: ['berkasSaya'] }), 20000);
+}, { immediate: true });
+onBeforeUnmount(() => { if (pantauTtd) clearInterval(pantauTtd); });
+
+// Langkah Struktur sudah lengkap selain TTD Dept Head → sebutkan TTD-lah yang menahan tombolnya.
+const canNextTanpaTtd = computed(() => step.value === 4 && jurnalBalanced.value && kurangCc.value.length === 0);
 function canNext() {
     if (step.value === 1) return !!form[kolomPihak] && (props.jenis.kunci !== 'deposit' || rekeningLengkap.value);
     // Berkas Tagihan ada di langkah ini. Generate Link: tidak bisa lanjut sampai supplier mengunggah dokumen di link itu.
@@ -1116,10 +1171,16 @@ function canNext() {
     // tidak dinilai ulang; penjaga budget server tetap memeriksa saat simpan.
     if (step.value === 3) return !barisTakSamaDpp.value;
     if (step.value === 4) return jurnalBalanced.value && kurangCc.value.length === 0
+        && (!perluTtd.value || statusTtd.value === 'disetujui')
         && (statusPengajuan.value === 'disetujui' || (koreksiBelumCukup.value.length === 0 && !butuhPengajuan.value));
     return true;
 }
-function next() { if (canNext() && step.value < 5) step.value++; }
+// "Simpan & Ajukan" (registrasi baru ber-berkas) = lanjut ke langkah berikutnya + simpan draft diam-diam.
+function next() {
+    if (!canNext() || step.value >= 5) return;
+    step.value++;
+    if (wajibBerkas && !props.pengajuanBudget && draftBerubah.value) simpanDraft(true);
+}
 
 /* ── PENGAJUAN BUDGET ──
    Baris Struktur yang ditutup Alokasi / Koreksi → "Ajukan ke Finance": isian tersimpan sebagai draft
@@ -1135,7 +1196,7 @@ const bisaLompat = computed(() => statusPengajuan.value === 'disetujui');
 const langkahAwal = modeEdit ? 2 : 1;
 const kunciPengajuan = computed(() => statusPengajuan.value === 'menunggu' || statusPengajuan.value === 'disetujui');
 const bisaAjukan = computed(() => butuhPengajuan.value && statusPengajuan.value !== 'menunggu' && statusPengajuan.value !== 'disetujui'
-    && jurnalBalanced.value && kurangCc.value.length === 0 && koreksiBelumCukup.value.length === 0);
+    && (!perluTtd.value || statusTtd.value === 'disetujui') && jurnalBalanced.value && kurangCc.value.length === 0 && koreksiBelumCukup.value.length === 0);
 const mengajukan = ref(false);
 const konfirmasiFinance = ref(false);
 const jenisPengajuan = computed(() => [(form.alokasi as any[]).length ? 'alokasi' : '', (form.koreksi as any[]).length ? 'koreksi' : ''].filter(Boolean).join(' / '));
@@ -1289,6 +1350,49 @@ const cellArea = 'w-full rounded-md border border-neutral-300 bg-white px-2 py-1
                 </component>
                 <ArrowRight v-if="i < steps.length-1" class="h-3.5 w-3.5 text-neutral-300" />
             </template>
+            <!-- Simpan Draft: di kanan "Selesai"; redup bila tidak ada perubahan sejak tersimpan. -->
+            <div v-if="wajibBerkas && !pengajuanBudget" class="ml-auto flex items-center gap-2">
+                <span v-if="galatDraft" class="text-xs text-danger-500">{{ galatDraft }}</span>
+                <span v-else-if="jamTersimpan && !draftBerubah" class="inline-flex items-center gap-1 text-xs text-emerald-600 dark:text-emerald-400"><CircleCheck class="h-3.5 w-3.5" /> Tersimpan di draft · {{ jamTersimpan }}</span>
+                <span v-else-if="jamTersimpan" class="text-xs text-neutral-400">Ada perubahan belum disimpan</span>
+                <button type="button" :disabled="menyimpanDraft || !draftBerubah" class="inline-flex items-center gap-1.5 rounded-lg border border-neutral-300 px-3 py-1.5 text-xs font-medium hover:bg-neutral-50 disabled:cursor-default disabled:opacity-40 dark:border-neutral-700 dark:hover:bg-neutral-800" @click="simpanDraft()">
+                    <Save class="h-3.5 w-3.5" /> {{ menyimpanDraft ? 'Menyimpan…' : 'Simpan Draft' }}</button>
+            </div>
+        </div>
+
+        <!-- Nav — di atas isian (tepat di bawah stepper) supaya tombolnya tidak perlu dicari di bawah. -->
+        <div class="flex items-center justify-between">
+            <button v-if="step > (modeEdit ? 2 : 1)" type="button" @click="prev" class="inline-flex items-center gap-1.5 rounded-lg border border-neutral-300 px-4 py-2 text-sm dark:border-neutral-700"><ArrowLeft class="h-4 w-4" /> Sebelumnya</button>
+            <span v-else></span>
+            <!-- Alasan tombolnya mati DISEBUTKAN, bukan dibiarkan ditebak. Tombol nonaktif tanpa
+                 keterangan pada wizard berlangkah membuat orang menyangka layarnya rusak. -->
+            <span v-if="step === 4 && !kurangCc.length && koreksiBelumCukup.length && statusPengajuan !== 'disetujui'" class="self-center text-xs text-danger-500">
+                Melebihi sisa budget — klik "Alokasi" atau "Koreksi" pada baris merah{{ form.koreksi.length || form.alokasi.length ? ', pilih budget asal alokasi, dan isi nilainya minimal sebesar kekurangan' : '' }}.
+            </span>
+            <span v-if="step === 4 && kurangCc.length" class="self-center text-xs text-danger-500">
+                Cost center wajib diisi untuk akun: {{ kurangCc.join(', ') }}.
+            </span>
+            <span v-if="step === 2 && wajibBerkas && !berkasDipilih" class="self-center text-xs text-danger-500">Pilih berkas tagihan dulu.</span>
+            <span v-if="step === 5 && berkasBelumSiap && perluTtd" class="self-center text-xs text-amber-600">Berkas belum di-TTD Dept Head — ajukan di langkah Struktur.</span>
+            <span v-if="step === 4 && perluTtd && statusTtd !== 'disetujui' && canNextTanpaTtd" class="self-center text-xs text-amber-600">{{ statusTtd === 'menunggu' ? 'Lanjut setelah Dept Head menyetujui.' : 'Ajukan ke Dept Head dulu.' }}</span>
+            <div class="flex items-center gap-2">
+            <!-- TTD Dept Head (staf): diajukan di langkah Struktur; Simpan & Ajukan menunggu persetujuannya. -->
+            <span v-if="perluTtd && statusTtd === 'menunggu'" class="rounded-full bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-800 dark:bg-amber-950/40 dark:text-amber-300">Menunggu TTD Dept Head{{ berkasDipilih?.dept_head ? ' · ' + berkasDipilih.dept_head : '' }}</span>
+            <span v-else-if="perluTtd && statusTtd === 'disetujui'" class="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300">Sudah di-TTD Dept Head</span>
+            <span v-else-if="perluTtd && statusTtd === 'ditolak'" class="rounded-full bg-danger-50 px-2.5 py-1 text-xs font-medium text-danger-700 dark:bg-danger-950/40 dark:text-danger-300">Ditolak Dept Head — perbaiki lalu ajukan ulang</span>
+            <span v-if="galatDh" class="self-center text-xs text-danger-500">{{ galatDh }}</span>
+            <button v-if="perluTtd && !pengajuanBudget" type="button" :disabled="!bisaAjukanDh"
+                :title="step < 4 ? 'Aktif di langkah Struktur' : (statusTtd === 'menunggu' ? 'Sudah diajukan — menunggu Dept Head' : (statusTtd === 'disetujui' ? 'Sudah di-TTD Dept Head' : ''))"
+                class="inline-flex items-center gap-1.5 rounded-lg border border-primary-300 px-4 py-2 text-sm font-medium text-primary-700 hover:bg-primary-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-primary-800 dark:text-primary-300 dark:hover:bg-primary-950/40"
+                @click="ajukanDeptHead"><Signature class="h-4 w-4" /> {{ mengajukanDh ? 'Mengajukan…' : 'Ajukan ke Dept Head' }}</button>
+            <span v-if="galatPengajuan" class="self-center text-xs text-danger-500">{{ galatPengajuan }}</span>
+            <span v-if="step === 4 && statusPengajuan === 'menunggu'" class="self-center text-xs text-amber-600">Menunggu approval.</span>
+            <!-- Ada alokasi / koreksi yang belum disetujui: Selanjutnya membuka konfirmasi pengajuan ke Finance. -->
+            <Button v-if="step === 4 && butuhPengajuan && statusPengajuan !== 'disetujui' && statusPengajuan !== 'menunggu'" :disabled="!bisaAjukan || mengajukan" @click="konfirmasiFinance = true">
+                <template #icon-left><ArrowRight class="h-4 w-4" /></template>{{ mengajukan ? 'Mengajukan…' : 'Selanjutnya' }}</Button>
+            <Button v-else-if="step < 5" :disabled="!canNext()" @click="next"><template #icon-left><ArrowRight class="h-4 w-4" /></template>{{ wajibBerkas && !pengajuanBudget ? 'Simpan & Ajukan' : 'Selanjutnya' }}</Button>
+            <Button v-else :disabled="form.processing || (berkasBelumSiap && perluTtd)" @click="submit"><template #icon-left><Save class="h-4 w-4" /></template>{{ modeEdit ? 'Simpan Perubahan' : 'Simpan & Buat Jurnal' }}</Button>
+            </div>
         </div>
 
         <!-- Pengajuan Budget: status persetujuan Finance atas alokasi / koreksi langkah Struktur. -->
@@ -1482,7 +1586,7 @@ const cellArea = 'w-full rounded-md border border-neutral-300 bg-white px-2 py-1
                         :class="modeBerkas === 'upload' ? 'border-primary-500 bg-primary-50/60 dark:bg-primary-900/20' : 'border-neutral-200 hover:bg-neutral-50 dark:border-neutral-700 dark:hover:bg-neutral-800'"
                         @click="modeBerkas = 'upload'">
                         <Upload class="mt-0.5 h-4 w-4 shrink-0 text-primary-600" />
-                        <span><span class="block text-sm font-medium">Upload File</span><span class="block text-xs text-neutral-500">Unggah sendiri / pilih berkas Anda — diajukan ke TTD Dept Head.</span></span>
+                        <span><span class="block text-sm font-medium">Upload File</span><span class="block text-xs text-neutral-500">Unggah sendiri / pilih berkas Anda — TTD Dept Head diajukan di langkah Struktur.</span></span>
                     </button>
                     <button type="button" class="flex items-start gap-2 rounded-lg border p-3 text-left"
                         :class="modeBerkas === 'link' ? 'border-primary-500 bg-primary-50/60 dark:bg-primary-900/20' : 'border-neutral-200 hover:bg-neutral-50 dark:border-neutral-700 dark:hover:bg-neutral-800'"
@@ -1521,7 +1625,7 @@ const cellArea = 'w-full rounded-md border border-neutral-300 bg-white px-2 py-1
                         <div class="mt-2 flex flex-wrap items-center gap-3 text-xs">
                             <button type="button" class="inline-flex items-center gap-1 text-primary-600 hover:underline disabled:opacity-50" :disabled="memprosesLink" @click="cekLink"><RefreshCw class="h-3.5 w-3.5" /> Cek status</button>
                             <span v-if="linkAktif.status === 'menunggu'" class="text-neutral-400">dicek otomatis tiap 15 detik · Anda juga dapat notifikasi saat supplier mengunggah</span>
-                            <span v-else-if="linkAktif.berkas_number" class="text-neutral-500">Berkas {{ linkAktif.berkas_number }} — diajukan ke TTD Dept Head<template v-if="linkAktif.filled_at"> · terakhir diunggah {{ new Date(linkAktif.filled_at).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' }) }}</template></span>
+                            <span v-else-if="linkAktif.berkas_number" class="text-neutral-500">Berkas {{ linkAktif.berkas_number }}<template v-if="linkAktif.filled_at"> · terakhir diunggah {{ new Date(linkAktif.filled_at).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' }) }}</template></span>
                             <button v-if="linkAktif.status === 'menunggu'" type="button" class="ml-auto text-danger-500 hover:underline" @click="batalLink">Batalkan link</button>
                         </div>
                     </template>
@@ -1546,7 +1650,7 @@ const cellArea = 'w-full rounded-md border border-neutral-300 bg-white px-2 py-1
                     <DropBerkas v-model="unggahan" :jenis="jenisBerkas ?? []" />
                     <div class="mt-3 flex flex-wrap items-center gap-3">
                         <span v-if="unggahan.length && kurangWajib.length" class="text-xs text-amber-600">Belum ada: {{ kurangWajib.join(', ') }}</span>
-                        <Button size="sm" :disabled="!bisaUnggah" @click="unggahBerkas"><template #icon-left><Upload class="h-4 w-4" /></template>{{ mengunggah ? 'Mengunggah…' : 'Upload & Ajukan TTD' }}</Button>
+                        <Button size="sm" :disabled="!bisaUnggah" @click="unggahBerkas"><template #icon-left><Upload class="h-4 w-4" /></template>{{ mengunggah ? 'Mengunggah…' : 'Upload' }}</Button>
                         <span v-if="galatUnggah" class="text-xs text-danger-500">{{ galatUnggah }}</span>
                     </div>
                     <PesanWajib v-if="!berkasDipilih" :pesan="pesan.berkas" />
@@ -1580,7 +1684,8 @@ const cellArea = 'w-full rounded-md border border-neutral-300 bg-white px-2 py-1
                             <span v-if="galatTambah" class="text-xs text-danger-500">{{ galatTambah }}</span>
                         </div>
                     </div>
-                    <p v-if="berkasBelumSiap" class="mt-2 text-xs text-amber-600">Berkas ini belum di-TTD Dept Head. Anda bisa lanjut mengisi, tetapi invoice baru bisa disimpan setelah berkas di-TTD — sementara itu gunakan "Simpan Draft".</p>
+                    <p v-if="berkasBelumSiap && perluTtd" class="mt-2 text-xs text-amber-600">Berkas ini belum di-TTD Dept Head. Lanjutkan isian sampai langkah Struktur, lalu tekan "Ajukan ke Dept Head".</p>
+                    <p v-else-if="berkasBelumSiap" class="mt-2 text-xs text-neutral-500">Anda Dept Head — berkas ini ditandatangani otomatis atas nama Anda saat invoice disimpan.</p>
 
                     <div class="mt-3 flex items-center justify-between">
                         <span class="text-xs font-medium text-neutral-500">File berkas ({{ berkasDipilih.files.length }})</span>
@@ -2073,32 +2178,6 @@ const cellArea = 'w-full rounded-md border border-neutral-300 bg-white px-2 py-1
                         </tr>
                     </tbody>
                 </table>
-            </div>
-        </div>
-
-        <!-- Nav -->
-        <div class="flex items-center justify-between">
-            <button v-if="step > (modeEdit ? 2 : 1)" type="button" @click="prev" class="inline-flex items-center gap-1.5 rounded-lg border border-neutral-300 px-4 py-2 text-sm dark:border-neutral-700"><ArrowLeft class="h-4 w-4" /> Sebelumnya</button>
-            <span v-else></span>
-            <!-- Alasan tombolnya mati DISEBUTKAN, bukan dibiarkan ditebak. Tombol nonaktif tanpa
-                 keterangan pada wizard berlangkah membuat orang menyangka layarnya rusak. -->
-            <span v-if="step === 4 && !kurangCc.length && koreksiBelumCukup.length && statusPengajuan !== 'disetujui'" class="self-center text-xs text-danger-500">
-                Melebihi sisa budget — klik "Alokasi" atau "Koreksi" pada baris merah{{ form.koreksi.length || form.alokasi.length ? ', pilih budget asal alokasi, dan isi nilainya minimal sebesar kekurangan' : '' }}.
-            </span>
-            <span v-if="step === 4 && kurangCc.length" class="self-center text-xs text-danger-500">
-                Cost center wajib diisi untuk akun: {{ kurangCc.join(', ') }}.
-            </span>
-            <span v-if="step === 2 && wajibBerkas && !berkasDipilih" class="self-center text-xs text-danger-500">Pilih berkas tagihan dulu.</span>
-            <span v-if="step === 5 && berkasBelumSiap" class="self-center text-xs text-amber-600">Berkas belum di-TTD Dept Head — simpan sebagai draft dulu.</span>
-            <div class="flex items-center gap-2">
-            <button v-if="wajibBerkas && !pengajuanBudget" type="button" :disabled="menyimpanDraft" class="inline-flex items-center gap-1.5 rounded-lg border border-neutral-300 px-4 py-2 text-sm hover:bg-neutral-50 disabled:opacity-60 dark:border-neutral-700 dark:hover:bg-neutral-800" @click="simpanDraft()">Simpan Draft</button>
-            <span v-if="galatPengajuan" class="self-center text-xs text-danger-500">{{ galatPengajuan }}</span>
-            <span v-if="step === 4 && statusPengajuan === 'menunggu'" class="self-center text-xs text-amber-600">Menunggu approval.</span>
-            <!-- Ada alokasi / koreksi yang belum disetujui: Selanjutnya membuka konfirmasi pengajuan ke Finance. -->
-            <Button v-if="step === 4 && butuhPengajuan && statusPengajuan !== 'disetujui' && statusPengajuan !== 'menunggu'" :disabled="!bisaAjukan || mengajukan" @click="konfirmasiFinance = true">
-                <template #icon-left><ArrowRight class="h-4 w-4" /></template>{{ mengajukan ? 'Mengajukan…' : 'Selanjutnya' }}</Button>
-            <Button v-else-if="step < 5" :disabled="!canNext()" @click="next"><template #icon-left><ArrowRight class="h-4 w-4" /></template>Selanjutnya</Button>
-            <Button v-else :disabled="form.processing || berkasBelumSiap" @click="submit"><template #icon-left><Save class="h-4 w-4" /></template>{{ modeEdit ? 'Simpan Perubahan' : 'Simpan & Buat Jurnal' }}</Button>
             </div>
         </div>
 

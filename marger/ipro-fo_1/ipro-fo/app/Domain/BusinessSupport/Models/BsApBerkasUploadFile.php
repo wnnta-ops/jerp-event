@@ -12,7 +12,7 @@ class BsApBerkasUploadFile extends Model
 {
     protected $table = 'bs_ap_berkas_upload_files';
 
-    protected $fillable = ['berkas_upload_id', 'berkas_id', 'keterangan', 'original_name', 'path', 'mime', 'size'];
+    protected $fillable = ['berkas_upload_id', 'ap_invoice_id', 'berkas_id', 'keterangan', 'original_name', 'path', 'mime', 'size', 'uploaded_by'];
 
     protected $hidden = ['path'];
 

@@ -38,6 +38,8 @@ const props = defineProps<{
     canBerkasFinance?: boolean;
     /** Invoice yang menunggu berkas supplier (link) — nomor sudah dipesan, belum aktif. baru = berkas supplier masuk & belum dibuka. */
     pengajuanBudget?: Array<{ id: number; invoice_number: string | null; status: 'menunggu' | 'disetujui' | 'ditolak'; baru: boolean; catatan: string | null; description: string | null; url: string; diajukan: string | null }>;
+    /** Isian invoice yang berkasnya diajukan ke TTD Dept Head. status disetujui = tinggal dilanjutkan. */
+    menungguDeptHead?: Array<{ berkas_id: number; berkas_number: string; invoice_number: string | null; supplier: string | null; description: string | null; nilai: number | null; dept_head: string | null; diajukan: string | null; status: 'menunggu' | 'disetujui' | 'ditolak'; url: string }>;
     menungguSupplier?: Array<{ id: number; invoice_number: string; supplier: string | null; status: string; baru: boolean; berkas_number: string | null; description: string | null; url: string; created_at: string | null }>;
     /** Modul yang sedang dibuka: Invoice Hutang / Reimburse Karyawan / Deposit Renovasi. */
     jenis: { kunci: string; judul: string; penerima: string; rute: string; izin: string };
@@ -45,8 +47,10 @@ const props = defineProps<{
 
 /* Panel Draft (pengajuan budget Finance + menunggu berkas supplier) — diciutkan bawaannya. */
 const draftTerbuka = ref(false);
-const jumlahDraft = computed(() => (props.pengajuanBudget?.length ?? 0) + (props.menungguSupplier?.length ?? 0));
-const adaDraftBaru = computed(() => (props.pengajuanBudget ?? []).some((p) => p.baru) || (props.menungguSupplier ?? []).some((l) => l.baru));
+const jumlahDraft = computed(() => (props.pengajuanBudget?.length ?? 0) + (props.menungguSupplier?.length ?? 0) + (props.menungguDeptHead?.length ?? 0));
+const adaDraftBaru = computed(() => (props.pengajuanBudget ?? []).some((p) => p.baru) || (props.menungguSupplier ?? []).some((l) => l.baru)
+    || (props.menungguDeptHead ?? []).some((d) => d.status !== 'menunggu'));
+const waktuAju = (iso: string | null) => iso ? new Date(iso).toLocaleString('id-ID', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—';
 const modulInvoice = props.jenis.kunci === 'invoice';
 // Tombol kecil Upload file → file dititipkan, wizard dibuka di blok Berkas Tagihan.
 const inputBerkas = ref<HTMLInputElement | null>(null);
@@ -279,16 +283,38 @@ watch(rows, () => nextTick(measure));
         <div v-if="jumlahDraft" class="card overflow-hidden">
             <button type="button" class="flex w-full items-center justify-between gap-2 px-4 py-2.5 text-left text-sm font-semibold hover:bg-neutral-50 dark:hover:bg-neutral-800/40" @click="draftTerbuka = !draftTerbuka">
                 <span class="inline-flex items-center gap-2">
-                    <span v-if="adaDraftBaru" class="h-2 w-2 rounded-full bg-danger-500" title="Ada pengajuan budget yang sudah diputuskan / berkas supplier masuk"></span>
+                    <span v-if="adaDraftBaru" class="h-2 w-2 rounded-full bg-danger-500" title="Ada yang sudah diputuskan (Dept Head / budget) atau berkas supplier masuk"></span>
                     Draft <span class="font-normal text-neutral-400">({{ jumlahDraft }})</span>
                     <span class="text-xs font-normal text-neutral-500">
-                        <template v-if="pengajuanBudget?.length">· {{ pengajuanBudget.length }} pengajuan budget</template>
+                        <template v-if="menungguDeptHead?.length">· {{ menungguDeptHead.length }} TTD Dept Head</template>
+                        <template v-if="pengajuanBudget?.length"> · {{ pengajuanBudget.length }} pengajuan budget</template>
                         <template v-if="menungguSupplier?.length"> · {{ menungguSupplier.length }} menunggu berkas supplier</template>
                     </span>
                 </span>
                 <ChevronDown :class="['h-4 w-4 text-neutral-400 transition-transform', draftTerbuka ? 'rotate-180' : '']" />
             </button>
             <div v-show="draftTerbuka">
+            <!-- Isian invoice yang berkasnya diajukan ke TTD Dept Head (langkah Struktur). Sudah di-TTD → Lanjutkan. -->
+            <div v-if="menungguDeptHead?.length">
+            <div class="border-y border-neutral-200 bg-neutral-50 px-4 py-1.5 text-xs font-semibold uppercase tracking-wide text-neutral-500 dark:border-neutral-800 dark:bg-neutral-800/40">Menunggu TTD Dept Head ({{ menungguDeptHead.length }})</div>
+            <table class="w-full text-sm">
+                <tbody>
+                    <tr v-for="d in menungguDeptHead" :key="d.berkas_id" class="border-t border-neutral-100 first:border-t-0 dark:border-neutral-800">
+                        <td class="whitespace-nowrap px-4 py-2 font-mono text-xs">
+                            <span class="inline-flex items-center gap-1.5"><span v-if="d.status !== 'menunggu'" class="h-2 w-2 rounded-full bg-danger-500" title="Sudah diputuskan Dept Head"></span>{{ d.invoice_number ?? d.berkas_number }}</span>
+                        </td>
+                        <td class="px-4 py-2">{{ d.supplier ?? '—' }}<div v-if="d.description" class="truncate text-xs text-neutral-400">{{ d.description }}</div></td>
+                        <td class="whitespace-nowrap px-4 py-2 text-right font-mono text-xs">{{ d.nilai != null ? Number(d.nilai).toLocaleString('id-ID') : '—' }}</td>
+                        <td class="whitespace-nowrap px-4 py-2 text-xs text-neutral-500">{{ waktuAju(d.diajukan) }}{{ d.dept_head ? ' · ' + d.dept_head : '' }}</td>
+                        <td class="whitespace-nowrap px-4 py-2">
+                            <span :class="['rounded-full px-2 py-0.5 text-[11px] font-medium', d.status === 'disetujui' ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300' : d.status === 'ditolak' ? 'bg-danger-50 text-danger-700 dark:bg-danger-950/40 dark:text-danger-300' : 'bg-amber-50 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300']">
+                                {{ d.status === 'disetujui' ? 'Sudah di-TTD' : d.status === 'ditolak' ? 'Ditolak' : 'Menunggu' }}</span>
+                        </td>
+                        <td class="whitespace-nowrap px-4 py-2 text-right"><Link :href="d.url" class="text-xs font-medium text-primary-600 hover:underline">{{ d.status === 'disetujui' ? 'Lanjutkan →' : 'Buka draft' }}</Link></td>
+                    </tr>
+                </tbody>
+            </table>
+            </div>
             <!-- Invoice tertahan Pengajuan Budget: alokasi / koreksi langkah Struktur menunggu Finance. -->
             <div v-if="pengajuanBudget?.length">
             <div class="border-y border-neutral-200 bg-neutral-50 px-4 py-1.5 text-xs font-semibold uppercase tracking-wide text-neutral-500 dark:border-neutral-800 dark:bg-neutral-800/40">Menunggu approval budget ({{ pengajuanBudget.length }})</div>

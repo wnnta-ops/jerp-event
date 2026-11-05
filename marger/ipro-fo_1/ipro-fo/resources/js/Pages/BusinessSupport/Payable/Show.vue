@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue';
 import { router, useForm, Link, usePage } from '@inertiajs/vue3';
-import { ArrowLeft, HandCoins, Wallet, BookText, FolderCheck, CheckCircle2, Printer, Save, Eraser, Pencil, Ban, Lock } from 'lucide-vue-next';
+import { ArrowLeft, HandCoins, Wallet, BookText, FolderCheck, CheckCircle2, Printer, Save, Eraser, Pencil, Ban, Lock, Upload, FileText, Trash2 } from 'lucide-vue-next';
 import Button from '@/Components/UI/Button.vue';
 import Badge from '@/Components/UI/Badge.vue';
+import DropBerkas, { type FileBerkas } from '@/Components/UI/DropBerkas.vue';
 
 const props = defineProps<{
     invoice: any;
@@ -19,6 +20,12 @@ const props = defineProps<{
     /** Edit / Batal — diputuskan server (izin Grup Akses BO + keadaan "sudah diproses FAT"). null = invoice sudah BATAL. */
     aksi?: { dariRegistrasi: boolean; dariPostingFo?: boolean; diprosesFat: string | null; edit: boolean; editRute?: string; batal: boolean; penahanBatal: string | null } | null;
     infoBatal?: { at: string | null; by: string | null; reason: string | null } | null;
+    /** File Kelengkapan Berkas: berkas invoice + tambahan dari rincian ini (hanya tambahan yang bisa dihapus). */
+    kelengkapanFiles?: Array<{ id: number; name: string; jenis: string | null; size: number; url: string; tambahan: boolean; oleh: string | null; at: string | null }>;
+    jenisBerkas?: Array<{ id: number; code?: string; name: string; is_mandatory: boolean }>;
+    bolehKelengkapan?: boolean;
+    /** Boleh membuka cetak Memo Internal (+ lampiran) — sama dengan pemeriksaan rute bs.ap.memo. */
+    bolehMemo?: boolean;
 }>();
 
 /* ── BATAL ── alasan wajib; tercatat di invoice bersama siapa & kapan. */
@@ -64,6 +71,24 @@ const berkasDirty = computed(() => (berkasNotes.value ?? '') !== (props.invoice.
 watch(() => props.invoice.berkas_notes, (v) => { berkasNotes.value = v ?? ''; });
 function saveBerkas() { berkasForm.notes = berkasNotes.value ?? ''; berkasForm.post(route('bs.ap.berkas-notes', props.invoice.id), { preserveScroll: true }); }
 function clearBerkas() { berkasNotes.value = ''; berkasForm.notes = ''; berkasForm.post(route('bs.ap.berkas-notes', props.invoice.id), { preserveScroll: true }); }
+// File kelengkapan — seperti unggahan berkas di pengajuan: masuk ke berkas invoice (atau lampiran invoice bila tanpa berkas).
+const MAKS_FILE = 20;
+const fileBaru = ref<FileBerkas[]>([]);
+const mengunggah = ref(false);
+const idLainnya = computed(() => (props.jenisBerkas ?? []).find((j) => j.code === 'LAINNYA')?.id ?? null);
+const bisaUnggah = computed(() => fileBaru.value.length > 0 && !mengunggah.value
+    && fileBaru.value.every((u) => u.berkas_id && (u.berkas_id !== idLainnya.value || u.keterangan.trim())));
+function unggahKelengkapan() {
+    mengunggah.value = true;
+    router.post(route('bs.ap.kelengkapan-file.store', props.invoice.id), {
+        files: fileBaru.value.map((u) => ({ file: u.file, berkas_id: u.berkas_id, keterangan: u.keterangan })),
+    }, { forceFormData: true, preserveScroll: true, onSuccess: () => { fileBaru.value = []; }, onFinish: () => { mengunggah.value = false; } });
+}
+function hapusKelengkapan(f: { id: number; name: string }) {
+    if (!confirm(`Hapus file "${f.name}"?`)) return;
+    router.delete(route('bs.ap.kelengkapan-file.destroy', [props.invoice.id, f.id]), { preserveScroll: true });
+}
+const errorsKelengkapan = computed(() => Object.entries(usePage().props.errors ?? {}).filter(([k]) => k.startsWith('files')).map(([, v]) => v));
 // true tepat setelah invoice baru disimpan (flash 'created') → tampilkan banner + tombol cetak.
 const justCreated = computed(() => Boolean(usePage().props.flash?.created));
 </script>
@@ -163,7 +188,11 @@ const justCreated = computed(() => Boolean(usePage().props.flash?.created));
 
         <!-- Alokasi / Koreksi Budget untuk invoice ini — tiap baris membuka Lampiran Perubahan Budget (cetak). -->
         <div v-if="perubahanBudget?.length" class="card overflow-hidden">
-            <div class="border-b border-neutral-200 px-4 py-3 dark:border-neutral-800"><h2 class="font-semibold">Perubahan Budget (Alokasi / Koreksi)</h2></div>
+            <div class="flex flex-wrap items-center justify-between gap-2 border-b border-neutral-200 px-4 py-3 dark:border-neutral-800">
+                <h2 class="font-semibold">Perubahan Budget (Alokasi / Koreksi)</h2>
+                <!-- Satu dokumen: Memo Internal di halaman 1, sesudahnya Lampiran Perubahan Budget tiap alokasi / koreksi. -->
+                <a v-if="bolehMemo" :href="route('bs.ap.memo', invoice.id)" target="_blank" rel="noopener" class="text-sm text-primary-600 hover:underline">Memo Internal + Lampiran ↗</a>
+            </div>
             <table class="w-full text-sm">
                 <tbody class="divide-y divide-neutral-100 dark:divide-neutral-800">
                     <tr v-for="p in perubahanBudget" :key="p.url">
@@ -171,7 +200,7 @@ const justCreated = computed(() => Boolean(usePage().props.flash?.created));
                         <td class="px-4 py-2 font-mono text-xs">{{ p.doc_no }}</td>
                         <td class="px-4 py-2 text-right font-mono">{{ Math.round(p.nilai).toLocaleString('id-ID') }}</td>
                         <td class="px-4 py-2">{{ p.status }}</td>
-                        <td class="px-4 py-2 text-right"><a :href="p.url" target="_blank" rel="noopener" class="text-primary-600 hover:underline">Lampiran ↗</a></td>
+                        <td class="px-4 py-2 text-right"><a v-if="!bolehMemo" :href="p.url" target="_blank" rel="noopener" class="text-primary-600 hover:underline">Lampiran ↗</a></td>
                     </tr>
                 </tbody>
             </table>
@@ -227,6 +256,33 @@ const justCreated = computed(() => Boolean(usePage().props.flash?.created));
             </div>
             <textarea v-model="berkasNotes" rows="3" placeholder="Catat kelengkapan / berkas yang masih kurang (mis. Faktur Pajak belum ada, PO/SPK menyusul)…" class="w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-900"></textarea>
             <p class="mt-1.5 text-[11px] text-neutral-400">Catatan ini tampil pada kolom “Kelengkapan Berkas” di daftar Invoice Hutang.</p>
+
+            <!-- File kelengkapan: file berkas invoice + file yang ditambahkan di sini. -->
+            <div class="mt-4 border-t border-neutral-100 pt-3 dark:border-neutral-800">
+                <div class="text-xs font-medium text-neutral-500">File berkas ({{ kelengkapanFiles?.length ?? 0 }})</div>
+                <ul class="mt-1 divide-y divide-neutral-100 text-sm dark:divide-neutral-800">
+                    <li v-for="f in kelengkapanFiles ?? []" :key="f.id" class="flex items-center justify-between gap-2 py-1.5">
+                        <span class="flex min-w-0 items-center gap-2">
+                            <FileText class="h-4 w-4 shrink-0 text-neutral-400" />
+                            <span class="shrink-0 text-xs font-medium text-neutral-500">{{ f.jenis ?? 'Jenis lain' }}</span>
+                            <span class="truncate">{{ f.name }}</span>
+                            <span v-if="f.tambahan" class="shrink-0 text-[11px] text-neutral-400">· {{ f.oleh ?? '—' }}, {{ f.at }}</span>
+                        </span>
+                        <span class="flex shrink-0 items-center gap-3">
+                            <a :href="f.url" target="_blank" rel="noopener" class="text-xs text-primary-600 hover:underline">Buka</a>
+                            <button v-if="f.tambahan && bolehKelengkapan" type="button" class="text-neutral-400 hover:text-danger-600" title="Hapus file" @click="hapusKelengkapan(f)"><Trash2 class="h-3.5 w-3.5" /></button>
+                        </span>
+                    </li>
+                    <li v-if="!(kelengkapanFiles?.length)" class="py-1.5 text-xs text-neutral-400">Belum ada file.</li>
+                </ul>
+                <div v-if="bolehKelengkapan && (kelengkapanFiles?.length ?? 0) < MAKS_FILE" class="mt-3">
+                    <DropBerkas v-model="fileBaru" :jenis="jenisBerkas ?? []" :maks="MAKS_FILE - (kelengkapanFiles?.length ?? 0)" />
+                    <div class="mt-3 flex flex-wrap items-center gap-3">
+                        <button type="button" :disabled="!bisaUnggah" @click="unggahKelengkapan" class="inline-flex h-8 items-center gap-1.5 rounded-lg bg-danger-600 px-3 text-xs font-semibold text-white hover:bg-danger-700 disabled:opacity-50"><Upload class="h-3.5 w-3.5" /> {{ mengunggah ? 'Mengunggah…' : 'Upload File' }}</button>
+                        <span v-for="(e, i) in errorsKelengkapan" :key="i" class="text-xs text-danger-500">{{ e }}</span>
+                    </div>
+                </div>
+            </div>
         </div>
 
         <div class="card overflow-hidden">

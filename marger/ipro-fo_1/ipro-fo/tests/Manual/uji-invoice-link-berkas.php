@@ -2,9 +2,9 @@
 
 /**
  * Uji berkas di Detil Tagihan Registrasi Invoice Hutang: "Upload File" & "Generate Link" supplier.
- *  1. Upload File → Upload Berkas milik pembuat + langsung diajukan ke TTD Dept Head.
+ *  1. Upload File → Upload Berkas milik pembuat (draft — TTD Dept Head diajukan di langkah Struktur).
  *  2. Generate Link → nomor invoice dipesan, draft wizard tersimpan di link, halaman publik tampil.
- *  3. Supplier unggah (tanpa login): dokumen wajib dicek, jadi berkas milik pembuat + diajukan TTD,
+ *  3. Supplier unggah (tanpa login): dokumen wajib dicek, jadi berkas milik pembuat (draft),
  *     link terisi, notifikasi ke pembuat, titik di daftar invoice; link tidak menerima kiriman kedua.
  *  4. Setelah TTD Dept Head, invoice disimpan memakai nomor yang dipesan; link selesai.
  *
@@ -83,7 +83,7 @@ try {
     echo "=== 1. Upload File ===\n";
     $b = $svc->upload($staf, $wizard, [['file' => $pdf('inv.pdf'), 'berkas_id' => $jenis['INVOICE']], ['file' => $pdf('kui.pdf'), 'berkas_id' => $jenis['KUITANSI']]]);
     $pathsUji = array_merge($pathsUji, $b->files()->pluck('path')->all());
-    $cek('jadi Upload Berkas milik pembuat + diajukan ke TTD Dept Head', (int) $b->uploaded_by === $staf->id && $b->status === BsApBerkasUpload::STATUS_MENUNGGU_TTD && (int) $b->dept_head_id === $deptHead->id, $b->status);
+    $cek('jadi Upload Berkas milik pembuat (draft, belum diajukan)', (int) $b->uploaded_by === $staf->id && $b->status === BsApBerkasUpload::STATUS_DRAFT && (int) $b->dept_head_id === $deptHead->id, $b->status);
     $cek('isian berkas dari wizard (supplier, no. tagihan, nilai)', (int) $b->supplier_id === $supplier && $b->supplier_invoice_no === 'SUP-LINK-1' && (float) $b->amount === 750000.0);
 
     // Drop box Upload File (layar invoice): jenis tetap; "Lainnya" wajib keterangan.
@@ -151,7 +151,7 @@ try {
     $bs = BsApBerkasUpload::find($link->berkas_upload_id);
     $pathsUji = array_merge($pathsUji, $bs?->files()->pluck('path')->all() ?? []);
     $cek('link terisi + berkas tercatat', $link->status === 'terisi' && $bs !== null, app('session.store')->get('error') ?? '');
-    $cek('berkas milik pembuat invoice + diajukan TTD Dept Head', $bs && (int) $bs->uploaded_by === $staf->id && $bs->status === BsApBerkasUpload::STATUS_MENUNGGU_TTD && $bs->files()->count() === 3);
+    $cek('berkas milik pembuat invoice (draft, belum diajukan)', $bs && (int) $bs->uploaded_by === $staf->id && $bs->status === BsApBerkasUpload::STATUS_DRAFT && $bs->files()->count() === 3);
     $cek('file "Lainnya" tersimpan dengan keterangannya', $bs && $bs->files()->where('berkas_id', $jenis['LAINNYA'])->first()?->labelJenis() === 'Lainnya — Surat Kuasa');
     $cek('catatan supplier ikut di keterangan berkas', $bs && str_contains($bs->description, 'Mohon diproses'));
     $cek('No. Invoice dari supplier → berkas & draft link', $bs && $bs->supplier_invoice_no === 'INV-SUP-777' && ($link->data['supplier_invoice_no'] ?? null) === 'INV-SUP-777');
@@ -190,6 +190,11 @@ try {
     $cek('setelah dibuka, titiknya hilang', $link->fresh()->seen_at !== null);
 
     echo "\n=== 4. Simpan invoice dengan nomor yang dipesan ===\n";
+    // Langkah Struktur: "Ajukan ke Dept Head" — isian tersimpan di link, berkas diajukan ke TTD.
+    auth()->setUser($staf);
+    app(\App\Domain\BusinessSupport\Services\PengajuanDeptHead::class)->ajukan($staf, $wizard + ['berkas_upload_id' => $bs->id], 4, null, $link->id);
+    $cek('Ajukan ke Dept Head (link) → berkas menunggu TTD, isian di link', $bs->fresh()->status === BsApBerkasUpload::STATUS_MENUNGGU_TTD && (int) $link->fresh()->step === 4);
+    $cek('pindah ke panel "Menunggu TTD Dept Head"', collect(app(\App\Domain\BusinessSupport\Services\PengajuanDeptHead::class)->menunggu($staf))->contains(fn ($m) => $m['berkas_id'] === $bs->id && str_contains($m['url'], 'link='.$link->id)));
     auth()->setUser($deptHead);
     app(ActOnApproval::class)->execute(Approval::with('steps')->findOrFail($bs->fresh()->approval_id), 'approve');
     auth()->setUser($staf);

@@ -50,22 +50,28 @@ class LampiranPerubahanBudget
     /** @param array<int,float> $delta */
     private function baris(string $peran, BsBudget $b, array $delta, bool $sudahMasuk): array
     {
+        // Realisasi (jurnal) budget ini per bulan — sisa = anggaran sesudah perubahan − realisasi.
+        $real = app(BudgetRealizationService::class)->byMonth((int) $b->year, (int) $b->account_id, $b->cost_center_id ? (int) $b->cost_center_id : null);
         $bulan = [];
         foreach ($delta as $m => $v) {
             $kini = BudgetGuardService::anggaranBulan($b, (int) $m);
             $sebelum = $sudahMasuk ? round($kini - $v, 2) : $kini;
-            $bulan[] = ['bulan' => BsBudget::MONTHS[$m - 1], 'sebelum' => $sebelum, 'ubah' => $v, 'sesudah' => round($sebelum + $v, 2)];
+            $r = (float) ($real[(int) $m] ?? 0);
+            $bulan[] = ['bulan' => BsBudget::MONTHS[$m - 1], 'sebelum' => $sebelum, 'ubah' => $v, 'sesudah' => round($sebelum + $v, 2),
+                'realisasi' => $r, 'sisa' => round($sebelum + $v - $r, 2)];
         }
         $tahunKini = (float) $b->amount;
         $total = array_sum($delta);
         $tahunSebelum = $sudahMasuk ? round($tahunKini - $total, 2) : $tahunKini;
+        $realTahun = round(array_sum($real), 2);
 
         return [
             'peran' => $peran, 'doc_no' => $b->doc_no, 'year' => $b->year,
             'akun' => trim(($b->account?->code ?? '').' - '.($b->account?->name ?? ''), ' -'),
             'cost_center' => $b->costCenter ? trim($b->costCenter->code.' '.$b->costCenter->name) : 'Semua cost center',
             'bulan' => $bulan,
-            'tahun' => ['sebelum' => $tahunSebelum, 'ubah' => $total, 'sesudah' => round($tahunSebelum + $total, 2)],
+            'tahun' => ['sebelum' => $tahunSebelum, 'ubah' => $total, 'sesudah' => round($tahunSebelum + $total, 2),
+                'realisasi' => $realTahun, 'sisa' => round($tahunSebelum + $total - $realTahun, 2)],
         ];
     }
 
@@ -74,7 +80,9 @@ class LampiranPerubahanBudget
         $nama = fn ($id) => $id ? User::query()->whereKey($id)->value('name') : null;
         // TTD hanya untuk tahap yang SUDAH menyetujui (sama dengan lembar Memo Urgent).
         $ttd = fn ($id) => $id ? User::query()->find($id)?->signatureUrl() : null;
-        $langkah = collect($m->approval?->steps ?? [])->map(function ($s) use ($nama, $ttd) {
+        // Alokasi / koreksi yang ikut approval invoice tidak punya approval sendiri: TTD = tahap approval invoicenya.
+        $approval = $m->approval ?? app(BudgetIkutInvoice::class)->induk($m)?->load('steps.actions');
+        $langkah = collect($approval?->steps ?? [])->map(function ($s) use ($nama, $ttd) {
             $aksi = $s->actions->sortByDesc('acted_at')->first();
 
             return [

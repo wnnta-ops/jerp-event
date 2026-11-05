@@ -8,7 +8,8 @@ use App\Support\Traits\HasTenant;
 use Illuminate\Database\Eloquent\Model;
 
 /**
- * Isian wizard Registrasi Invoice Hutang yang disimpan sementara (satu per user per jenis).
+ * Isian wizard Registrasi Invoice Hutang yang disimpan sementara. Satu draft "bebas" per user per jenis,
+ * ditambah satu draft per berkas yang sudah diajukan ke TTD Dept Head (berkas_upload_id).
  *
  * @property int $user_id
  * @property string $jenis

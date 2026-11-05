@@ -59,8 +59,10 @@ final class NotifyApprovalProgress
         if ($a->document_type === BsApBerkasUpload::DOCUMENT_TYPE) {
             $this->notifier->notify(
                 [$submitter], 'berkas.siap_invoice',
-                'Berkas siap dibuat invoice', "{$doc} sudah ditandatangani Dept Head — pilih berkas ini di Registrasi Invoice Hutang.",
-                route('bs.ap.create'),
+                'Berkas di-TTD Dept Head', "{$doc} sudah ditandatangani Dept Head — lanjutkan invoicenya.",
+                ($b = BsApBerkasUpload::query()->find($a->approvable_id))
+                    ? (app(\App\Domain\BusinessSupport\Services\PengajuanDeptHead::class)->urlLanjut($b) ?? route('bs.ap.create'))
+                    : route('bs.ap.create'),
             );
         }
     }

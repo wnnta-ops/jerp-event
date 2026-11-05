@@ -1,5 +1,5 @@
 {{-- Cetak Memo Internal Invoice Hutang (ApInvoiceController::memo) — Memo Internal + Bukti Permohonan
-     Pembayaran dalam satu halaman A4 portrait (+ halaman lampiran Alokasi / Koreksi Budget bila ada), dengan informasi budget di tabel rincian:
+     Pembayaran dalam satu halaman A4 portrait (+ halaman Lampiran Perubahan Budget per alokasi / koreksi bila ada), dengan informasi budget di tabel rincian:
        Perihal / "keperluan" = Uraian langkah Detil Tagihan; Uraian Pembayaran = Supplier — Keterangan
        baris Struktur Jurnal (selain akun hutang). Baris pengeluaran per baris jurnal; kolom budget
        digabung (rowspan) per anggaran (akun × cost center / "semua"). Angka budget = Master Budget
@@ -145,9 +145,13 @@
             <td class="cap">Hormat Kami,</td><td class="cap o">Diverifikasi,</td><td class="cap" colspan="2">Menyetujui,</td>
             <td class="cap" colspan="2">Mengetahui,</td><td class="cap o">Dibayarkan,</td><td class="cap o">Diterima,</td>
         </tr>
-        <tr>@for ($k = 0; $k < 8; $k++)<td class="sp"></td>@endfor</tr>
+        {{-- Dept. Head: TTD dari persetujuan berkas invoice ini (TTD Dept Head di Registrasi Invoice Hutang). --}}
         <tr>
-            <td><div class="nm">{{ $dari }}</div><div class="jb">Dept. Head</div></td>
+            <td class="sp" style="text-align:center;vertical-align:middle">@if ($ttdDeptHead['img'] ?? null)<img src="{{ $ttdDeptHead['img'] }}" alt="TTD {{ $ttdDeptHead['nama'] }}" style="max-height:44px;max-width:100%">@endif</td>
+            @for ($k = 1; $k < 8; $k++)<td class="sp"></td>@endfor
+        </tr>
+        <tr>
+            <td><div class="nm">{{ $ttdDeptHead['nama'] ?? $dari }}</div><div class="jb">Dept. Head</div></td>
             <td><div class="nm">(………………)</div><div class="jb">Manager Accounting &amp; Finance</div></td>
             <td><div class="nm">Rizki Setyawardana</div><div class="jb">General Manager</div></td>
             <td><div class="nm">Rachmat Suhendra</div><div class="jb">Direktur</div></td>
@@ -163,38 +167,11 @@
     </div>
 </div>
 
-@if ($lampiran)
-{{-- LAMPIRAN — halaman terpisah: alokasi / koreksi budget yang diajukan untuk invoice ini. --}}
-<div class="hal">
-    <div class="atas">
-        <img class="logo" src="/images/mup-logo.jpeg" alt="MUP">
-        <div class="judul"><h1 style="font-size:16px">LAMPIRAN</h1><div class="no">Informasi Alokasi / Koreksi Budget</div><div class="no">Memo Internal No : {{ $no }}</div></div>
-        <div class="created">Created By Java Core System<br>({{ $dicetak }})</div>
-    </div>
-    <table class="rinci" style="margin-top:10px">
-        <colgroup><col style="width:4%"><col style="width:13%"><col style="width:9%"><col style="width:24%"><col style="width:13%"><col style="width:11%"><col style="width:12%"><col style="width:14%"></colgroup>
-        <thead><tr>
-            <th class="g">No.</th><th class="g">No. Dokumen</th><th class="g">Jenis</th><th class="g">Budget</th><th class="g">Periode</th><th class="g">Nilai (Rp)</th><th class="g">Status</th><th class="g">Diputuskan</th>
-        </tr></thead>
-        <tbody>
-            @foreach ($lampiran as $i => $l)
-                <tr>
-                    <td class="c">{{ $i + 1 }}</td>
-                    <td style="font-family:'Courier New',monospace">{{ $l['doc_no'] }}</td>
-                    <td class="c">{{ $l['jenis'] }}</td>
-                    <td>@if ($l['dari'])<b>Dari:</b> {{ $l['dari'] }}<br><b>Ke:</b> {{ $l['ke'] }}@else{{ $l['ke'] }}@endif</td>
-                    <td class="c">{{ $l['periode'] }}</td>
-                    <td class="r">{{ $rp($l['nilai']) }}</td>
-                    <td class="c" style="font-weight:bold">{{ $l['status'] }}</td>
-                    <td>{{ $l['oleh'] ?? '—' }}@if ($l['pada'])<br><span style="color:#6b7280">{{ $l['pada'] }}</span>@endif</td>
-                </tr>
-                @if ($l['catatan'])<tr><td></td><td colspan="7" style="color:#4b5563">Keterangan: {{ $l['catatan'] }}</td></tr>@endif
-            @endforeach
-        </tbody>
-    </table>
-    <p style="color:#6b7280;font-size:8.5px">Alokasi = pemindahan anggaran dari budget lain; Koreksi = tambahan anggaran. Keduanya disetujui Finance (Approval Inbox) dan berlaku untuk bulan invoice.</p>
-</div>
-@endif
-<script>window.onload=function(){setTimeout(function(){window.print()},300)}</script>
+{{-- Halaman berikutnya: Lampiran Perubahan Budget lengkap (TTD pengaju & approver) untuk tiap alokasi /
+     koreksi invoice ini — satu dokumen dengan Memo Internal di halaman 1. --}}
+@foreach ($lampiranHal ?? [] as $hal)
+    @include('pdf.partials.lampiran-perubahan-budget-hal', $hal)
+@endforeach
+@unless ($preview ?? false)<script>window.onload=function(){setTimeout(function(){window.print()},300)}</script>@endunless
 </body>
 </html>

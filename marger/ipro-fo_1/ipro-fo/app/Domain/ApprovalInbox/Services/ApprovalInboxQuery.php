@@ -236,6 +236,9 @@ final class ApprovalInboxQuery
                 ['label' => 'Berkas Asal', 'value' => $berkas?->berkas_number],
             ];
             $out['files'] = $berkas ? $this->files($berkas) : [];
+            // Satu dokumen: Memo Internal (halaman 1) + Lampiran Perubahan Budget alokasi / koreksinya.
+            $out['memo_internal_url'] = route('approval-inbox.memo-internal', $approval->id);
+            $out['links'][] = ['label' => 'Memo Internal', 'url' => $out['memo_internal_url'], 'tab_baru' => true];
             $out['links'][] = ['label' => 'Buka invoice', 'url' => route('bs.ap.show', $m->id)];
             if ($berkas) {
                 $out['links'][] = ['label' => 'Buka berkas', 'url' => route('bs.ap.berkas.show', $berkas->id)];
