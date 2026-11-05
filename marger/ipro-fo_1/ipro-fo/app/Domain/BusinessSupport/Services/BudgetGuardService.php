@@ -269,6 +269,45 @@ final class BudgetGuardService
     }
 
     /**
+     * Akun ini WAJIB punya anggaran (aturan yang sama dengan assertAnggaranAda): bukan akun
+     * cost_center_optional dan tidak ada di daftar COA tanpa anggaran. Kas, Hutang, PPN dsb. tidak.
+     */
+    public function wajibAnggaran(int $accountId): bool
+    {
+        if (! config('business_support.budget.wajib_ada', true)) {
+            return false;
+        }
+        $acc = BsAccount::query()->find($accountId, ['id', 'code', 'cost_center_optional']);
+        $bebas = array_map('strval', (array) config('business_support.budget.coa_tanpa_anggaran', []));
+
+        return $acc !== null && ! $acc->cost_center_optional && ! in_array($acc->code, $bebas, true);
+    }
+
+    /**
+     * Langkah Struktur Registrasi Invoice Hutang: akun wajib-anggaran yang BELUM punya anggaran
+     * (akun × cost center) dianggap anggaran 0 — kekurangannya wajib ditutup Alokasi / Koreksi.
+     * budget_id negatif = penanda "budget nol" (BudgetNol membuat Master Budget-nya saat diajukan).
+     */
+    public function sisaBulanNol(int $accountId, int $costCenterId, string $tanggal, ?int $excludeJournalId = null): array
+    {
+        $tgl = Carbon::parse($tanggal);
+        $acc = BsAccount::query()->find($accountId, ['id', 'code', 'name']);
+        $cc = BsCostCenter::query()->find($costCenterId, ['id', 'code', 'name']);
+
+        return [
+            'budget_id' => BudgetNol::kunci($accountId, $costCenterId),
+            'baru' => true,
+            'cakupan' => 'cc',
+            'anggaran' => 0.0,
+            'terpakai' => $this->terpakaiBulan($tgl, $accountId, $costCenterId, $excludeJournalId),
+            'anggaran_tahun' => 0.0,
+            'terpakai_tahun' => $this->realisasi->total((int) $tgl->year, $accountId, $costCenterId, null, null, $excludeJournalId),
+            'label' => trim(($acc?->code ?? '').' '.$acc?->name).' · '.($cc?->name ?? '—').' (belum ada budget)',
+            'tanda' => $this->realisasi->contribution($accountId, 1, 0) > 0 ? 1 : -1,
+        ];
+    }
+
+    /**
      * Anggaran satu bulan dari master budget (kolom m1..m12). Budget lama yang belum dirinci per
      * bulan (seluruh kolom bulanan kosong) dibagi rata 12.
      */

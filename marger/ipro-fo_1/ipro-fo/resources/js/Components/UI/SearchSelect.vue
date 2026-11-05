@@ -18,12 +18,15 @@ const props = withDefaults(defineProps<{
     clearable?: boolean;
     optionValue?: string;
     noTruncate?: boolean;
+    /** Lebar minimum panel pilihan (px) — lebarkan untuk label panjang (mis. nama akun COA). */
+    panelMin?: number;
 }>(), {
     placeholder: '— pilih —',
     disabled: false,
     clearable: true,
     optionValue: 'id',
     noTruncate: false,
+    panelMin: 260,
 });
 
 const emit = defineEmits<{ (e: 'update:modelValue', v: any): void }>();
@@ -62,7 +65,7 @@ function updatePos() {
     const openUp = spaceBelow < ph + 8 && r.top > spaceBelow;
     // Panel minimal 260px agar opsi (mis. "CC-FIN - Finance", "20101010101 - Utang Usaha Supplier")
     // tak terpotong walau kolom triggernya sempit; lalu geser kiri bila melewati tepi kanan viewport.
-    const width = Math.min(Math.max(r.width, 260), window.innerWidth - 16);
+    const width = Math.min(Math.max(r.width, props.panelMin), window.innerWidth - 16);
     const left = Math.max(8, Math.min(r.left, window.innerWidth - width - 8));
     pos.value = { left, top: openUp ? Math.max(4, r.top - ph - 4) : r.bottom + 4, width };
 }

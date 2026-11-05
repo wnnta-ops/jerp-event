@@ -868,7 +868,8 @@ const draftPada = props.draftInvoice?.updated_at
    anggaran (akun × cost center, atau akun "semua cost center"). Angkanya dari server
    (bs.ap.sisa-budget) — aturan yang sama dengan penjaga budget saat simpan. Baris yang minus
    bisa diajukan Koreksi Budget; invoice tetap jalan dan koreksinya masuk Approval Inbox. */
-type SisaInfo = { budget_id: number; cakupan: 'cc' | 'semua'; anggaran: number; terpakai: number; anggaran_tahun: number; terpakai_tahun: number; label: string; tanda: number } | null;
+/** baru = akun wajib-anggaran yang belum punya anggaran → dianggap 0 (budget_id negatif; Master Budget nol dibuat saat diajukan). */
+type SisaInfo = { budget_id: number; cakupan: 'cc' | 'semua'; anggaran: number; terpakai: number; anggaran_tahun: number; terpakai_tahun: number; label: string; tanda: number; baru?: boolean } | null;
 const sisaInfo = ref<Record<string, SisaInfo>>({});
 const bulanBudget = ref('');
 const kunciBudget = (l: any) => `${l.account_id}|${l.cost_center_id ?? ''}`;
@@ -1777,7 +1778,8 @@ const cellArea = 'w-full rounded-md border border-neutral-300 bg-white px-2 py-1
                             <tr v-for="(l,i) in form.journal_lines" :key="i" class="border-b border-neutral-100 align-top dark:border-neutral-800">
                                 <td class="px-2 py-2 font-mono text-neutral-400">{{ i+1 }}</td>
                                 <td class="px-2 py-2">
-                                    <SearchSelect :model-value="l.account_id" :options="accounts" placeholder="— pilih akun —" @update:model-value="(v) => pilihAkun(l, v)" />
+                                    <!-- Nama akun ditampilkan penuh (turun baris), panel pilihan dilebarkan supaya nama COA terbaca. -->
+                                    <SearchSelect :model-value="l.account_id" :options="accounts" placeholder="— pilih akun —" :no-truncate="true" :panel-min="460" @update:model-value="(v) => pilihAkun(l, v)" />
                                     <!-- Salin / tempel akun antar baris — akun kerap berulang.
                                          Tombolnya BERLABEL & berwarna: versi ikon 20px sebelumnya
                                          nyaris tak terbaca dan mudah terlewat operator. -->
@@ -1800,7 +1802,7 @@ const cellArea = 'w-full rounded-md border border-neutral-300 bg-white px-2 py-1
                                             <Check v-if="pasteFlash === i" class="h-3.5 w-3.5" /><ClipboardPaste v-else class="h-3.5 w-3.5" />
                                             {{ pasteFlash === i ? 'Tertempel' : 'Tempel' }}
                                         </button>
-                                        <span class="min-w-0 flex-1 truncate text-[11px] text-neutral-500 dark:text-neutral-400" :title="accountName(l.account_id)">{{ accountName(l.account_id) || '—' }}</span>
+                                        <span class="min-w-0 flex-1 break-words text-[11px] text-neutral-500 dark:text-neutral-400" :title="accountName(l.account_id)">{{ accountName(l.account_id) || '—' }}</span>
                                     </div>
                                 </td>
                                 <!-- Cost center WAJIB, kecuali akun yang memang boleh tanpanya
@@ -1851,6 +1853,7 @@ const cellArea = 'w-full rounded-md border border-neutral-300 bg-white px-2 py-1
                                     <template v-if="sisaBaris(l) === null"><span class="text-[11px] text-neutral-400" title="Akun ini tidak punya anggaran">—</span></template>
                                     <template v-else-if="sisaBaris(l) !== undefined">
                                         <div :class="['font-mono text-xs', (sisaBaris(l) as number) < 0 ? 'font-semibold text-danger-600' : 'text-success-700 dark:text-success-400']">{{ fmtNum(sisaBaris(l) as number) }}</div>
+                                        <div v-if="sisaInfo[kunciBudget(l)]?.baru" class="text-[10px] text-danger-500">Belum ada budget (dianggap 0)</div>
                                         <!-- Alokasi / Koreksi: wajib bila minus, opsional bila masih cukup (baris debit ber-anggaran). -->
                                         <template v-if="l.side === 'debit'">
                                             <!-- Pilihan bisa diganti / dilepas selama invoice belum disimpan (diajukan). -->
