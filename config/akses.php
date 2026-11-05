@@ -65,6 +65,7 @@ return [
         'ReportSprBankResource' => 'fo.spr',
         'NupEventResource' => 'fo.nup',
         'NupTipeResource' => 'fo.nup',
+        'PilihUnitSetupResource' => 'fo.nup',
 
         // FO — marketing & sales
         'CustomerResource' => 'fo.customer',

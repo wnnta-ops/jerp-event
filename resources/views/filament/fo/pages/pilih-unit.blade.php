@@ -202,7 +202,60 @@
                         ← Ganti Cluster
                     </button>
                 </div>
+
+                {{-- Giliran HP (Setup Pilih Unit). Diisi poll cekGiliran — sama di semua HP. --}}
+                <div x-show="gil.aktif" x-cloak class="mt-2 pt-2" style="border-top:1px dashed var(--gray-300);">
+                    <div class="flex items-center justify-between gap-2 text-xs">
+                        <div>Giliran: <strong style="color:#059669; font-size:.95rem;" x-text="'HP ' + gil.giliran"></strong></div>
+                        @if ($hpNomor)
+                            <div>HP ini: <strong>HP {{ $hpNomor }}</strong>
+                                <button x-show="phase !== 'choosing'" wire:click="gantiHp" class="hover:underline ml-1" style="color:#60a5fa;">Ganti</button>
+                            </div>
+                        @endif
+                    </div>
+                    <div class="flex flex-wrap gap-1 mt-1.5">
+                        <template x-for="n in gil.jumlah" :key="n">
+                            <span class="text-xs font-bold rounded px-1.5 py-0.5"
+                                  :style="n === gil.giliran
+                                      ? 'background:#059669;color:#fff;'
+                                      : (n === $wire.hpNomor ? 'border:1px solid #2563eb;color:#2563eb;' : 'background:var(--gray-200);color:var(--gray-600);')"
+                                  x-text="n === gil.giliran ? '▶ ' + n : n"></span>
+                        </template>
+                    </div>
+                    @if ($this->bolehAturGiliran())
+                        <div class="flex gap-2 mt-2">
+                            <button wire:click="lanjutGiliran" wire:confirm="Lewati giliran HP ini dan pindah ke HP berikutnya?"
+                                    class="flex-1 rounded-lg px-3 py-1.5 text-xs font-bold" style="background:#059669; color:#fff;">⏭ Lanjut</button>
+                            <button wire:click="ulangGiliran" wire:confirm="Kembalikan giliran ke HP 1?"
+                                    class="rounded-lg border px-3 py-1.5 text-xs" style="border-color: var(--gray-300);">↺ HP 1</button>
+                        </div>
+                    @endif
+                </div>
             </div>
+
+            {{-- Pilih nomor HP — wajib bila giliran aktif. Nomor yang dipegang HP lain terkunci. --}}
+            @if ($giliranAktif && ! $hpNomor)
+                <div class="pu-modal" wire:key="pu-pilih-hp">
+                    <div class="pu-modal-card" style="max-width: 420px;">
+                        <div class="text-4xl mb-2">📱</div>
+                        <h3 class="text-xl font-bold mb-1">Ini HP nomor berapa?</h3>
+                        <p class="text-sm text-gray-500 mb-4">Pilih unit bergiliran HP 1 → HP terakhir → kembali ke HP 1.</p>
+                        <div class="grid grid-cols-5 gap-2">
+                            <template x-for="n in gil.jumlah" :key="n">
+                                <button @click="$wire.pilihHp(n)" :disabled="gil.terpakai.includes(n)"
+                                        class="rounded-lg py-3 text-lg font-bold transition"
+                                        :style="gil.terpakai.includes(n)
+                                            ? 'background:var(--gray-200);color:var(--gray-400);cursor:not-allowed;'
+                                            : 'background:#2563eb;color:#fff;'"
+                                        :title="gil.terpakai.includes(n) ? 'Sudah dipakai HP lain' : ''"
+                                        x-text="n"></button>
+                            </template>
+                        </div>
+                        <p class="text-xs text-gray-500 mt-3">Abu-abu = sudah dipakai HP lain.</p>
+                        <button wire:click="backToClusters" class="mt-4 text-sm hover:underline" style="color:#60a5fa;">← Ganti Cluster</button>
+                    </div>
+                </div>
+            @endif
 
             @if (! $siteplan)
                 <div class="pu-float pu-panel" style="left:1rem; right:1rem; top:1rem; bottom:auto; width:auto; max-width:none;">
@@ -214,7 +267,7 @@
             {{-- Phase: SCAN --}}
             {{-- Panel diperkecil: tombol kecil (isi menyesuaikan fase) --}}
             <button x-show="panelMin && phase !== 'done'" x-cloak @click="setMin(false)" class="pu-mini" title="Tampilkan panel">
-                <span x-text="phase === 'scan' ? '📷 Scan Barcode' : ((phase === 'choosing' ? '⏱ ' + timerDisplay + ' · ' : '👤 ') + ($wire.regCustomerName || ''))"></span>
+                <span x-text="phase === 'scan' ? '📷 Scan Barcode' : ((phase === 'choosing' ? ($wire.timerAktif ? '⏱ ' + timerDisplay + ' · ' : '🏠 ') : '👤 ') + ($wire.regCustomerName || ''))"></span>
             </button>
 
             <div x-show="phase === 'scan' && !panelMin" class="pu-float pu-bottom pu-panel" x-cloak>
@@ -298,8 +351,11 @@
                 {{-- Warna via inline style (bukan bg-emerald-*): kelas Tailwind di blade custom
                      tak ikut ter-compile di CSS panel → tombol jadi putih-di-putih pada mode terang. --}}
                 <button wire:click="startChoosing" class="mt-4 w-full rounded-lg px-4 py-3 text-sm font-bold transition shadow-md"
-                        style="background:#059669; color:#fff;"
-                        onmouseover="this.style.background='#047857'" onmouseout="this.style.background='#059669'">🏠 Pilih Unit (2 menit)</button>
+                        :disabled="bukanGiliran()"
+                        :style="bukanGiliran() ? 'background:#9ca3af; color:#fff; cursor:not-allowed;' : 'background:#059669; color:#fff;'"
+                        x-text="bukanGiliran()
+                            ? '⏳ Menunggu giliran HP ' + gil.giliran
+                            : '🏠 Pilih Unit' + ($wire.timerAktif ? ' (' + $wire.timerMenit + ' menit)' : '')"></button>
                 <button wire:click="resetToScan" class="mt-2 w-full rounded-lg border px-4 py-2 text-sm hover:bg-gray-50 dark:hover:bg-slate-800 transition" style="border-color: var(--gray-300);">Scan Ulang</button>
             </div>
 
@@ -312,10 +368,12 @@
                     <div class="text-xs uppercase tracking-wider text-gray-500">{{ $regNoNup }}</div>
                     <div class="text-base font-bold">{{ $regCustomerName }}</div>
                 </div>
-                <div class="pu-timer" x-text="timerDisplay"></div>
+                <div x-show="$wire.timerAktif" class="pu-timer" x-text="timerDisplay"></div>
+                <div x-show="! $wire.timerAktif" class="text-center text-sm font-semibold rounded-lg py-2" style="background:#dcfce7; color:#15803d;">Tanpa batas waktu</div>
                 <p class="text-xs text-center text-gray-500 mt-3">
                     Klik polygon unit di siteplan, lalu klik <strong>Pilih</strong> di info popup.
                 </p>
+                <button wire:click="batalPilih" class="mt-3 w-full rounded-lg border px-4 py-2 text-sm hover:bg-gray-50 dark:hover:bg-slate-800 transition" style="border-color: var(--gray-300);">Kembali</button>
             </div>
 
             {{-- ────── KONFIRMASI: "Apakah Anda yakin?" ────── --}}
@@ -381,6 +439,8 @@
                 panelMin: (() => { try { return localStorage.getItem('pu_panel_min') === '1'; } catch (e) { return false; } })(),
                 scanError: '',  // kamera gagal menyala (izin/tidak ada/dipakai aplikasi lain)
                 timerSec: 120, timerId: null, timerDisplay: '02:00',
+                // Giliran HP — diisi poll cekGiliran (Setup Pilih Unit).
+                gil: { aktif: false, jumlah: 0, giliran: null, terpakai: [], saya: null },
 
                 map: null,
                 polygons: {}, // unitId → L.Polygon
@@ -411,6 +471,7 @@
                     this._epoch = window.__puEpoch = (window.__puEpoch || 0) + 1;
                     this.$nextTick(() => this.initLeaflet());
                     this.initRealtime();
+                    this.initGiliran();
 
                     this.$watch('phase', (v) => {
                         if (v === 'scan') { this.scanLocked = false; window.__puLastScan = null; this.nyalakanSaatTampil(); } else this.stopScanner();
@@ -1026,13 +1087,38 @@
                 },
                 manualScan() { const c = (this.manualCode || '').trim(); if (c === '') return; this.$wire.call('scanBarcode', c); this.manualCode = ''; },
 
+                // Cek giliran tiap 2 detik: memperpanjang pegangan nomor HP + menampilkan
+                // giliran yang sama di semua HP. Interval GLOBAL (lihat startTimer) dan
+                // dijaga epoch → instance lama tidak ikut mengecek.
+                initGiliran() {
+                    if (window.__puGilTimer) clearInterval(window.__puGilTimer);
+                    const epoch = this._epoch;
+                    const cek = () => {
+                        if (window.__puEpoch !== epoch) { clearInterval(window.__puGilTimer); window.__puGilTimer = null; return; }
+                        this.$wire.cekGiliran().then((st) => {
+                            if (! st || window.__puEpoch !== epoch) return;
+                            this.gil = st;
+                            if (st.berubah) { this.$wire.call('segarkanSetup'); return; }
+                            // Admin menekan Lanjut saat HP ini sedang memilih → keluar dari layar memilih.
+                            if (st.aktif && this.$wire.phase === 'choosing' && st.giliran !== st.saya) this.$wire.call('giliranLepas');
+                        }).catch(() => {});
+                    };
+                    cek();
+                    window.__puGilTimer = setInterval(cek, 2000);
+                },
+                bukanGiliran() {
+                    return this.gil.aktif && (! this.$wire.hpNomor || this.gil.giliran !== this.$wire.hpNomor);
+                },
+
                 startTimer() {
+                    // Batas waktu dimatikan di Setup Pilih Unit → tanpa hitung mundur.
+                    if (! this.$wire.timerAktif) { this.stopTimer(); return; }
                     // Deadline + interval GLOBAL (window) — kalau Livewire sempat
                     // membuat ulang komponen ini, TANPA guard tiap instans menambah
                     // setInterval sendiri (instans lama tak dibersihkan) → puluhan
                     // interval → banjir $wire.call('timeout') → fase oscillasi.
                     // Dengan guard: hanya SATU interval & SATU deadline yang pernah ada.
-                    if (! window.__puDeadline) window.__puDeadline = Date.now() + 120000;
+                    if (! window.__puDeadline) window.__puDeadline = Date.now() + (this.$wire.timerMenit || 2) * 60000;
                     if (window.__puTimer) clearInterval(window.__puTimer);
                     window.__puTimer = setInterval(() => {
                         const remain = Math.max(0, Math.round((window.__puDeadline - Date.now()) / 1000));

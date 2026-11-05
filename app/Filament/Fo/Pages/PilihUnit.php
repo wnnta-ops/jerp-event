@@ -3,14 +3,20 @@
 namespace App\Filament\Fo\Pages;
 
 use App\Filament\Concerns\MematuhiIzinHalaman;
+use App\Filament\Fo\Resources\PilihUnitSetupResource;
 use App\Models\Project;
 use App\Modules\FO\Launching\Models\NupRegistration;
+use App\Modules\FO\Launching\Services\PilihUnitGiliran;
 use App\Modules\FO\Launching\Services\PilihUnitService;
 use App\Modules\FO\MarketingSales\Models\Lokasi;
 use App\Modules\FO\MarketingSales\Models\Unit;
+use App\Support\Akses;
 use App\Support\PesanGagal;
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;
+use Illuminate\Support\Str;
+use Livewire\Attributes\Locked;
+use Livewire\Attributes\Renderless;
 
 /**
  * Pilih Unit — workflow hari-H launching:
@@ -21,6 +27,9 @@ use Filament\Pages\Page;
  *   5. Klik unit di siteplan dalam 2 menit → atomic lock unit + popup sukses.
  *   6. Timer habis → reset ke step 3 (tetap di customer yang sama).
  *   7. Click Done di popup → reset ke step 3 (scan barcode lagi).
+ *
+ * Setup Pilih Unit (per cluster) bisa menyalakan giliran HP — HP memilih nomornya sendiri,
+ * hanya HP yang bergiliran boleh memilih unit — dan mengatur/mematikan batas waktu.
  */
 class PilihUnit extends Page
 {
@@ -85,12 +94,30 @@ class PilihUnit extends Page
 
     public ?string $pickError = null;
 
+    /** Nomor HP ini di giliran (Setup Pilih Unit). Null = belum memilih / giliran nonaktif. */
+    #[Locked]
+    public ?int $hpNomor = null;
+
+    /** Penanda HP ini saat memegang nomor HP (satu nomor = satu HP). */
+    #[Locked]
+    public string $hpToken = '';
+
+    #[Locked]
+    public bool $giliranAktif = false;
+
+    #[Locked]
+    public bool $timerAktif = true;
+
+    #[Locked]
+    public int $timerMenit = 2;
+
     public function mount(): void
     {
         $this->reset(['clusterId', 'clusterName', 'phase', 'registrationId', 'regNoNup', 'regCustomerName',
             'regCustomerAddress', 'regCustomerCity', 'regTipeNup', 'regPilihanUnit1',
             'regPilihanUnit2', 'regPilihanUnit3', 'pickedUnitLabel', 'pickError']);
         $this->phase = 'scan';
+        $this->hpToken = Str::random(24);
     }
 
     public function selectCluster(int $lokasiId): void
@@ -104,10 +131,13 @@ class PilihUnit extends Page
         $this->clusterName = $lokasi->nama;
         $this->phase = 'scan';
         $this->resetCustomer();
+        $this->hpNomor = null;
+        $this->muatSetup();
     }
 
     public function backToClusters(): void
     {
+        $this->lepasHp();
         $this->clusterId = null;
         $this->projectId = null;
         $this->clusterName = null;
@@ -167,18 +197,155 @@ class PilihUnit extends Page
         if ($this->phase !== 'customer' || ! $this->registrationId) {
             return;
         }
+        $this->muatSetup();
+        try {
+            $this->pastikanGiliranSaya();
+        } catch (\RuntimeException $e) {
+            Notification::make()->warning()->title('Menunggu giliran')->body($e->getMessage())->send();
+
+            return;
+        }
         $this->phase = 'choosing';
         $this->dispatch('nup-timer-start');
     }
 
     public function timeout(): void
     {
-        // 2 menit habis tanpa pilih → kembali ke layar customer info
+        // Waktu habis tanpa pilih → kembali ke layar customer info (giliran tetap di HP ini).
         if ($this->phase === 'choosing') {
             $this->phase = 'customer';
             Notification::make()->warning()->title('Waktu habis')
-                ->body('Waktu 2 menit habis. Kembali ke layar data customer.')->send();
+                ->body('Waktu '.$this->timerMenit.' menit habis. Kembali ke layar data customer.')->send();
         }
+    }
+
+    /** Kembali dari layar memilih tanpa memilih unit (perlu saat waktu tanpa batas). */
+    public function batalPilih(): void
+    {
+        if ($this->phase === 'choosing') {
+            $this->phase = 'customer';
+        }
+    }
+
+    /** Giliran dipindah admin (Lanjut) saat HP ini sedang memilih. */
+    public function giliranLepas(): void
+    {
+        if ($this->phase === 'choosing') {
+            $this->phase = 'customer';
+            Notification::make()->warning()->title('Giliran berpindah')
+                ->body('Admin memindahkan giliran ke HP lain.')->send();
+        }
+    }
+
+    public function pilihHp(int $hp): void
+    {
+        $this->muatSetup();
+        if (! $this->giliranAktif || ! $this->clusterId) {
+            return;
+        }
+        $g = app(PilihUnitGiliran::class);
+        $lama = $this->hpNomor;
+        if (! $g->pegang($this->clusterId, $hp, $this->hpToken)) {
+            Notification::make()->danger()->title('HP '.$hp.' sudah dipakai')->body('Pilih nomor HP lain.')->send();
+
+            return;
+        }
+        if ($lama && $lama !== $hp) {
+            $g->lepas($this->clusterId, $lama, $this->hpToken);
+        }
+        $this->hpNomor = $hp;
+    }
+
+    /** Tombol Lanjut / Ulang ke HP 1 — hanya admin (yang boleh mengubah Setup Pilih Unit). */
+    public function bolehAturGiliran(): bool
+    {
+        return Akses::boleh(Akses::izinUntuk(PilihUnitSetupResource::class, 'update'));
+    }
+
+    public function lanjutGiliran(): void
+    {
+        if (! $this->clusterId || ! $this->bolehAturGiliran()) {
+            return;
+        }
+        $hp = app(PilihUnitGiliran::class)->lanjut($this->clusterId);
+        Notification::make()->success()->title('Giliran sekarang HP '.$hp)->send();
+    }
+
+    public function ulangGiliran(): void
+    {
+        if (! $this->clusterId || ! $this->bolehAturGiliran()) {
+            return;
+        }
+        app(PilihUnitGiliran::class)->ulang($this->clusterId);
+        Notification::make()->success()->title('Giliran kembali ke HP 1')->send();
+    }
+
+    public function gantiHp(): void
+    {
+        if ($this->phase === 'choosing') {
+            return;
+        }
+        $this->lepasHp();
+    }
+
+    /**
+     * Dipanggil tiap beberapa detik dari halaman: memperpanjang pegangan nomor HP dan
+     * mengembalikan status giliran untuk ditampilkan. Tanpa render ulang (peta tak terganggu).
+     */
+    #[Renderless]
+    public function cekGiliran(): array
+    {
+        $g = app(PilihUnitGiliran::class);
+        $st = $g->status($this->clusterId);
+        // Pegangan habis lalu diambil HP lain (mis. layar tertidur lama) → perlu pilih ulang.
+        $hilang = $st['aktif'] && $this->hpNomor && $this->clusterId
+            && ! $g->pegang($this->clusterId, $this->hpNomor, $this->hpToken);
+        $st['saya'] = $this->hpNomor;
+        $st['berubah'] = $hilang
+            || $this->giliranAktif !== $st['aktif']
+            || $this->timerAktif !== $st['timer_aktif']
+            || $this->timerMenit !== $st['timer_menit'];
+
+        return $st;
+    }
+
+    /** Muat ulang setup sesudah cekGiliran melaporkan perubahan (render ulang). */
+    public function segarkanSetup(): void
+    {
+        $this->muatSetup();
+        if (! $this->giliranAktif) {
+            $this->hpNomor = null;
+        } elseif ($this->hpNomor && $this->clusterId
+            && ! app(PilihUnitGiliran::class)->pegang($this->clusterId, $this->hpNomor, $this->hpToken)) {
+            $this->hpNomor = null;
+            Notification::make()->warning()->title('Nomor HP terlepas')->body('Pilih ulang nomor HP ini.')->send();
+        }
+    }
+
+    /** Giliran HP ini — nomornya juga harus masih dipegang HP ini (bukan sekadar diaku). */
+    private function pastikanGiliranSaya(): void
+    {
+        $g = app(PilihUnitGiliran::class);
+        if ($this->hpNomor && $this->clusterId && ! $g->pegang($this->clusterId, $this->hpNomor, $this->hpToken)) {
+            throw new \RuntimeException('Nomor HP '.$this->hpNomor.' tidak lagi dipegang HP ini — pilih ulang nomor HP.');
+        }
+        $g->pastikanGiliran($this->clusterId, $this->hpNomor);
+    }
+
+    private function muatSetup(): void
+    {
+        $st = app(PilihUnitGiliran::class)->status($this->clusterId);
+        $this->giliranAktif = $st['aktif'];
+        $this->timerAktif = $st['timer_aktif'];
+        $this->timerMenit = $st['timer_menit'];
+    }
+
+    private function lepasHp(): void
+    {
+        if ($this->hpNomor && $this->clusterId) {
+            app(PilihUnitGiliran::class)->lepas($this->clusterId, $this->hpNomor, $this->hpToken);
+        }
+        $this->hpNomor = null;
     }
 
     public function pickUnit(int $unitId): void
@@ -198,7 +365,13 @@ class PilihUnit extends Page
             if ((int) Unit::whereKey($unitId)->value('lokasi_id') !== (int) $this->clusterId) {
                 throw new \RuntimeException('Unit bukan bagian dari cluster yang sedang dibuka.');
             }
+            $giliran = app(PilihUnitGiliran::class);
+            $this->pastikanGiliranSaya();
             $result = app(PilihUnitService::class)->pickUnit($reg, $unitId);
+            if ($this->hpNomor) {
+                // Sesudah memilih, giliran otomatis ke HP berikutnya.
+                $giliran->lanjut($this->clusterId, $this->hpNomor);
+            }
             $this->pickedUnitLabel = $result['unit_label'];
             $unit = Unit::find($unitId);
             $project = $unit?->project_id ? Project::find($unit->project_id) : null;
