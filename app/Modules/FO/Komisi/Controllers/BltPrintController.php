@@ -28,15 +28,14 @@ class BltPrintController extends Controller
             $q->where('status', $request->query('status', 'DRAFT'));
         }
 
-        $blt = $q->orderBy('level_type')->orderBy('id')->get();
+        $blt = $q->orderBy('id')->get();
 
         // Nama lokasi dari unit kontrak pertama (untuk judul "UNTUK PENJUALAN ...").
         $lokasiName = $blt->map(fn ($b) => $b->kontrak?->unit?->lokasi?->nama)->filter()->first() ?? '';
 
-        // Kelompokkan per level, urut Sales → Koordinator → Kantor.
-        $urut = ['SALES' => 0, 'KOORDINATOR' => 1, 'KANTOR' => 2];
-        $groups = $blt->groupBy('level_type')
-            ->sortBy(fn ($g, $type) => $urut[$type] ?? 9);
+        // Kelompokkan per level (SALES AREBI ikut SALES, dst.), urut Sales → Koordinator → Kantor.
+        $groups = $blt->groupBy(fn (Blt $b) => Blt::kelompokLevel($b->level_type))
+            ->sortBy(fn ($g, $type) => Blt::urutLevel($type));
 
         $data = [
             'groups' => $groups,

@@ -126,10 +126,12 @@ class PilihUnit extends Page
         $this->resetCustomer();
 
         try {
-            $reg = app(PilihUnitService::class)->lookupByBarcode($barcode);
+            $reg = app(PilihUnitService::class)->lookupByBarcode($barcode, $this->clusterId);
         } catch (\Throwable $e) {
             $this->pickError = $e->getMessage();
             Notification::make()->danger()->title('Scan gagal')->body($e->getMessage())->send();
+            // Fase tetap 'scan' → $watch tak terpicu; beri tahu JS agar kamera menyala lagi.
+            $this->dispatch('pu-scan-gagal');
 
             return;
         }
@@ -193,6 +195,9 @@ class PilihUnit extends Page
         }
 
         try {
+            if ((int) Unit::whereKey($unitId)->value('lokasi_id') !== (int) $this->clusterId) {
+                throw new \RuntimeException('Unit bukan bagian dari cluster yang sedang dibuka.');
+            }
             $result = app(PilihUnitService::class)->pickUnit($reg, $unitId);
             $this->pickedUnitLabel = $result['unit_label'];
             $unit = Unit::find($unitId);

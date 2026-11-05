@@ -32,7 +32,7 @@ class PilihUnitService
      *  2. KODE customer (mis. "CUST-000123") — QR Master Customer → ambil
      *     pendaftaran NUP terakhir yang sudah APPROVED milik customer tsb.
      */
-    public function lookupByBarcode(string $barcode): NupRegistration
+    public function lookupByBarcode(string $barcode, ?int $lokasiId = null): NupRegistration
     {
         $code = trim($barcode);
         if ($code === '') {
@@ -81,6 +81,14 @@ class PilihUnitService
             throw new RuntimeException("NUP {$code} belum APPROVED ({$reg->verif_status}).");
         }
 
+        // Sudah pilih unit → sebut unitnya (dulu jatuh ke pesan "belum Aktivasi" yang menyesatkan).
+        if ($reg->status === 'PILIH_UNIT') {
+            $unit = $reg->unit_id ? Unit::find($reg->unit_id) : null;
+            $label = $unit ? ($unit->kode_unit ?: $unit->label) : '-';
+
+            throw new RuntimeException("NUP {$reg->no_nup} sudah memilih unit {$label}. Lanjutkan di Closing NUP.");
+        }
+
         if ($reg->status !== 'CHECK_IN') {
             throw new RuntimeException("NUP {$code} belum Aktivasi (status saat ini: {$reg->status}). Lakukan Aktivasi NUP dulu.");
         }
@@ -89,7 +97,25 @@ class PilihUnitService
             throw new RuntimeException("NUP {$code} sedang HOLD. Buka hold dulu di menu Aktivasi NUP.");
         }
 
+        $this->pastikanCluster($reg, $lokasiId);
+
         return $reg;
+    }
+
+    /**
+     * Event NUP yang terikat cluster hanya boleh Pilih Unit di cluster itu.
+     * Event tanpa cluster (data lama / berlaku semua) tidak dibatasi.
+     */
+    private function pastikanCluster(NupRegistration $reg, ?int $lokasiId): void
+    {
+        $event = $reg->event;
+        if (! $event?->lokasi_id || ! $lokasiId || (int) $event->lokasi_id === $lokasiId) {
+            return;
+        }
+
+        $cluster = $event->lokasi?->nama ?: ('#'.$event->lokasi_id);
+
+        throw new RuntimeException("NUP {$reg->no_nup} terdaftar di event {$event->name} untuk cluster {$cluster}. Buka cluster tersebut untuk memilih unit.");
     }
 
     /**
@@ -107,6 +133,8 @@ class PilihUnitService
             if (! $unit->is_active) {
                 throw new RuntimeException('Unit sedang di-hold internal (nonaktif). Pilih unit lain.');
             }
+            // Benteng server: unit harus dari cluster event NUP (bila event terikat cluster).
+            $this->pastikanCluster($reg, (int) $unit->lokasi_id);
             if ($unit->status !== 'TERSEDIA') {
                 throw new RuntimeException(
                     'Unit '.trim(($unit->blok ? $unit->blok.' / ' : '').$unit->no_unit).

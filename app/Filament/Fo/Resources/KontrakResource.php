@@ -9,6 +9,7 @@ use App\Modules\FO\Adminjual\Models\Skema;
 use App\Modules\FO\MarketingSales\Models\Kontrak;
 use App\Modules\FO\MarketingSales\Models\Reservasi;
 use App\Modules\FO\MarketingSales\Models\Unit;
+use App\Modules\FO\MarketingSales\Services\PaketGimmickService;
 use App\Support\Rupiah;
 use Filament\Forms;
 use Filament\Forms\Form;
@@ -18,6 +19,7 @@ use Filament\Tables;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\HtmlString;
+use Illuminate\Support\Str;
 
 class KontrakResource extends Resource
 {
@@ -28,7 +30,7 @@ class KontrakResource extends Resource
     // Menu SPRS hanya menampilkan kontrak tahap SPRS; yang sudah final ada di menu SPR.
     public static function getEloquentQuery(): Builder
     {
-        return parent::getEloquentQuery()->where('tahap', 'SPRS')->with('skema');
+        return parent::getEloquentQuery()->where('tahap', 'SPRS')->with(['skema', 'agent']);
     }
 
     protected static ?string $navigationIcon = 'heroicon-o-document-text';
@@ -244,9 +246,42 @@ class KontrakResource extends Resource
                                 ->columns(12)->defaultItems(0)->addActionLabel('Tambah Gimmick')
                                 ->reorderable()->orderColumn('urutan')
                                 ->itemLabel(fn (array $state): ?string => $state['nama_barang'] ?? null)
+                                // Paket (Tipe Gimmick) → semua item-nya masuk sekaligus sebagai
+                                // "Aktif (tampil di SPR)". Item yang tak didapat customer tinggal
+                                // dimatikan/dihapus per baris. Tersimpan setelah klik Simpan.
+                                ->hintAction(
+                                    Forms\Components\Actions\Action::make('pilih_paket_gimmick')
+                                        ->label('Pilih Paket Gimmick')->icon('heroicon-o-gift')
+                                        ->modalHeading('Pilih Paket Gimmick')
+                                        ->modalDescription('Semua item paket masuk ke daftar gimmick sebagai "Aktif (tampil di SPR)". Item yang sudah ada tidak dobel. Klik Simpan sesudahnya.')
+                                        ->modalSubmitActionLabel('Masukkan')
+                                        ->form(fn (?Kontrak $record) => [
+                                            Forms\Components\Select::make('tipe_gimmick_id')->label('Paket Gimmick')
+                                                ->options(app(PaketGimmickService::class)->opsiPaket($record?->unit))
+                                                ->searchable()->required(),
+                                        ])
+                                        ->action(function (array $data, Forms\Components\Repeater $component) {
+                                            $items = $component->getState() ?? [];
+                                            $masuk = 0;
+                                            foreach (app(PaketGimmickService::class)->itemPaket((int) $data['tipe_gimmick_id']) as $id => $nama) {
+                                                $key = collect($items)->search(fn ($row) => (int) ($row['gimmick_id'] ?? 0) === (int) $id);
+                                                if ($key !== false) {
+                                                    $items[$key]['diberikan'] = true;
+                                                } else {
+                                                    $items[(string) Str::uuid()] = ['gimmick_id' => $id, 'nama_barang' => $nama, 'diberikan' => true];
+                                                }
+                                                $masuk++;
+                                            }
+                                            $component->state($items);
+                                            Notification::make()->success()->title($masuk.' item gimmick dimasukkan')
+                                                ->body('Matikan item yang tidak didapat customer, lalu klik Simpan.')->send();
+                                        })
+                                )
                                 ->schema([
                                     Forms\Components\Select::make('gimmick_id')->label('Item Gimmick (dari Master)')->columnSpan(9)
-                                        ->options(fn () => Gimmick::where('is_active', true)->orderBy('name')->pluck('name', 'id'))
+                                        // Nama paket ikut tampil — item bernama sama ada di banyak paket.
+                                        ->options(fn () => Gimmick::with('tipeGimmick:id,nama')->where('is_active', true)->orderBy('name')->get()
+                                            ->mapWithKeys(fn (Gimmick $g) => [$g->id => $g->name.($g->tipeGimmick ? ' — '.$g->tipeGimmick->nama : '')]))
                                         ->searchable()->required()->live()
                                         ->afterStateUpdated(function ($state, Forms\Set $set) {
                                             $set('nama_barang', $state ? Gimmick::find($state)?->name : null);
@@ -385,7 +420,15 @@ class KontrakResource extends Resource
                         ->orderBy('tgl_kontrak', $direction)
                         ->orderBy('id', $direction)),
                 Tables\Columns\TextColumn::make('tgl_kontrak')->label('Tgl')->date('d M Y')->sortable(),
-                Tables\Columns\TextColumn::make('customer.full_name')->label('Customer')->searchable(),
+                // Di bawah nama customer: sales SPR (master agent_id) · kantor agensinya (puncak rantai atasan).
+                // Pencarian ikut nama sales.
+                Tables\Columns\TextColumn::make('customer.full_name')->label('Customer')
+                    ->description(fn (Kontrak $r) => $r->agent
+                        ? '👤 '.collect([$r->agent->name, $r->agent->kantorId() !== $r->agent->id ? $r->agent->namaKantor() : null])->filter()->implode(' · ')
+                        : null)
+                    ->searchable(query: fn (Builder $query, string $search) => $query->where(fn (Builder $w) => $w
+                        ->whereHas('customer', fn (Builder $c) => $c->where('full_name', 'like', "%{$search}%"))
+                        ->orWhereHas('agent', fn (Builder $a) => $a->where('name', 'like', "%{$search}%")))),
                 Tables\Columns\TextColumn::make('unit.kode_unit')
                     ->label('Unit')
                     ->placeholder('—')

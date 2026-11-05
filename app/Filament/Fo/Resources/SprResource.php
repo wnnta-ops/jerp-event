@@ -35,7 +35,7 @@ class SprResource extends Resource
 
     public static function getEloquentQuery(): Builder
     {
-        return parent::getEloquentQuery()->where('tahap', 'SPR')->with('skema');
+        return parent::getEloquentQuery()->where('tahap', 'SPR')->with(['skema', 'agent']);
     }
 
     public static function form(Form $form): Form

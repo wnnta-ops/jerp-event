@@ -5,8 +5,10 @@ namespace App\Filament\Fo\Resources;
 use App\Filament\Concerns\MematuhiIzin;
 use App\Filament\Fo\Resources\NupEventResource\Pages;
 use App\Modules\FO\Launching\Models\NupEvent;
+use App\Modules\FO\MarketingSales\Models\Lokasi;
 use Filament\Forms;
 use Filament\Forms\Form;
+use Filament\Forms\Get;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
@@ -54,7 +56,17 @@ class NupEventResource extends Resource
                         'unique' => 'Kode ini sudah dipakai event lain — mungkin event yang sudah dihapus. Buka filter "Data terhapus" untuk memulihkannya, atau pakai kode berbeda.',
                     ]),
                 Forms\Components\TextInput::make('name')->label('Nama event')->required()->maxLength(255),
-                Forms\Components\Select::make('project_id')->label('Proyek')->relationship('project', 'name')->required()->searchable()->preload(),
+                Forms\Components\Select::make('project_id')->label('Proyek')->relationship('project', 'name')->required()->searchable()->preload()
+                    ->live()->afterStateUpdated(fn (callable $set) => $set('lokasi_id', null)),
+                // Pilih Unit menolak scan NUP event ini bila cluster yang dibuka berbeda.
+                Forms\Components\Select::make('lokasi_id')->label('Cluster')
+                    ->options(fn (Get $get) => $get('project_id')
+                        ? Lokasi::query()->where('project_id', $get('project_id'))->where('is_active', true)
+                            ->orderBy('kode')->pluck('nama', 'id')
+                        : [])
+                    ->searchable()->preload()
+                    ->placeholder('— Semua cluster')
+                    ->helperText('NUP event ini hanya bisa Pilih Unit di cluster ini. Kosong → semua cluster.'),
                 Forms\Components\DatePicker::make('tgl_launching')->label('Tgl launching')->required(),
                 Forms\Components\DateTimePicker::make('open_registration_at')->label('Buka pendaftaran'),
                 Forms\Components\DateTimePicker::make('close_registration_at')->label('Tutup pendaftaran'),
@@ -70,6 +82,7 @@ class NupEventResource extends Resource
             Tables\Columns\TextColumn::make('code')->label('Kode')->badge()->searchable()->sortable(),
             Tables\Columns\TextColumn::make('name')->label('Nama')->searchable(),
             Tables\Columns\TextColumn::make('project.name')->label('Proyek')->toggleable(),
+            Tables\Columns\TextColumn::make('lokasi.nama')->label('Cluster')->placeholder('Semua')->toggleable(),
             Tables\Columns\TextColumn::make('tgl_launching')->label('Tgl launching')->date('d M Y')->sortable(),
             Tables\Columns\TextColumn::make('kuota')->label('Kuota')->numeric()->alignEnd(),
             Tables\Columns\TextColumn::make('registrations_count')->counts('registrations')->label('Pendaftar')->alignEnd(),
