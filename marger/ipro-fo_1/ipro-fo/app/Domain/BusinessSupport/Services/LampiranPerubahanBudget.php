@@ -72,23 +72,27 @@ class LampiranPerubahanBudget
     private function bungkus(string $jenis, BsBudgetAllocation|BsBudgetCorrection $m, ?string $no, $tanggal, ?string $alasan, float $total, array $budgets): array
     {
         $nama = fn ($id) => $id ? User::query()->whereKey($id)->value('name') : null;
-        $langkah = collect($m->approval?->steps ?? [])->map(function ($s) use ($nama) {
+        // TTD hanya untuk tahap yang SUDAH menyetujui (sama dengan lembar Memo Urgent).
+        $ttd = fn ($id) => $id ? User::query()->find($id)?->signatureUrl() : null;
+        $langkah = collect($m->approval?->steps ?? [])->map(function ($s) use ($nama, $ttd) {
             $aksi = $s->actions->sortByDesc('acted_at')->first();
 
             return [
                 'label' => $s->label ?: 'Tahap '.$s->level, 'status' => $s->status,
                 'oleh' => $nama($aksi?->actor_id), 'tanggal' => $s->acted_at?->format('d/m/Y H:i'), 'catatan' => $s->notes ?: $aksi?->notes,
+                'ttd' => $s->status === 'approved' ? $ttd($aksi?->actor_id) : null,
             ];
         })->values()->all();
         if ($langkah === [] && $m->approved_at) {
             // Alokasi/koreksi dari menu langsung (tanpa Approval Inbox): yang menyetujui di layar Approval.
-            $langkah[] = ['label' => 'Approval', 'status' => $m->status, 'oleh' => $nama($m->approved_by), 'tanggal' => $m->approved_at->format('d/m/Y H:i'), 'catatan' => null];
+            $langkah[] = ['label' => 'Approval', 'status' => $m->status, 'oleh' => $nama($m->approved_by), 'tanggal' => $m->approved_at->format('d/m/Y H:i'), 'catatan' => null,
+                'ttd' => $m->status === 'approved' ? $ttd($m->approved_by) : null];
         }
 
         return [
             'jenis' => $jenis, 'no' => $no ?: '—', 'tanggal' => $tanggal?->format('d/m/Y'),
             'status' => BsBudgetAllocation::STATUSES[$m->status] ?? $m->status, 'status_kode' => $m->status,
-            'alasan' => $alasan, 'total' => $total, 'asal' => $this->asal($m), 'pengaju' => $nama($m->created_by),
+            'alasan' => $alasan, 'total' => $total, 'asal' => $this->asal($m), 'pengaju' => $nama($m->created_by), 'pengaju_ttd' => $ttd($m->created_by),
             'budgets' => $budgets, 'langkah' => $langkah, 'dicetak' => now()->format('d/m/Y H:i'),
         ];
     }
