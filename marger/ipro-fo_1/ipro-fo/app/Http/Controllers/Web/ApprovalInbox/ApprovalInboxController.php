@@ -53,7 +53,9 @@ class ApprovalInboxController extends Controller
             if ($f['q'] !== '' && ! str_contains(mb_strtolower(implode(' ', [$r['number'], $r['subject'], $r['department'], $r['submitter'], $r['type']])), mb_strtolower($f['q']))) {
                 return false;
             }
-            if ($f['jenis'] !== '' && $r['document_type'] !== $f['jenis']) {
+            // Filter "Invoice Hutang" juga mencakup invoice Memo Urgent yang menunggu alokasi / koreksi.
+            $jenisBaris = $r['document_type'] === \App\Domain\BusinessSupport\Models\BsApBudgetRequest::DOCUMENT_TYPE ? 'ap_invoice' : $r['document_type'];
+            if ($f['jenis'] !== '' && $jenisBaris !== $f['jenis']) {
                 return false;
             }
             if ($f['status'] !== '' && ! in_array($r['status'], $kelompok[$f['status']] ?? [], true)) {
@@ -70,7 +72,7 @@ class ApprovalInboxController extends Controller
             'counts' => array_map(fn ($l) => $l->count(), $baris),
             'rows' => $baris[$tab],
             'filters' => $f,
-            'pilihanJenis' => \App\Domain\ApprovalInbox\Services\ApprovalInboxQuery::TYPE_LABELS,
+            'pilihanJenis' => array_diff_key(\App\Domain\ApprovalInbox\Services\ApprovalInboxQuery::TYPE_LABELS, [\App\Domain\BusinessSupport\Models\BsApBudgetRequest::DOCUMENT_TYPE => 1]),
             'canSubmit' => $user->can('approvalinbox.submit'),
         ]);
     }
@@ -201,9 +203,12 @@ class ApprovalInboxController extends Controller
             \App\Domain\BusinessSupport\Models\BsApBerkasUpload::class => ['supplier:id,name', 'files.jenis:id,name'],
             \App\Domain\BusinessSupport\Models\BsApInvoice::class => ['supplier:id,name'],
             \App\Domain\BusinessSupport\Models\BsBudgetCorrection::class => ['account:id,code,name', 'costCenter:id,code,name', 'budget'],
+            \App\Domain\BusinessSupport\Models\BsBudgetAllocation::class => ['account:id,code,name', 'costCenter:id,code,name', 'budget', 'toBudget.account:id,code,name', 'toBudget.costCenter:id,code,name'],
             \App\Domain\ApprovalInbox\Models\MemoInternal::class => ['supplier:id,name'],
         ]);
         abort_unless($this->inbox->canView($user, $approval), 403);
+        $ikut = app(\App\Domain\BusinessSupport\Services\BudgetIkutInvoice::class);
+        $bisaRevisi = $ikut->bisaRevisi($user, $approval);
 
         return Inertia::render('ApprovalInbox/Show', [
             'approval' => $this->inbox->row($approval),
@@ -212,7 +217,52 @@ class ApprovalInboxController extends Controller
             'canAct' => $this->inbox->canAct($user, $approval),
             // Memo Urgent: preview lembar memo + TTD tiap tahap yang sudah menyetujui.
             'memo' => $this->lembarMemo($approval),
+            // Finance (saat gilirannya) boleh mengubah alokasi / koreksi turunan invoice → approval diulang.
+            'bisaRevisi' => $bisaRevisi,
+            'pilihanBudget' => $bisaRevisi ? $this->pilihanBudget($approval) : [],
         ]);
+    }
+
+    /** Finance merevisi alokasi / koreksi turunan invoice → approval diulang dari tahap 1 ([REVISI]). */
+    public function revisiBudget(Request $request, Approval $approval, \App\Domain\BusinessSupport\Services\BudgetIkutInvoice $ikut): RedirectResponse
+    {
+        abort_unless($request->user()?->can('approvalinbox.view'), 403);
+        $v = $request->validate([
+            'item' => ['present', 'array', 'max:20'],
+            'item.*.jenis' => ['required', 'in:alokasi,koreksi'],
+            'item.*.dari_budget_id' => ['nullable', 'required_if:item.*.jenis,alokasi', 'integer', 'exists:bs_budgets,id'],
+            'item.*.budget_id' => ['required', 'integer', 'exists:bs_budgets,id'],
+            'item.*.nilai' => ['required', 'numeric', 'min:1'],
+            'item.*.keterangan' => ['nullable', 'string', 'max:150'],
+            'catatan' => ['nullable', 'string', 'max:300'],
+        ], ['item.*.dari_budget_id.required_if' => 'Pilih budget asal untuk alokasi.']);
+
+        try {
+            $berubah = $ikut->revisi($approval->load('steps'), $request->user(), $v['item'], $v['catatan'] ?? null);
+        } catch (BusinessRuleException $e) {
+            return back()->with('error', $e->getMessage());
+        }
+
+        return $berubah
+            ? redirect()->route('approval-inbox.index', ['tab' => 'perlu'])->with('success', "Alokasi / koreksi direvisi — approval #{$approval->id} diulang dari tahap pertama [REVISI].")
+            : back()->with('info', 'Tidak ada perubahan alokasi / koreksi.');
+    }
+
+    /**
+     * Pilihan budget untuk revisi: master budget tahun invoice.
+     *
+     * @return list<array{id:int, label:string}>
+     */
+    private function pilihanBudget(Approval $approval): array
+    {
+        $m = $approval->approvable;
+        $tanggal = $m instanceof \App\Domain\BusinessSupport\Models\BsApInvoice ? $m->invoice_date?->toDateString() : ($m->data['invoice_date'] ?? null);
+        $tahun = (int) \Illuminate\Support\Carbon::parse($tanggal ?? now())->year;
+
+        return \App\Domain\BusinessSupport\Models\BsBudget::query()->where('year', $tahun)
+            ->with(['account:id,code,name', 'costCenter:id,code,name'])->orderBy('account_id')->get()
+            ->map(fn ($b) => ['id' => $b->id, 'label' => trim($b->account?->code.' '.$b->account?->name).' · '.($b->costCenter?->name ?? 'Semua cost center').' ('.$b->doc_no.')'])
+            ->values()->all();
     }
 
     /** Tutup pop-up pengingat Memo Urgent dibayar tanpa invoice — muncul lagi di login berikutnya. */

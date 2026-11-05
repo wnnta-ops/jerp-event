@@ -1020,21 +1020,28 @@ class ApInvoiceController extends Controller
                 $budgetGuard->assertWithinBudget($v['journal_lines'] ?? [], null, $v['invoice_date'], $lama?->journal_id, $tambahan);
                 $inv = $action->execute($v + ['jenis' => $jenis], $request->user()->id, $lama);
                 if ($tambahan !== []) {
-                    // Invoice biasa: alokasi / koreksi diajukan ke Finance (Approval Inbox) tanpa menahan invoice.
+                    // Invoice biasa: alokasi / koreksi tanpa menahan invoice. Invoice dari berkas (punya
+                    // approval Invoice Hutang) → turunan approval invoice itu (BudgetIkutInvoice), satu
+                    // keputusan untuk semuanya. Tanpa approval invoice → approval sendiri (Finance).
+                    $ikutInvoice = $berkas !== null;
                     $bulan = (int) \Illuminate\Support\Carbon::parse($v['invoice_date'])->month;
                     foreach ($alokasi as $a) {
                         $al = app(\App\Domain\BusinessSupport\Services\BudgetAllocationService::class)->pindah(
                             (int) $a['dari_budget_id'], (int) $a['budget_id'], [$bulan => (float) $a['nilai']], $v['invoice_date'],
                             mb_substr(trim(($a['keterangan'] ?? '').' · '.$inv->invoice_number, ' ·'), 0, 200), $request->user()->id,
                             ['type' => \App\Domain\BusinessSupport\Models\BsBudgetAllocation::SOURCE_INVOICE, 'id' => $inv->id], $lama?->journal_id, langsung: false);
-                        $ap = app(\App\Domain\Approval\Actions\SubmitForApproval::class)->execute(\App\Domain\BusinessSupport\Models\BsBudgetAllocation::DOCUMENT_TYPE, $al,
-                            ['doc_no' => $al->doc_no, 'invoice_number' => $inv->invoice_number, 'nilai' => (float) $a['nilai']]);
-                        $al->forceFill(['approval_id' => $ap->id])->save();
+                        if (! $ikutInvoice) {
+                            $ap = app(\App\Domain\Approval\Actions\SubmitForApproval::class)->execute(\App\Domain\BusinessSupport\Models\BsBudgetAllocation::DOCUMENT_TYPE, $al,
+                                ['doc_no' => $al->doc_no, 'invoice_number' => $inv->invoice_number, 'nilai' => (float) $a['nilai']]);
+                            $al->forceFill(['approval_id' => $ap->id])->save();
+                        }
                         $diajukan['alokasi']++;
                     }
                     if ($koreksi !== []) {
-                        $diajukan['koreksi'] = count(app(\App\Domain\BusinessSupport\Services\BudgetCorrectionService::class)->ajukanDariInvoice($inv, $koreksi, $request->user()->id));
+                        $diajukan['koreksi'] = count(app(\App\Domain\BusinessSupport\Services\BudgetCorrectionService::class)
+                            ->ajukanDariInvoice($inv, $koreksi, $request->user()->id, approvalSendiri: ! $ikutInvoice));
                     }
+                    $diajukan['ikut'] = $ikutInvoice;
                 }
                 if ($linkBerkas) {
                     app(\App\Domain\BusinessSupport\Services\LinkBerkasSupplier::class)->pakai($linkBerkas, $inv);
@@ -1064,7 +1071,9 @@ class ApInvoiceController extends Controller
 
         if ($diajukan['koreksi'] || $diajukan['alokasi']) {
             session()->flash('info', trim(($diajukan['alokasi'] ? $diajukan['alokasi'].' alokasi' : '').($diajukan['alokasi'] && $diajukan['koreksi'] ? ' & ' : '')
-                .($diajukan['koreksi'] ? $diajukan['koreksi'].' koreksi' : '')).' budget diajukan ke Finance (Approval Inbox) — invoice tetap berjalan.');
+                .($diajukan['koreksi'] ? $diajukan['koreksi'].' koreksi' : '')).' budget '.(! empty($diajukan['ikut'])
+                    ? 'ikut approval invoice ini (Approval Inbox) — diputuskan bersama invoicenya.'
+                    : 'diajukan ke Finance (Approval Inbox) — invoice tetap berjalan.'));
         }
 
         if ($lama === null) {

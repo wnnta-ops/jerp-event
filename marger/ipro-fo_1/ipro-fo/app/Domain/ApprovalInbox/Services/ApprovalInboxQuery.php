@@ -8,6 +8,8 @@ use App\Domain\Approval\Models\Approval;
 use App\Domain\Approval\Models\ApprovalChainStep;
 use App\Domain\ApprovalInbox\Models\MemoInternal;
 use App\Domain\BusinessSupport\Models\BsApBerkasUpload;
+use App\Domain\BusinessSupport\Models\BsApBudgetRequest;
+use App\Domain\BusinessSupport\Services\BudgetIkutInvoice;
 use App\Domain\BusinessSupport\Models\BsApInvoice;
 use App\Domain\BusinessSupport\Models\BsBudgetCorrection;
 use App\Models\User;
@@ -34,6 +36,7 @@ final class ApprovalInboxQuery
         MemoInternal::DOCUMENT_TYPE,
         BsApBerkasUpload::DOCUMENT_TYPE,
         BsApInvoice::APPROVAL_DOCUMENT_TYPE,
+        BsApBudgetRequest::DOCUMENT_TYPE,
         BsBudgetCorrection::DOCUMENT_TYPE,
         \App\Domain\BusinessSupport\Models\BsBudgetAllocation::DOCUMENT_TYPE,
     ];
@@ -42,6 +45,8 @@ final class ApprovalInboxQuery
         MemoInternal::DOCUMENT_TYPE => 'Memo Urgent',
         BsApBerkasUpload::DOCUMENT_TYPE => 'TTD Berkas',
         BsApInvoice::APPROVAL_DOCUMENT_TYPE => 'Invoice Hutang',
+        // Invoice Memo Urgent yang ditahan menunggu alokasi / koreksi — kepalanya tetap invoice.
+        BsApBudgetRequest::DOCUMENT_TYPE => 'Invoice Hutang',
         BsBudgetCorrection::DOCUMENT_TYPE => 'Koreksi Budget',
         \App\Domain\BusinessSupport\Models\BsBudgetAllocation::DOCUMENT_TYPE => 'Alokasi Budget',
     ];
@@ -168,7 +173,7 @@ final class ApprovalInboxQuery
             'document_type' => $approval->document_type,
             'type' => self::TYPE_LABELS[$approval->document_type] ?? $approval->document_type,
             'number' => $doc['number'],
-            'subject' => $doc['title'],
+            'subject' => $this->judul($approval, $doc['title']),
             'department' => $doc['sub'],
             'amount' => $doc['amount'],
             'status' => $approval->status,
@@ -178,7 +183,15 @@ final class ApprovalInboxQuery
             'done' => collect($stages)->where('state', 'done')->count(),
             'total' => count($stages),
             'stages' => array_map(fn ($s) => ['label' => $s['label'], 'state' => $s['state']], $stages),
+            // Alokasi / koreksi budget turunan invoice ini — ditampilkan di bawah barisnya (panah).
+            'turunan' => BudgetIkutInvoice::berlaku($approval) ? app(BudgetIkutInvoice::class)->ringkas($approval) : [],
         ];
+    }
+
+    /** Judul dokumen; approval yang diulang karena revisi Finance diberi tanda [REVISI]. */
+    private function judul(Approval $approval, ?string $judul): ?string
+    {
+        return BudgetIkutInvoice::revisiKe($approval) > 0 ? trim('[REVISI] '.$judul) : $judul;
     }
 
     /**
@@ -191,8 +204,10 @@ final class ApprovalInboxQuery
         $doc = $this->header($approval);
         $m = $approval->approvable;
         $rp = fn ($v) => $v !== null ? 'Rp '.number_format((float) $v, 0, ',', '.') : null;
-        $out = ['number' => $doc['number'], 'title' => $doc['title'], 'type' => self::TYPE_LABELS[$approval->document_type] ?? $approval->document_type,
-            'fields' => [], 'body' => null, 'files' => [], 'links' => []];
+        $out = ['number' => $doc['number'], 'title' => $this->judul($approval, $doc['title']), 'type' => self::TYPE_LABELS[$approval->document_type] ?? $approval->document_type,
+            'fields' => [], 'body' => null, 'files' => [], 'links' => [],
+            'turunan' => BudgetIkutInvoice::berlaku($approval) ? app(BudgetIkutInvoice::class)->ringkas($approval) : [],
+            'revisi' => BudgetIkutInvoice::revisiKe($approval), 'riwayat_revisi' => $approval->payload['riwayat_revisi'] ?? []];
 
         if ($m instanceof MemoInternal) {
             $out['fields'] = [
@@ -224,6 +239,19 @@ final class ApprovalInboxQuery
             $out['links'][] = ['label' => 'Buka invoice', 'url' => route('bs.ap.show', $m->id)];
             if ($berkas) {
                 $out['links'][] = ['label' => 'Buka berkas', 'url' => route('bs.ap.berkas.show', $berkas->id)];
+            }
+        } elseif ($m instanceof BsApBudgetRequest) {
+            $d = $m->data ?? [];
+            $out['fields'] = [
+                ['label' => 'Tgl. Invoice', 'value' => $d['invoice_date'] ?? null],
+                ['label' => 'Supplier', 'value' => $doc['sub']],
+                ['label' => 'No. Invoice Supplier', 'value' => $d['supplier_invoice_no'] ?? null],
+                ['label' => 'Nilai Transaksi', 'value' => $rp($d['dpp'] ?? null)],
+                ['label' => 'Status', 'value' => 'Invoice belum disimpan — menunggu approval alokasi / koreksi budget'],
+            ];
+            $out['body'] = $d['description'] ?? null;
+            if ((int) $m->user_id === (int) auth()->id()) {
+                $out['links'][] = ['label' => 'Buka isian invoice', 'url' => \App\Domain\BusinessSupport\Services\PengajuanBudgetInvoice::url($m)];
             }
         } elseif ($m instanceof BsBudgetCorrection) {
             $bulanLabel = \App\Domain\BusinessSupport\Models\BsBudget::MONTHS;
@@ -272,6 +300,7 @@ final class ApprovalInboxQuery
             ->with(['steps', 'approvable' => fn (MorphTo $m) => $m->morphWith([
                 BsApBerkasUpload::class => ['supplier:id,name', 'files.jenis:id,name'],
                 BsApInvoice::class => ['supplier:id,name'],
+                BsApBudgetRequest::class => [],
                 BsBudgetCorrection::class => ['account:id,code,name', 'costCenter:id,code,name', 'budget'],
                 \App\Domain\BusinessSupport\Models\BsBudgetAllocation::class => ['account:id,code,name', 'costCenter:id,code,name', 'budget', 'toBudget.account:id,code,name', 'toBudget.costCenter:id,code,name'],
                 MemoInternal::class => ['supplier:id,name'],
@@ -290,6 +319,9 @@ final class ApprovalInboxQuery
                 'amount' => $m->amount !== null ? (float) $m->amount : null],
             $m instanceof BsApInvoice => ['number' => $m->invoice_number, 'title' => $m->description, 'sub' => $m->supplier?->name,
                 'amount' => (float) $m->total],
+            $m instanceof BsApBudgetRequest => ['number' => $m->invoice_number, 'title' => $m->data['description'] ?? 'Invoice hutang',
+                'sub' => ! empty($m->data['supplier_id']) ? \App\Domain\BusinessSupport\Models\BsSupplier::query()->whereKey((int) $m->data['supplier_id'])->value('name') : null,
+                'amount' => (float) ($approval->payload['total'] ?? $m->data['dpp'] ?? 0)],
             $m instanceof BsBudgetCorrection => ['number' => $m->doc_no, 'title' => 'Koreksi budget '.$m->account?->code.' '.$m->account?->name,
                 'sub' => $m->costCenter?->name ?? 'Semua cost center', 'amount' => round((float) $m->new_amount - (float) $m->old_amount, 2)],
             $m instanceof \App\Domain\BusinessSupport\Models\BsBudgetAllocation => ['number' => $m->doc_no,
@@ -330,6 +362,9 @@ final class ApprovalInboxQuery
             return $lead;
         }
 
+        if ($approval->document_type === BsApBudgetRequest::DOCUMENT_TYPE) {
+            return [$stage('Pengaju', 'Invoice + alokasi / koreksi budget', $submitter, $approval->submitted_at)];
+        }
         if ($approval->document_type === \App\Domain\BusinessSupport\Models\BsBudgetAllocation::DOCUMENT_TYPE) {
             return [$stage('Pengaju', 'Alokasi dari invoice hutang', $submitter, $approval->submitted_at)];
         }
@@ -400,7 +435,7 @@ final class ApprovalInboxQuery
         if (! empty($chainStep?->label)) {
             return (string) $chainStep->label;
         }
-        if (in_array($approval->document_type, [MemoInternal::DOCUMENT_TYPE, BsApInvoice::APPROVAL_DOCUMENT_TYPE], true)
+        if (in_array($approval->document_type, [MemoInternal::DOCUMENT_TYPE, BsApInvoice::APPROVAL_DOCUMENT_TYPE, BsApBudgetRequest::DOCUMENT_TYPE], true)
             && isset(MemoInternal::STEPS[$level])) {
             return MemoInternal::STEPS[$level][1];
         }

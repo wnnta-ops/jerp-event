@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue';
 import { Head, Link, router } from '@inertiajs/vue3';
-import { ShieldCheck, Search, X, FileText } from 'lucide-vue-next';
+import { ShieldCheck, Search, X, FileText, ChevronDown } from 'lucide-vue-next';
 import Badge from '@/Components/UI/Badge.vue';
 import Button from '@/Components/UI/Button.vue';
 import EmptyState from '@/Components/UI/EmptyState.vue';
@@ -11,6 +11,8 @@ type Row = {
     id: number; number: string | null; subject: string | null; department: string | null;
     amount: number | null; type: string; status: string; submitter: string | null;
     submitted_at: string | null; position: string; done: number; total: number; stages: Stage[];
+    /** Alokasi / koreksi budget turunan invoice (diputuskan bersama invoicenya). */
+    turunan?: Array<{ jenis: string; id: number; doc_no: string; dari: string | null; ke: string | null; nilai: number }>;
 };
 
 const props = defineProps<{
@@ -54,6 +56,8 @@ function go(tab: string) {
 }
 
 const rupiah = (v: number) => 'Rp ' + v.toLocaleString('id-ID');
+// Baris invoice yang turunannya (alokasi / koreksi) sedang dibuka.
+const terbuka = ref<Record<number, boolean>>({});
 const tanggal = (iso: string | null) => (iso ? new Date(iso).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' }) : '—');
 
 const statusBadge: Record<string, { variant: string; text: string }> = {
@@ -127,10 +131,15 @@ const dot: Record<Stage['state'], string> = {
                     </tr>
                 </thead>
                 <tbody class="divide-y divide-neutral-200 dark:divide-neutral-800">
-                    <tr v-for="r in rows" :key="r.id" class="hover:bg-neutral-50 dark:hover:bg-neutral-800/50">
+                    <template v-for="r in rows" :key="r.id">
+                    <tr class="hover:bg-neutral-50 dark:hover:bg-neutral-800/50">
                         <td class="px-4 py-3">
                             <p class="font-mono text-xs font-semibold">{{ r.number ?? '#' + r.id }}</p>
                             <p class="text-xs text-neutral-500">{{ r.type }}</p>
+                            <button v-if="r.turunan?.length" type="button" class="mt-1 inline-flex items-center gap-0.5 rounded-full bg-primary-50 px-2 py-0.5 text-[11px] font-medium text-primary-700 hover:bg-primary-100 dark:bg-primary-950/40 dark:text-primary-300"
+                                @click="terbuka[r.id] = !terbuka[r.id]">
+                                + {{ r.turunan.length }} alokasi/koreksi <ChevronDown :class="['h-3 w-3 transition', terbuka[r.id] ? 'rotate-180' : '']" />
+                            </button>
                         </td>
                         <td class="px-4 py-3">
                             <p class="font-medium">{{ r.subject }}</p>
@@ -156,6 +165,14 @@ const dot: Record<Stage['state'], string> = {
                             </Link>
                         </td>
                     </tr>
+                    <!-- Turunan: alokasi / koreksi budget yang ikut disetujui bersama invoice ini. -->
+                    <tr v-for="t in (terbuka[r.id] ? r.turunan ?? [] : [])" :key="r.id + t.jenis + t.id" class="bg-neutral-50/70 text-xs dark:bg-neutral-800/30">
+                        <td class="py-2 pl-8 pr-4"><span class="text-neutral-400">↳</span> <span class="font-mono">{{ t.doc_no }}</span><div class="pl-4 capitalize text-neutral-500">{{ t.jenis }} budget</div></td>
+                        <td class="px-4 py-2" colspan="1">{{ t.dari ? t.dari + ' → ' : '' }}{{ t.ke }}</td>
+                        <td class="px-4 py-2 text-right tabular-nums">{{ rupiah(t.nilai) }}</td>
+                        <td class="px-4 py-2 text-neutral-500" colspan="4">Ikut diputuskan bersama invoice ini</td>
+                    </tr>
+                    </template>
                 </tbody>
             </table>
             <EmptyState v-if="!rows.length" :title="adaFilter() ? 'Tidak ada dokumen yang cocok dengan pencarian / filter.' : emptyText[props.tab]" />

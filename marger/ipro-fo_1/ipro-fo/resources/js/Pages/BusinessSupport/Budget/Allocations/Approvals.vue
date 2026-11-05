@@ -75,7 +75,7 @@ function decide(decision: 'approve' | 'reject') {
             <td class="px-3 py-2">{{ r.period }}</td>
             <td class="px-3 py-2"><span v-if="r.invoice" class="rounded bg-primary-50 px-1.5 py-0.5 text-xs font-medium text-primary-700 dark:bg-primary-900/30 dark:text-primary-300">Invoice {{ r.invoice }}</span><span v-else class="text-neutral-400">—</span><div v-if="r.notes" class="text-[11px] text-neutral-500">{{ r.notes }}</div></td>
             <td class="px-3 py-2 text-right">{{ fmtRp(r.amount) }}</td>
-            <td class="px-3 py-2 text-xs"><template v-if="r.tahap">{{ r.tahap }}</template><span v-else class="text-neutral-400">—</span><div v-if="!r.bisa" class="text-[11px] text-neutral-400">bukan giliran Anda</div></td>
+            <td class="px-3 py-2 text-xs"><template v-if="r.tahap">{{ r.tahap }}</template><span v-else class="text-neutral-400">—</span><div v-if="r.ikut_invoice" class="text-[11px] text-neutral-400">lihat saja — disetujui bersama invoicenya</div><div v-else-if="!r.bisa" class="text-[11px] text-neutral-400">bukan giliran Anda</div></td>
           </tr>
         </tbody>
       </table>

@@ -279,10 +279,10 @@ watch(rows, () => nextTick(measure));
         <div v-if="jumlahDraft" class="card overflow-hidden">
             <button type="button" class="flex w-full items-center justify-between gap-2 px-4 py-2.5 text-left text-sm font-semibold hover:bg-neutral-50 dark:hover:bg-neutral-800/40" @click="draftTerbuka = !draftTerbuka">
                 <span class="inline-flex items-center gap-2">
-                    <span v-if="adaDraftBaru" class="h-2 w-2 rounded-full bg-danger-500" title="Ada yang sudah diputuskan Finance / berkas supplier masuk"></span>
+                    <span v-if="adaDraftBaru" class="h-2 w-2 rounded-full bg-danger-500" title="Ada pengajuan budget yang sudah diputuskan / berkas supplier masuk"></span>
                     Draft <span class="font-normal text-neutral-400">({{ jumlahDraft }})</span>
                     <span class="text-xs font-normal text-neutral-500">
-                        <template v-if="pengajuanBudget?.length">· {{ pengajuanBudget.length }} pengajuan budget Finance</template>
+                        <template v-if="pengajuanBudget?.length">· {{ pengajuanBudget.length }} pengajuan budget</template>
                         <template v-if="menungguSupplier?.length"> · {{ menungguSupplier.length }} menunggu berkas supplier</template>
                     </span>
                 </span>
@@ -291,18 +291,18 @@ watch(rows, () => nextTick(measure));
             <div v-show="draftTerbuka">
             <!-- Invoice tertahan Pengajuan Budget: alokasi / koreksi langkah Struktur menunggu Finance. -->
             <div v-if="pengajuanBudget?.length">
-            <div class="border-y border-neutral-200 bg-neutral-50 px-4 py-1.5 text-xs font-semibold uppercase tracking-wide text-neutral-500 dark:border-neutral-800 dark:bg-neutral-800/40">Menunggu persetujuan budget Finance ({{ pengajuanBudget.length }})</div>
+            <div class="border-y border-neutral-200 bg-neutral-50 px-4 py-1.5 text-xs font-semibold uppercase tracking-wide text-neutral-500 dark:border-neutral-800 dark:bg-neutral-800/40">Menunggu approval budget ({{ pengajuanBudget.length }})</div>
             <table class="w-full text-sm">
                 <tbody>
                     <tr v-for="p in pengajuanBudget" :key="p.id" class="border-t border-neutral-100 first:border-t-0 dark:border-neutral-800">
                         <td class="whitespace-nowrap px-4 py-2 font-mono text-xs">
-                            <span class="inline-flex items-center gap-1.5"><span v-if="p.baru" class="h-2 w-2 rounded-full bg-danger-500" title="Sudah diputuskan Finance"></span>{{ p.invoice_number ?? '—' }}</span>
+                            <span class="inline-flex items-center gap-1.5"><span v-if="p.baru" class="h-2 w-2 rounded-full bg-danger-500" title="Sudah diputuskan"></span>{{ p.invoice_number ?? '—' }}</span>
                         </td>
                         <td class="px-4 py-2">{{ p.description ?? '—' }}<div v-if="p.status === 'ditolak' && p.catatan" class="text-[11px] text-danger-600">{{ p.catatan }}</div></td>
                         <td class="whitespace-nowrap px-4 py-2 text-xs text-neutral-500">{{ p.diajukan }}</td>
                         <td class="whitespace-nowrap px-4 py-2">
                             <span :class="['rounded-full px-2 py-0.5 text-[11px] font-medium', p.status === 'disetujui' ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300' : p.status === 'ditolak' ? 'bg-danger-50 text-danger-700 dark:bg-danger-950/40 dark:text-danger-300' : 'bg-amber-50 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300']">
-                                {{ p.status === 'disetujui' ? 'Disetujui — lanjutkan' : p.status === 'ditolak' ? 'Ditolak' : 'Menunggu Finance' }}</span>
+                                {{ p.status === 'disetujui' ? 'Disetujui — lanjutkan' : p.status === 'ditolak' ? 'Ditolak' : 'Menunggu approval' }}</span>
                         </td>
                         <td class="whitespace-nowrap px-4 py-2 text-right"><a :href="p.url" class="text-xs font-medium text-primary-600 hover:underline">Buka</a></td>
                     </tr>

@@ -119,8 +119,11 @@ class BudgetAllocationController extends Controller
             ->where('status', 'baru')->orderBy('doc_no')->get();
         // Dokumen approval = alokasi itu sendiri — dipasang langsung supaya stages() tidak memuat ulang (lazy load).
         $alokasi->each(fn ($a) => $a->approval?->setRelation('approvable', $a));
-        $bisa = fn (BsBudgetAllocation $a) => $a->approval ? $inbox->canAct($user, $a->approval)
-            : (bool) $user?->canAny(['budget.allocation.approve', 'businesssupport.approval.act']);
+        // Turunan invoice (tanpa approval sendiri): tampil untuk dilihat, diputuskan di approval invoicenya.
+        $ikut = app(\App\Domain\BusinessSupport\Services\BudgetIkutInvoice::class);
+        $induk = $alokasi->mapWithKeys(fn ($a) => [$a->id => $ikut->induk($a)?->load('steps')]);
+        $bisa = fn (BsBudgetAllocation $a) => $induk[$a->id] ? false : ($a->approval ? $inbox->canAct($user, $a->approval)
+            : (bool) $user?->canAny(['budget.allocation.approve', 'businesssupport.approval.act']));
         abort_unless($user?->can('budget.allocation.approve') || $alokasi->contains(fn ($a) => $a->approval && $bisa($a)), 403);
 
         $nomorInvoice = function (BsBudgetAllocation $a): ?string {
@@ -130,8 +133,9 @@ class BudgetAllocationController extends Controller
                 default => null,
             };
         };
-        $rows = $alokasi->map(function ($a) use ($bisa, $inbox, $nomorInvoice) {
-            $tahap = $a->approval ? collect($inbox->stages($a->approval))->firstWhere('state', 'current') : null;
+        $rows = $alokasi->map(function ($a) use ($bisa, $inbox, $nomorInvoice, $induk) {
+            $ap = $induk[$a->id] ?? $a->approval;
+            $tahap = $ap ? collect($inbox->stages($ap))->firstWhere('state', 'current') : null;
 
             return [
                 'id' => $a->id, 'doc_no' => $a->doc_no, 'year' => $a->year, 'date' => $a->alloc_date?->format('Y-m-d'),
@@ -144,8 +148,9 @@ class BudgetAllocationController extends Controller
                 'invoice' => $nomorInvoice($a),
                 'notes' => $a->notes,
                 'amount' => (float) $a->amount, 'total_budget' => (float) $a->total_budget,
-                'tahap' => $tahap ? trim($tahap['label'].($tahap['role'] ? ' — '.$tahap['role'] : '')) : null,
-                'approval_url' => $a->approval_id ? route('approval-inbox.show', $a->approval_id) : null,
+                'tahap' => $tahap ? trim(($induk[$a->id] ? 'Ikut approval invoice · ' : '').$tahap['label'].($tahap['role'] ? ' — '.$tahap['role'] : '')) : null,
+                'approval_url' => $ap ? route('approval-inbox.show', $ap->id) : null,
+                'ikut_invoice' => (bool) $induk[$a->id],
                 'lampiran_url' => \App\Domain\BusinessSupport\Services\LampiranPerubahanBudget::url($a),
                 'bisa' => $bisa($a),
             ];
@@ -173,6 +178,11 @@ class BudgetAllocationController extends Controller
         $gagal = [];
         foreach (BsBudgetAllocation::with('approval.steps')->whereIn('id', $v['ids'])->where('status', 'baru')->orderBy('id')->get() as $a) {
             try {
+                if (app(\App\Domain\BusinessSupport\Services\BudgetIkutInvoice::class)->induk($a)) {
+                    $gagal[] = $a->doc_no.': ikut approval invoice — putuskan di Approval Inbox';
+
+                    continue;
+                }
                 if ($a->approval) {
                     app(\App\Domain\Approval\Actions\ActOnApproval::class)->execute($a->approval, $approve ? 'approve' : 'reject');
                 } elseif ($bolehLama) {

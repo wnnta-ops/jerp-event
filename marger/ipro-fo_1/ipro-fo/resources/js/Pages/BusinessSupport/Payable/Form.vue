@@ -1298,9 +1298,9 @@ const cellArea = 'w-full rounded-md border border-neutral-300 bg-white px-2 py-1
             <div class="flex flex-wrap items-start justify-between gap-2">
                 <div>
                     <p class="font-semibold">
-                        <template v-if="pengajuanBudget.status === 'disetujui'">✓ Budget disetujui Finance — lanjutkan ke Selesai &amp; simpan invoice.</template>
+                        <template v-if="pengajuanBudget.status === 'disetujui'">✓ Budget disetujui — lanjutkan ke Selesai &amp; simpan invoice.</template>
                         <template v-else-if="pengajuanBudget.status === 'ditolak'">Pengajuan budget ditolak — ubah alokasi / koreksi di langkah Struktur lalu ajukan ulang.</template>
-                        <template v-else>Menunggu persetujuan Finance — invoice belum bisa diselesaikan.</template>
+                        <template v-else>Menunggu approval (alur invoice) — invoice belum bisa diselesaikan.</template>
                     </p>
                     <p class="mt-0.5 text-xs text-neutral-600 dark:text-neutral-300">
                         <template v-if="pengajuanBudget.invoice_number">No. invoice dipesan <span class="font-mono font-semibold">{{ pengajuanBudget.invoice_number }}</span> · </template>
@@ -1832,8 +1832,8 @@ const cellArea = 'w-full rounded-md border border-neutral-300 bg-white px-2 py-1
                     <h2 class="font-semibold">Koreksi Budget</h2>
                     <span class="text-[11px] text-neutral-400">{{ bulanBudget }}</span>
                 </div>
-                <p v-if="butuhPengajuan" class="mb-2 text-[11px] text-neutral-500">Invoice dari Memo Urgent: klik "Selanjutnya" lalu ajukan ke Finance — setelah disetujui, nilainya ditambahkan ke budget bulan ini dan invoice bisa diselesaikan.</p>
-                <p v-else class="mb-2 text-[11px] text-neutral-500">Diajukan ke Finance (Approval Koreksi Budget / Approval Inbox) bersama invoice ini saat disimpan — invoice tetap berjalan.</p>
+                <p v-if="butuhPengajuan" class="mb-2 text-[11px] text-neutral-500">Invoice dari Memo Urgent: klik "Selanjutnya" lalu ajukan approval (alur invoice) — setelah disetujui, nilainya ditambahkan ke budget bulan ini dan invoice bisa diselesaikan.</p>
+                <p v-else class="mb-2 text-[11px] text-neutral-500">Ikut approval invoice ini saat disimpan (Approval Inbox) — diputuskan bersama invoicenya; invoice tetap berjalan.</p>
                 <div class="overflow-x-auto rounded-lg border border-neutral-200 dark:border-neutral-800">
                     <table class="w-full text-sm">
                         <thead class="bg-neutral-50 text-left text-[11px] uppercase tracking-wide text-neutral-500 dark:bg-neutral-800">
@@ -1871,8 +1871,8 @@ const cellArea = 'w-full rounded-md border border-neutral-300 bg-white px-2 py-1
                     <h2 class="font-semibold">Alokasi Budget</h2>
                     <span class="text-[11px] text-neutral-400">{{ bulanBudget }}</span>
                 </div>
-                <p v-if="butuhPengajuan" class="mb-2 text-[11px] text-neutral-500">Invoice dari Memo Urgent: klik "Selanjutnya" lalu ajukan ke Finance — anggaran {{ bulanBudget || 'bulan ini' }} dipindah dari budget asal setelah disetujui, lalu invoice bisa diselesaikan.</p>
-                <p v-else class="mb-2 text-[11px] text-neutral-500">Diajukan ke Finance (Approval Alokasi Budget / Approval Inbox) bersama invoice ini saat disimpan — anggaran {{ bulanBudget || 'bulan ini' }} dipindah setelah disetujui; invoice tetap berjalan.</p>
+                <p v-if="butuhPengajuan" class="mb-2 text-[11px] text-neutral-500">Invoice dari Memo Urgent: klik "Selanjutnya" lalu ajukan approval (alur invoice) — anggaran {{ bulanBudget || 'bulan ini' }} dipindah dari budget asal setelah disetujui, lalu invoice bisa diselesaikan.</p>
+                <p v-else class="mb-2 text-[11px] text-neutral-500">Ikut approval invoice ini saat disimpan (Approval Inbox) — anggaran {{ bulanBudget || 'bulan ini' }} dipindah setelah invoice disetujui penuh; invoice tetap berjalan.</p>
                 <div class="overflow-x-auto rounded-lg border border-neutral-200 dark:border-neutral-800">
                     <table class="w-full text-sm">
                         <thead class="bg-neutral-50 text-left text-[11px] uppercase tracking-wide text-neutral-500 dark:bg-neutral-800">
@@ -1982,12 +1982,12 @@ const cellArea = 'w-full rounded-md border border-neutral-300 bg-white px-2 py-1
             </div>
             <div v-if="form.alokasi.length" class="mt-4 rounded-lg border border-sky-200 bg-sky-50 p-3 dark:border-sky-900 dark:bg-sky-950/30">
                 <p class="text-sm font-semibold text-sky-800 dark:text-sky-200">Ada alokasi budget</p>
-                <p class="mt-0.5 text-xs text-sky-800/90 dark:text-sky-200/90"><template v-if="pengajuanBudget">{{ form.alokasi.length }} alokasi di bawah ini sudah disetujui Finance — anggaran {{ bulanBudget || 'bulan ini' }} sudah dipindah dari budget asal.</template><template v-else>{{ form.alokasi.length }} alokasi di bawah ini diajukan ke Finance bersama invoice ini — invoice tetap berjalan.</template></p>
+                <p class="mt-0.5 text-xs text-sky-800/90 dark:text-sky-200/90"><template v-if="pengajuanBudget">{{ form.alokasi.length }} alokasi di bawah ini sudah disetujui — anggaran {{ bulanBudget || 'bulan ini' }} sudah dipindah dari budget asal.</template><template v-else>{{ form.alokasi.length }} alokasi di bawah ini ikut approval invoice ini — invoice tetap berjalan.</template></p>
             </div>
             <!-- Koreksi budget yang ikut diajukan -->
             <div v-if="form.koreksi.length" class="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3 dark:border-amber-900 dark:bg-amber-950/30">
                 <p class="text-sm font-semibold text-amber-800 dark:text-amber-200">Ada koreksi budget</p>
-                <p class="mt-0.5 text-xs text-amber-800/90 dark:text-amber-200/90"><template v-if="pengajuanBudget">{{ form.koreksi.length }} koreksi budget di bawah ini sudah disetujui Finance dan menambah budget {{ bulanBudget || 'bulan ini' }}.</template><template v-else>{{ form.koreksi.length }} koreksi budget di bawah ini diajukan ke Finance bersama invoice ini — invoice tetap berjalan.</template></p>
+                <p class="mt-0.5 text-xs text-amber-800/90 dark:text-amber-200/90"><template v-if="pengajuanBudget">{{ form.koreksi.length }} koreksi budget di bawah ini sudah disetujui dan menambah budget {{ bulanBudget || 'bulan ini' }}.</template><template v-else>{{ form.koreksi.length }} koreksi budget di bawah ini ikut approval invoice ini — invoice tetap berjalan.</template></p>
             </div>
         </div>
 
@@ -1997,7 +1997,7 @@ const cellArea = 'w-full rounded-md border border-neutral-300 bg-white px-2 py-1
                 <h2 class="font-semibold">Koreksi Budget</h2>
                 <span class="text-[11px] text-neutral-400">{{ bulanBudget }}</span>
             </div>
-            <p class="mb-2 text-[11px] text-neutral-500">{{ pengajuanBudget ? 'Sudah disetujui Finance — tambahannya sudah masuk ke budget bulan ini.' : 'Diajukan ke Finance bersama invoice ini — menambah budget bulan ini setelah disetujui.' }}</p>
+            <p class="mb-2 text-[11px] text-neutral-500">{{ pengajuanBudget ? 'Sudah disetujui — tambahannya sudah masuk ke budget bulan ini.' : 'Ikut approval invoice ini — menambah budget bulan ini setelah invoice disetujui penuh.' }}</p>
             <div class="overflow-x-auto rounded-lg border border-neutral-200 dark:border-neutral-800">
                 <table class="w-full text-sm">
                     <thead class="bg-neutral-50 text-left text-[11px] uppercase tracking-wide text-neutral-500 dark:bg-neutral-800">
@@ -2036,7 +2036,7 @@ const cellArea = 'w-full rounded-md border border-neutral-300 bg-white px-2 py-1
                 <h2 class="font-semibold">Alokasi Budget</h2>
                 <span class="text-[11px] text-neutral-400">{{ bulanBudget }}</span>
             </div>
-            <p class="mb-2 text-[11px] text-neutral-500">{{ pengajuanBudget ? 'Sudah disetujui Finance — anggaran sudah dipindah dari budget asal ke budget baris ini.' : 'Diajukan ke Finance bersama invoice ini — anggaran dipindah setelah disetujui.' }}</p>
+            <p class="mb-2 text-[11px] text-neutral-500">{{ pengajuanBudget ? 'Sudah disetujui — anggaran sudah dipindah dari budget asal ke budget baris ini.' : 'Ikut approval invoice ini — anggaran dipindah setelah invoice disetujui penuh.' }}</p>
             <div class="overflow-x-auto rounded-lg border border-neutral-200 dark:border-neutral-800">
                 <table class="w-full text-sm">
                     <thead class="bg-neutral-50 text-left text-[11px] uppercase tracking-wide text-neutral-500 dark:bg-neutral-800">
@@ -2092,7 +2092,7 @@ const cellArea = 'w-full rounded-md border border-neutral-300 bg-white px-2 py-1
             <div class="flex items-center gap-2">
             <button v-if="wajibBerkas && !pengajuanBudget" type="button" :disabled="menyimpanDraft" class="inline-flex items-center gap-1.5 rounded-lg border border-neutral-300 px-4 py-2 text-sm hover:bg-neutral-50 disabled:opacity-60 dark:border-neutral-700 dark:hover:bg-neutral-800" @click="simpanDraft()">Simpan Draft</button>
             <span v-if="galatPengajuan" class="self-center text-xs text-danger-500">{{ galatPengajuan }}</span>
-            <span v-if="step === 4 && statusPengajuan === 'menunggu'" class="self-center text-xs text-amber-600">Menunggu persetujuan Finance.</span>
+            <span v-if="step === 4 && statusPengajuan === 'menunggu'" class="self-center text-xs text-amber-600">Menunggu approval.</span>
             <!-- Ada alokasi / koreksi yang belum disetujui: Selanjutnya membuka konfirmasi pengajuan ke Finance. -->
             <Button v-if="step === 4 && butuhPengajuan && statusPengajuan !== 'disetujui' && statusPengajuan !== 'menunggu'" :disabled="!bisaAjukan || mengajukan" @click="konfirmasiFinance = true">
                 <template #icon-left><ArrowRight class="h-4 w-4" /></template>{{ mengajukan ? 'Mengajukan…' : 'Selanjutnya' }}</Button>
@@ -2107,12 +2107,12 @@ const cellArea = 'w-full rounded-md border border-neutral-300 bg-white px-2 py-1
                 <button type="button" class="absolute right-3 top-3 rounded-full p-1 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700 dark:hover:bg-neutral-800" title="Tutup" @click="konfirmasiFinance = false"><X class="h-5 w-5" /></button>
                 <h2 class="pr-8 text-lg font-bold">Pengajuan {{ jenisPengajuan }} budget</h2>
                 <p class="mt-2 text-sm text-neutral-600 dark:text-neutral-300">
-                    Anda mengajukan <b>{{ jenisPengajuan }} budget</b>. Permintaan Anda akan disetujui <b>Finance</b> terlebih dahulu agar dapat diselesaikan.
+                    Anda mengajukan <b>{{ jenisPengajuan }} budget</b>. Permintaan Anda akan disetujui lewat <b>alur approval invoice</b> (Accounting → Finance → GM → Direktur → MW / BA) terlebih dahulu agar dapat diselesaikan.
                 </p>
                 <div class="mt-6 flex flex-wrap justify-end gap-2">
                     <button v-if="wajibBerkas && !pengajuanBudget" type="button" :disabled="menyimpanDraft" class="inline-flex h-10 items-center rounded-lg border border-neutral-300 px-4 text-sm font-medium hover:bg-neutral-50 disabled:opacity-60 dark:border-neutral-700 dark:hover:bg-neutral-800"
                         @click="konfirmasiFinance = false; simpanDraft()">Simpan ke Draft</button>
-                    <Button :disabled="mengajukan" @click="konfirmasiFinance = false; ajukanFinance()"><template #icon-left><ArrowRight class="h-4 w-4" /></template>{{ mengajukan ? 'Mengajukan…' : 'Selanjutnya (Finance)' }}</Button>
+                    <Button :disabled="mengajukan" @click="konfirmasiFinance = false; ajukanFinance()"><template #icon-left><ArrowRight class="h-4 w-4" /></template>{{ mengajukan ? 'Mengajukan…' : 'Selanjutnya (Ajukan Approval)' }}</Button>
                 </div>
             </div>
         </div>

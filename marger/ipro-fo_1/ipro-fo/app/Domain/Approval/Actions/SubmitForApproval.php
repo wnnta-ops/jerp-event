@@ -19,11 +19,13 @@ final class SubmitForApproval
      * @param array<string, mixed> $payload Snapshot + context (akan disimpan ke approvals.payload).
      * @param array<int, int> $assignees level => user id, untuk chain step ber-approver_type
      *   'assigned' (approver dipilih saat pengajuan, mis. Dept Head si pengunggah berkas).
+     * @param ?string $chainDocumentType Chain milik jenis dokumen lain (mis. Pengajuan Budget Invoice
+     *   memakai chain Invoice Hutang) — null = chain jenis dokumen ini sendiri.
      */
-    public function execute(string $documentType, Model $approvable, array $payload = [], array $assignees = []): Approval
+    public function execute(string $documentType, Model $approvable, array $payload = [], array $assignees = [], ?string $chainDocumentType = null): Approval
     {
-        return DB::transaction(function () use ($documentType, $approvable, $payload, $assignees): Approval {
-            $chain = $this->resolver->resolve($documentType, $payload);
+        return DB::transaction(function () use ($documentType, $approvable, $payload, $assignees, $chainDocumentType): Approval {
+            $chain = $this->resolver->resolve($chainDocumentType ?? $documentType, $payload);
 
             $approval = Approval::create([
                 'approval_chain_id' => $chain->id,
