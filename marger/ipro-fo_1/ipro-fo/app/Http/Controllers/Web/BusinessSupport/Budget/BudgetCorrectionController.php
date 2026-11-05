@@ -120,6 +120,8 @@ class BudgetCorrectionController extends Controller
         $user = $request->user();
         $koreksi = BsBudgetCorrection::with(['account:id,code,name', 'costCenter:id,code,name', 'approval.steps'])
             ->where('status', 'baru')->orderBy('doc_no')->get();
+        // Dokumen approval = koreksi itu sendiri — dipasang langsung supaya stages() tidak memuat ulang (lazy load).
+        $koreksi->each(fn ($c) => $c->approval?->setRelation('approvable', $c));
         $bisa = fn (BsBudgetCorrection $c) => $c->approval ? $inbox->canAct($user, $c->approval)
             : (bool) $user?->canAny(['budget.correction.approve', 'businesssupport.approval.act']);
         abort_unless($user?->can('budget.correction.approve') || $koreksi->contains(fn ($c) => $c->approval && $bisa($c)), 403);

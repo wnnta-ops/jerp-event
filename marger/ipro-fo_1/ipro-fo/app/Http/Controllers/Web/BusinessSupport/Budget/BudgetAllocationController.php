@@ -117,6 +117,8 @@ class BudgetAllocationController extends Controller
         $user = $request->user();
         $alokasi = BsBudgetAllocation::with(['account:id,code,name', 'costCenter:id,code,name', 'budget:id,doc_no', 'toBudget.account:id,code,name', 'toBudget.costCenter:id,name', 'approval.steps'])
             ->where('status', 'baru')->orderBy('doc_no')->get();
+        // Dokumen approval = alokasi itu sendiri — dipasang langsung supaya stages() tidak memuat ulang (lazy load).
+        $alokasi->each(fn ($a) => $a->approval?->setRelation('approvable', $a));
         $bisa = fn (BsBudgetAllocation $a) => $a->approval ? $inbox->canAct($user, $a->approval)
             : (bool) $user?->canAny(['budget.allocation.approve', 'businesssupport.approval.act']);
         abort_unless($user?->can('budget.allocation.approve') || $alokasi->contains(fn ($a) => $a->approval && $bisa($a)), 403);
