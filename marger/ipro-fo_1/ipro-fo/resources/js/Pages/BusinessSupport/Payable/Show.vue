@@ -24,6 +24,8 @@ const props = defineProps<{
     kelengkapanFiles?: Array<{ id: number; name: string; jenis: string | null; size: number; url: string; tambahan: boolean; oleh: string | null; at: string | null }>;
     jenisBerkas?: Array<{ id: number; code?: string; name: string; is_mandatory: boolean }>;
     bolehKelengkapan?: boolean;
+    /** Boleh membuka cetak Memo Internal (+ lampiran) — sama dengan pemeriksaan rute bs.ap.memo. */
+    bolehMemo?: boolean;
 }>();
 
 /* ── BATAL ── alasan wajib; tercatat di invoice bersama siapa & kapan. */
@@ -186,7 +188,11 @@ const justCreated = computed(() => Boolean(usePage().props.flash?.created));
 
         <!-- Alokasi / Koreksi Budget untuk invoice ini — tiap baris membuka Lampiran Perubahan Budget (cetak). -->
         <div v-if="perubahanBudget?.length" class="card overflow-hidden">
-            <div class="border-b border-neutral-200 px-4 py-3 dark:border-neutral-800"><h2 class="font-semibold">Perubahan Budget (Alokasi / Koreksi)</h2></div>
+            <div class="flex flex-wrap items-center justify-between gap-2 border-b border-neutral-200 px-4 py-3 dark:border-neutral-800">
+                <h2 class="font-semibold">Perubahan Budget (Alokasi / Koreksi)</h2>
+                <!-- Satu dokumen: Memo Internal di halaman 1, sesudahnya Lampiran Perubahan Budget tiap alokasi / koreksi. -->
+                <a v-if="bolehMemo" :href="route('bs.ap.memo', invoice.id)" target="_blank" rel="noopener" class="text-sm text-primary-600 hover:underline">Memo Internal + Lampiran ↗</a>
+            </div>
             <table class="w-full text-sm">
                 <tbody class="divide-y divide-neutral-100 dark:divide-neutral-800">
                     <tr v-for="p in perubahanBudget" :key="p.url">
@@ -194,7 +200,7 @@ const justCreated = computed(() => Boolean(usePage().props.flash?.created));
                         <td class="px-4 py-2 font-mono text-xs">{{ p.doc_no }}</td>
                         <td class="px-4 py-2 text-right font-mono">{{ Math.round(p.nilai).toLocaleString('id-ID') }}</td>
                         <td class="px-4 py-2">{{ p.status }}</td>
-                        <td class="px-4 py-2 text-right"><a :href="p.url" target="_blank" rel="noopener" class="text-primary-600 hover:underline">Lampiran ↗</a></td>
+                        <td class="px-4 py-2 text-right"><a v-if="!bolehMemo" :href="p.url" target="_blank" rel="noopener" class="text-primary-600 hover:underline">Lampiran ↗</a></td>
                     </tr>
                 </tbody>
             </table>

@@ -1579,6 +1579,7 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
         Route::post('/{approval}/act', [$c, 'act'])->whereNumber('approval')->name('act');
         Route::post('/{approval}/revisi-budget', [$c, 'revisiBudget'])->whereNumber('approval')->name('revisi-budget'); // Finance: ubah alokasi / koreksi turunan invoice
         Route::get('/{approval}/cetak', [$c, 'cetak'])->whereNumber('approval')->name('cetak'); // lembar Memo Urgent
+        Route::get('/{approval}/memo-internal', [$c, 'memoInternal'])->whereNumber('approval')->name('memo-internal'); // Memo Internal + Lampiran Perubahan Budget (invoice hutang)
         Route::post('/pengingat-memo/tutup', [$c, 'tutupPengingat'])->name('pengingat.tutup'); // pop-up login
     });
 

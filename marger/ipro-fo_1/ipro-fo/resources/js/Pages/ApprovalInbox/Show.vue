@@ -21,6 +21,8 @@ const props = defineProps<{
         links: Array<{ label: string; url: string; tab_baru?: boolean }>;
         /** Alokasi / koreksi budget turunan invoice ini (ikut diputuskan dengan satu tombol). */
         turunan?: Turunan[];
+        /** Invoice hutang: Memo Internal (hal. 1) + Lampiran Perubahan Budget dalam satu dokumen. */
+        memo_internal_url?: string;
         revisi?: number;
         riwayat_revisi?: Array<{ nama: string; at: string; catatan: string | null }>;
     };
@@ -146,7 +148,11 @@ const statusBadge: Record<string, { variant: string; text: string }> = {
                 <div v-if="turunan.length || bisaRevisi" class="border-t border-neutral-200 pt-4 dark:border-neutral-800">
                     <div class="mb-2 flex flex-wrap items-center justify-between gap-2">
                         <p class="text-xs uppercase text-neutral-500">Alokasi / Koreksi Budget ({{ turunan.length }}) <span class="normal-case text-neutral-400">— ikut diputuskan bersama invoice ini</span></p>
-                        <button v-if="bisaRevisi && !merevisi" type="button" class="text-xs font-medium text-primary-600 hover:underline" @click="mulaiRevisi">Ubah alokasi / koreksi (Finance)</button>
+                        <span class="flex items-center gap-3">
+                            <!-- Satu dokumen: Memo Internal di halaman 1, sesudahnya Lampiran Perubahan Budget tiap alokasi / koreksi. -->
+                            <a v-if="doc.memo_internal_url && turunan.length" :href="doc.memo_internal_url" target="_blank" rel="noopener" class="text-xs font-medium text-primary-600 hover:underline">Memo Internal + Lampiran ↗</a>
+                            <button v-if="bisaRevisi && !merevisi" type="button" class="text-xs font-medium text-primary-600 hover:underline" @click="mulaiRevisi">Ubah alokasi / koreksi (Finance)</button>
+                        </span>
                     </div>
                     <p v-if="doc.revisi" class="mb-2 rounded-md bg-amber-50 px-3 py-1.5 text-xs text-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
                         [REVISI] ke-{{ doc.revisi }} — approval diulang dari tahap pertama.<template v-for="(r, i) in doc.riwayat_revisi ?? []" :key="i"><br>{{ r.nama }} · {{ waktu(r.at) }}{{ r.catatan ? ' — ' + r.catatan : '' }}</template>
@@ -159,7 +165,7 @@ const statusBadge: Record<string, { variant: string; text: string }> = {
                                 <td class="py-1.5 pr-2">{{ t.dari ?? '—' }}</td>
                                 <td class="py-1.5 pr-2">{{ t.ke }}</td>
                                 <td class="py-1.5 pr-2 text-right font-mono">{{ rupiah(t.nilai) }}</td>
-                                <td class="py-1.5 text-right"><a :href="t.lampiran_url" target="_blank" rel="noopener" class="text-primary-600 hover:underline">Lampiran ↗</a></td>
+                                <td class="py-1.5 text-right"><a v-if="!doc.memo_internal_url" :href="t.lampiran_url" target="_blank" rel="noopener" class="text-primary-600 hover:underline">Lampiran ↗</a></td>
                             </tr>
                         </tbody>
                     </table>

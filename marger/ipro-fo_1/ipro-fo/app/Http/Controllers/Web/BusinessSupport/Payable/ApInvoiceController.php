@@ -1194,6 +1194,7 @@ class ApInvoiceController extends Controller
             'kelengkapanFiles' => app(\App\Domain\BusinessSupport\Services\KelengkapanBerkasInvoice::class)->ringkas($invoice),
             'jenisBerkas' => \App\Domain\BusinessSupport\Models\BsApBerkas::jenisTetap(),
             'bolehKelengkapan' => ! $invoice->batal() && (bool) $request->user()?->can('ap.berkas.update'),
+            'bolehMemo' => $this->bolehCetakMemo($request, $invoice),
             // Tombol Edit / Batal — keputusannya di server, layar hanya mencerminkannya.
             'aksi' => $invoice->batal() ? null : [
                 'dariRegistrasi' => $invoice->dariRegistrasi(),
@@ -1448,14 +1449,19 @@ class ApInvoiceController extends Controller
             <script>window.onload=function(){setTimeout(function(){window.print()},300)}</script></body></html>';
     }
 
+    private function bolehCetakMemo(Request $request, BsApInvoice $invoice): bool
+    {
+        return $request->user()?->can('ap.memo') || $this->bolehModulJenis($request, $invoice)
+            || ((int) $invoice->created_by === (int) $request->user()?->id && $request->user()?->can('ap.invoice.create'));
+    }
+
     /** Cetak "Memo Internal" + "Bukti Permohonan Pembayaran" (layout eProperty MI) di akhir registrasi. */
     public function memo(Request $request, BsApInvoice $invoice): \Illuminate\Http\Response
     {
         // Pembuat invoicenya sendiri boleh mencetak memo — staf pengunggah yang meregistrasi
         // Invoice Hutang dari berkasnya tidak memegang ap.memo, padahal sesudah simpan layar
         // langsung pindah ke cetak memo ini.
-        abort_unless($request->user()?->can('ap.memo') || $this->bolehModulJenis($request, $invoice)
-            || ((int) $invoice->created_by === (int) $request->user()?->id && $request->user()?->can('ap.invoice.create')), 403);
+        abort_unless($this->bolehCetakMemo($request, $invoice), 403);
 
         $invoice->load([
             'supplier:id,code,name,bank_name,bank_account_no,bank_account_name',
@@ -1507,7 +1513,7 @@ class ApInvoiceController extends Controller
      *
      * @param  mixed  $user  pengguna yang mencetak — dipakai hanya bila pembuat invoice tidak diketahui
      */
-    private function renderMemoPrint(BsApInvoice $invoice, $user): string
+    public function renderMemoPrint(BsApInvoice $invoice, $user, ?string $kembali = null, bool $preview = false): string
     {
         $sup = $invoice->supplier;
         $net = (float) $invoice->payable_amount;
@@ -1566,6 +1572,8 @@ class ApInvoiceController extends Controller
 
         return view('pdf.memo-internal', [
             'lampiran' => $this->lampiranBudget($invoice),
+            'lampiranHal' => $this->lampiranHal($invoice),
+            'preview' => $preview,
             'no' => $invoice->invoice_number,
             'dicetak' => now()->translatedFormat('d-m-Y H.i.s'),
             'dept' => $emp ? ($emp->costCenter?->name ?: ($emp->position ?: '-')) : '-',
@@ -1585,8 +1593,24 @@ class ApInvoiceController extends Controller
             'bulanLabel' => \App\Domain\BusinessSupport\Models\BsBudget::MONTHS[$tglInv->month - 1].' '.$tglInv->year,
             'tahun' => $tglInv->year,
             'grup' => array_values($grup),
-            'kembali' => route('bs.ap.show', $invoice->id),
+            'kembali' => $kembali ?? route('bs.ap.show', $invoice->id),
         ])->render();
+    }
+
+    /** Isi halaman Lampiran Perubahan Budget (satu per alokasi / koreksi invoice ini) untuk dicetak sesudah Memo Internal. */
+    private function lampiranHal(BsApInvoice $invoice): array
+    {
+        $svc = app(\App\Domain\BusinessSupport\Services\LampiranPerubahanBudget::class);
+        $pengajuan = \App\Domain\BusinessSupport\Models\BsApBudgetRequest::query()->where('ap_invoice_id', $invoice->id)->pluck('id')->all() ?: [0];
+        $milik = fn ($q, string $sumberInvoice) => $q->where(fn ($w) => $w
+            ->where(fn ($x) => $x->where('source_type', $sumberInvoice)->where('source_id', $invoice->id))
+            ->orWhere(fn ($x) => $x->where('source_type', \App\Domain\BusinessSupport\Models\BsApBudgetRequest::SOURCE)->whereIn('source_id', $pengajuan)))
+            ->where('status', '!=', 'batal')->orderBy('id')->get();
+
+        return collect()
+            ->concat($milik(\App\Domain\BusinessSupport\Models\BsBudgetAllocation::query(), \App\Domain\BusinessSupport\Models\BsBudgetAllocation::SOURCE_INVOICE)->map(fn ($a) => $svc->alokasi($a)))
+            ->concat($milik(\App\Domain\BusinessSupport\Models\BsBudgetCorrection::query(), \App\Domain\BusinessSupport\Models\BsBudgetCorrection::SOURCE_INVOICE)->map(fn ($c) => $svc->koreksi($c)))
+            ->values()->all();
     }
 
     public function pay(Request $request, BsApInvoice $invoice, PayApInvoice $action): RedirectResponse
