@@ -77,24 +77,28 @@ final class LinkBerkasSupplier
     public function aktifUntuk(User $user): Collection
     {
         return BsApBerkasLink::query()->where('user_id', $user->id)->whereIn('status', [BsApBerkasLink::MENUNGGU, BsApBerkasLink::TERISI])
-            ->with(['supplier:id,name', 'berkas:id,berkas_number,status'])->latest('id')->get();
+            ->with(['supplier:id,name', 'berkas:id,berkas_number,status,submitted_at'])->latest('id')->get();
     }
 
     /**
-     * Upload File di Detil Tagihan: file pembuat invoice sendiri → Upload Berkas + ajukan TTD Dept Head.
+     * Upload File di Detil Tagihan: file pembuat invoice sendiri → Upload Berkas (draft). Pengajuan TTD
+     * Dept Head lewat tombol "Ajukan ke Dept Head" di langkah Struktur (PengajuanDeptHead).
      *
      * @param  array<string,mixed>  $data  isian wizard
      * @param  list<array{file:UploadedFile, berkas_id:?int}>  $files
      */
     public function upload(User $user, array $data, array $files): BsApBerkasUpload
     {
-        return $this->berkas->create($this->isianBerkas($data), $files, $user, true);
+        if ($files === []) {
+            throw new BusinessRuleException('Unggah minimal satu file berkas.', errorCode: 'BERKAS_EMPTY');
+        }
+
+        return $this->berkas->create($this->isianBerkas($data), $files, $user, false);
     }
 
     /**
-     * Supplier mengunggah dokumen lewat link. Berkas jadi milik pembuat invoice dan langsung diajukan
-     * ke TTD Dept Head (bila gagal diajukan — mis. Dept Head belum diatur — berkas tetap tersimpan
-     * sebagai draft dan pembuat invoice mengajukannya sendiri). Satu link = satu kiriman.
+     * Supplier mengunggah dokumen lewat link. Berkas jadi milik pembuat invoice (draft); pembuat
+     * mengajukannya ke TTD Dept Head di langkah Struktur. Satu link = satu kiriman.
      *
      * @param  list<array{file:UploadedFile, berkas_id:?int}>  $files
      */
@@ -136,12 +140,8 @@ final class LinkBerkasSupplier
         $sebelum = auth()->user();
         \Illuminate\Support\Facades\Auth::onceUsingId($pembuat->id);
         try {
+            // Tetap draft — pembuat invoice mengajukannya ke TTD Dept Head di langkah Struktur.
             $berkas = $this->berkas->create($isian, $files, $pembuat, false);
-            try {
-                $berkas = $this->berkas->submit($berkas, $pembuat);
-            } catch (BusinessRuleException) {
-                // tetap draft — pembuat invoice yang mengajukan
-            }
             $this->berkas->log($berkas, 'diunggah_supplier', 'Lewat link berkas supplier untuk '.$link->invoice_number);
         } finally {
             $sebelum ? auth()->setUser($sebelum) : auth()->forgetUser();

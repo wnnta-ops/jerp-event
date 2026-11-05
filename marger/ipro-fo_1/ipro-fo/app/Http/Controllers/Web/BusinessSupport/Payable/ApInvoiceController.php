@@ -157,12 +157,15 @@ class ApInvoiceController extends Controller
             'canBerkasFinance' => $this->isFinance($request),
             // Invoice yang menunggu berkas supplier (link) — nomor sudah dipesan, belum aktif. Titik = berkas sudah masuk.
             'menungguSupplier' => $jenis === 'invoice'
-                ? app(\App\Domain\BusinessSupport\Services\LinkBerkasSupplier::class)->aktifUntuk($request->user())->map(fn ($l) => [
+                // Berkasnya sudah diajukan ke Dept Head → pindah ke bagian "Menunggu TTD Dept Head".
+                ? app(\App\Domain\BusinessSupport\Services\LinkBerkasSupplier::class)->aktifUntuk($request->user())->reject(fn ($l) => $l->berkas?->submitted_at !== null)->map(fn ($l) => [
                     'id' => $l->id, 'invoice_number' => $l->invoice_number, 'supplier' => $l->supplier?->name, 'status' => $l->status,
                     'baru' => $l->status === 'terisi' && ! $l->seen_at, 'berkas_number' => $l->berkas?->berkas_number,
                     'description' => $l->data['description'] ?? null, 'url' => $l->url(), 'created_at' => $l->created_at?->toDateString(),
                 ])->values()
                 : [],
+            // Isian invoice yang berkasnya diajukan ke TTD Dept Head (draft / link) — panel Draft.
+            'menungguDeptHead' => $jenis === 'invoice' ? app(\App\Domain\BusinessSupport\Services\PengajuanDeptHead::class)->menunggu($request->user()) : [],
             // Invoice yang tertahan Pengajuan Budget (alokasi / koreksi menunggu Finance). Titik = sudah diputuskan, belum dibuka.
             'pengajuanBudget' => \App\Domain\BusinessSupport\Models\BsApBudgetRequest::query()->where('user_id', $request->user()->id)
                 ->where('jenis', $jenis)->whereIn('status', ['menunggu', 'disetujui', 'ditolak'])->latest('id')->get()
@@ -408,8 +411,12 @@ class ApInvoiceController extends Controller
         // berkas yang diunggah user itu sendiri lewat Upload Berkas. Draft = isian yang disimpan
         // saat user menekan "Edit" berkas; dipulihkan di sini (kecuali dibuka dari ?berkas=).
         $wajibBerkas = $edit === null && $jenis === 'invoice';
+        // ?draft= — draft tertentu (mis. dari panel Draft › Menunggu TTD Dept Head); tanpa itu: draft "bebas" user.
+        $dh = app(\App\Domain\BusinessSupport\Services\PengajuanDeptHead::class);
         $draft = $wajibBerkas && $dariBerkas === null
-            ? BsApInvoiceDraft::query()->where('user_id', $request->user()->id)->where('jenis', $jenis)->first()
+            ? ($request->integer('draft')
+                ? BsApInvoiceDraft::query()->where('user_id', $request->user()->id)->where('jenis', $jenis)->find($request->integer('draft'))
+                : $dh->draftBebas($request->user(), $jenis))
             : null;
         // ?link= — lanjutkan draft yang dibawa link berkas supplier (bisa banyak per user, terpisah dari draft biasa).
         $link = $wajibBerkas && $request->integer('link')
@@ -440,7 +447,10 @@ class ApInvoiceController extends Controller
             'pengajuanBudget' => $pengajuan ? app(\App\Domain\BusinessSupport\Services\PengajuanBudgetInvoice::class)->ringkas($pengajuan)
                 + ['data' => array_merge($pengajuan->data ?? [], ['pengajuan_id' => $pengajuan->id])] : null,
             'berkasSaya' => $wajibBerkas ? app(\App\Domain\BusinessSupport\Services\ApBerkasService::class)->pilihanInvoice($request->user()) : null,
-            'draftInvoice' => $draft ? ['data' => $draft->data, 'step' => $draft->step, 'updated_at' => $draft->updated_at?->toIso8601String()] : null,
+            'draftInvoice' => $draft ? ['id' => $draft->id ?? null, 'data' => $draft->data, 'step' => $draft->step, 'updated_at' => $draft->updated_at?->toIso8601String()] : null,
+            // TTD Dept Head: pembuat yang Dept Head → TTD otomatis (tanpa "Ajukan ke Dept Head").
+            'ttdDeptHead' => $wajibBerkas ? ['saya' => $dh->isDeptHead($request->user()),
+                'nama' => app(\App\Domain\BusinessSupport\Services\ApBerkasService::class)->deptHeadUntuk($request->user())?->name] : null,
             // Detil Tagihan › Upload File / Generate Link.
             'linkBerkas' => $link ? ['id' => $link->id, 'url' => $link->url(), 'invoice_number' => $link->invoice_number, 'status' => $link->status,
                 'filled_at' => $link->filled_at?->toIso8601String(), 'berkas_upload_id' => $link->berkas_upload_id,
@@ -564,7 +574,8 @@ class ApInvoiceController extends Controller
         }
         // Draft biasa tidak diperlukan lagi — isian kini dibawa pengajuan.
         if (! $edit) {
-            BsApInvoiceDraft::query()->where('user_id', $request->user()->id)->where('jenis', $v['jenis'])->delete();
+            BsApInvoiceDraft::query()->where('user_id', $request->user()->id)->where('jenis', $v['jenis'])
+                ->whereKey((int) ($v['data']['draft_id'] ?? 0) ?: (app(\App\Domain\BusinessSupport\Services\PengajuanDeptHead::class)->draftBebas($request->user(), $v['jenis'])?->id ?? 0))->delete();
         }
 
         // Kembali ke daftar invoice (edit: ke rincian invoicenya); pengajuan tampil di panel Draft — "Menunggu Finance".
@@ -647,28 +658,56 @@ class ApInvoiceController extends Controller
      * Berkas (bukan langsung ke edit) supaya tombol Back peramban kembali ke Upload Berkas, bukan
      * ke wizard invoice.
      */
-    public function simpanDraft(Request $request): RedirectResponse
+    public function simpanDraft(Request $request): RedirectResponse|\Illuminate\Http\JsonResponse
     {
         $user = $request->user();
         abort_unless($user?->can('ap.invoice.create'), 403);
         $v = $request->validate([
             'data' => ['required', 'array'],
             'step' => ['required', 'integer', 'min:1', 'max:5'],
+            'draft_id' => ['nullable', 'integer'],
         ]);
-        $berkasId = isset($v['data']['berkas_upload_id']) && is_numeric($v['data']['berkas_upload_id']) ? (int) $v['data']['berkas_upload_id'] : null;
+        $draft = app(\App\Domain\BusinessSupport\Services\PengajuanDeptHead::class)
+            ->simpanDraft($user, $v['data'], (int) $v['step'], isset($v['draft_id']) ? (int) $v['draft_id'] : null);
 
-        BsApInvoiceDraft::query()->updateOrCreate(
-            ['user_id' => $user->id, 'jenis' => 'invoice'],
-            ['data' => $v['data'], 'step' => $v['step'], 'berkas_upload_id' => $berkasId],
-        );
+        if ($request->wantsJson()) {
+            return response()->json(['id' => $draft->id, 'updated_at' => $draft->updated_at?->toIso8601String()]);
+        }
 
         return back()->with('success', 'Registrasi invoice disimpan sebagai draft.');
+    }
+
+    /**
+     * "Ajukan ke Dept Head" (langkah Struktur): isian tersimpan sebagai draft lalu berkasnya diajukan
+     * ke TTD Dept Head. Pembuat yang Dept Head → TTD otomatis.
+     */
+    public function ajukanDeptHead(Request $request): \Illuminate\Http\JsonResponse
+    {
+        $user = $request->user();
+        abort_unless($user?->can('ap.invoice.create'), 403);
+        $v = $request->validate([
+            'data' => ['required', 'array'],
+            'step' => ['required', 'integer', 'min:1', 'max:5'],
+            'draft_id' => ['nullable', 'integer'],
+            'link_id' => ['nullable', 'integer'],
+        ]);
+        try {
+            ['berkas' => $berkas, 'draft' => $draft] = app(\App\Domain\BusinessSupport\Services\PengajuanDeptHead::class)->ajukan(
+                $user, $v['data'], (int) $v['step'], isset($v['draft_id']) ? (int) $v['draft_id'] : null, isset($v['link_id']) ? (int) $v['link_id'] : null);
+        } catch (BusinessRuleException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
+        $berkas->loadMissing('deptHead:id,name');
+
+        return response()->json(['draft_id' => $draft?->id, 'berkas_id' => $berkas->id, 'status' => $berkas->status,
+            'dept_head' => $berkas->deptHead?->name, 'updated_at' => $draft?->updated_at?->toIso8601String()]);
     }
 
     /** Buang draft Registrasi Invoice Hutang user. */
     public function buangDraft(Request $request): RedirectResponse
     {
-        BsApInvoiceDraft::query()->where('user_id', $request->user()->id)->where('jenis', 'invoice')->delete();
+        $q = BsApInvoiceDraft::query()->where('user_id', $request->user()->id)->where('jenis', 'invoice');
+        $request->integer('draft') ? $q->whereKey($request->integer('draft'))->delete() : app(\App\Domain\BusinessSupport\Services\PengajuanDeptHead::class)->draftBebas($request->user())?->delete();
 
         return redirect()->route('bs.ap.create')->with('success', 'Draft invoice dibuang.');
     }
@@ -831,6 +870,11 @@ class ApInvoiceController extends Controller
             try {
                 $layananBerkas = app(\App\Domain\BusinessSupport\Services\ApBerkasService::class);
                 $layananBerkas->assertMilik($berkas, $request->user());
+                // Pembuat = Dept Head: berkasnya ditandatangani otomatis atas namanya saat disimpan.
+                $dh = app(\App\Domain\BusinessSupport\Services\PengajuanDeptHead::class);
+                if (! $berkas->bisaDiinvoice() && $dh->isDeptHead($request->user())) {
+                    $berkas = $dh->ttdSendiri($berkas, $request->user());
+                }
                 $layananBerkas->assertSiapInvoice($berkas);
             } catch (BusinessRuleException $e) {
                 return back()->withInput()->with('error', $e->getMessage());
@@ -1078,8 +1122,11 @@ class ApInvoiceController extends Controller
         }
 
         if ($lama === null) {
-            // Invoice sudah jadi → draft registrasinya tidak diperlukan lagi.
-            BsApInvoiceDraft::query()->where('user_id', $request->user()->id)->where('jenis', $jenis)->delete();
+            // Invoice sudah jadi → draft registrasinya (draft yang dibuka + draft berkas ini) tidak diperlukan lagi.
+            BsApInvoiceDraft::query()->where('user_id', $request->user()->id)->where('jenis', $jenis)
+                ->where(fn ($q) => $q->whereKey((int) $request->input('draft_id'))
+                    ->when($berkas, fn ($w) => $w->orWhere('berkas_upload_id', $berkas->id)))
+                ->delete();
         }
 
         if ($lama !== null) {
@@ -1573,6 +1620,7 @@ class ApInvoiceController extends Controller
         return view('pdf.memo-internal', [
             'lampiran' => $this->lampiranBudget($invoice),
             'lampiranHal' => $this->lampiranHal($invoice),
+            'ttdDeptHead' => $this->ttdDeptHeadMemo($invoice),
             'preview' => $preview,
             'no' => $invoice->invoice_number,
             'dicetak' => now()->translatedFormat('d-m-Y H.i.s'),
@@ -1595,6 +1643,20 @@ class ApInvoiceController extends Controller
             'grup' => array_values($grup),
             'kembali' => $kembali ?? route('bs.ap.show', $invoice->id),
         ])->render();
+    }
+
+    /** TTD Dept Head di Memo Internal = yang menyetujui berkas invoice ini; null bila belum / tanpa berkas. */
+    private function ttdDeptHeadMemo(BsApInvoice $invoice): ?array
+    {
+        if ($invoice->source_type !== \App\Domain\BusinessSupport\Services\ApBerkasService::INVOICE_SOURCE || ! $invoice->source_id) {
+            return null;
+        }
+        $approvalId = \App\Domain\BusinessSupport\Models\BsApBerkasUpload::query()->whereKey($invoice->source_id)->value('approval_id');
+        $step = $approvalId ? \App\Domain\Approval\Models\ApprovalStep::query()->where('approval_id', $approvalId)
+            ->where('status', 'approved')->orderBy('level')->first() : null;
+        $u = $step?->approver_id ? \App\Models\User::query()->find($step->approver_id) : null;
+
+        return $u ? ['nama' => $u->name, 'img' => $u->signatureUrl()] : null;
     }
 
     /** Isi halaman Lampiran Perubahan Budget (satu per alokasi / koreksi invoice ini) untuk dicetak sesudah Memo Internal. */

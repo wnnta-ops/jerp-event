@@ -710,6 +710,7 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::post('/business-support/payable', [BsApController::class, 'store'])->name('bs.ap.store');
     // Draft Registrasi Invoice Hutang (dipakai tombol "Edit" berkas di langkah Detil Tagihan).
     Route::post('/business-support/payable/draft', [BsApController::class, 'simpanDraft'])->name('bs.ap.draft.store');
+    Route::post('/business-support/payable/ajukan-dept-head', [BsApController::class, 'ajukanDeptHead'])->name('bs.ap.ajukan-dept-head'); // langkah Struktur: simpan draft + ajukan berkas ke TTD Dept Head
     // Detil Tagihan: berkas langsung dari wizard — Upload File / Generate Link supplier.
     Route::post('/business-support/payable/berkas-upload', [App\Http\Controllers\Web\BusinessSupport\Payable\ApInvoiceBerkasController::class, 'upload'])->name('bs.ap.berkas-langsung.upload');
     Route::post('/business-support/payable/berkas-link', [App\Http\Controllers\Web\BusinessSupport\Payable\ApInvoiceBerkasController::class, 'buatLink'])->name('bs.ap.berkas-link.store');

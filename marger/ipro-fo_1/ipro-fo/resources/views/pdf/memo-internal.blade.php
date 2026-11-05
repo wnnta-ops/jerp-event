@@ -145,9 +145,13 @@
             <td class="cap">Hormat Kami,</td><td class="cap o">Diverifikasi,</td><td class="cap" colspan="2">Menyetujui,</td>
             <td class="cap" colspan="2">Mengetahui,</td><td class="cap o">Dibayarkan,</td><td class="cap o">Diterima,</td>
         </tr>
-        <tr>@for ($k = 0; $k < 8; $k++)<td class="sp"></td>@endfor</tr>
+        {{-- Dept. Head: TTD dari persetujuan berkas invoice ini (TTD Dept Head di Registrasi Invoice Hutang). --}}
         <tr>
-            <td><div class="nm">{{ $dari }}</div><div class="jb">Dept. Head</div></td>
+            <td class="sp" style="text-align:center;vertical-align:middle">@if ($ttdDeptHead['img'] ?? null)<img src="{{ $ttdDeptHead['img'] }}" alt="TTD {{ $ttdDeptHead['nama'] }}" style="max-height:44px;max-width:100%">@endif</td>
+            @for ($k = 1; $k < 8; $k++)<td class="sp"></td>@endfor
+        </tr>
+        <tr>
+            <td><div class="nm">{{ $ttdDeptHead['nama'] ?? $dari }}</div><div class="jb">Dept. Head</div></td>
             <td><div class="nm">(………………)</div><div class="jb">Manager Accounting &amp; Finance</div></td>
             <td><div class="nm">Rizki Setyawardana</div><div class="jb">General Manager</div></td>
             <td><div class="nm">Rachmat Suhendra</div><div class="jb">Direktur</div></td>
