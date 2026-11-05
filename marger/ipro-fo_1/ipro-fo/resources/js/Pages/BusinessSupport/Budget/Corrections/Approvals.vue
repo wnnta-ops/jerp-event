@@ -89,7 +89,7 @@ function decide(decision: 'approve' | 'reject') {
                         <td class="px-3 py-2 text-right">{{ fmtRp(r.tambahan) }}</td>
                         <td class="px-3 py-2 text-right">{{ fmtRp(r.old_amount) }}</td>
                         <td class="px-3 py-2 text-right">{{ fmtRp(r.new_amount) }}</td>
-                        <td class="px-3 py-2 text-xs"><template v-if="r.tahap">{{ r.tahap }}</template><span v-else class="text-neutral-400">—</span><div v-if="!r.bisa" class="text-[11px] text-neutral-400">bukan giliran Anda</div></td>
+                        <td class="px-3 py-2 text-xs"><template v-if="r.tahap">{{ r.tahap }}</template><span v-else class="text-neutral-400">—</span><div v-if="r.ikut_invoice" class="text-[11px] text-neutral-400">lihat saja — disetujui bersama invoicenya</div><div v-else-if="!r.bisa" class="text-[11px] text-neutral-400">bukan giliran Anda</div></td>
                     </tr>
                 </tbody>
             </table>

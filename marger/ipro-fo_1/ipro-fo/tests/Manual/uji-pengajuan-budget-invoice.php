@@ -5,11 +5,13 @@ declare(strict_types=1);
 /*
  * Uji Pengajuan Budget Invoice — jalankan: php tests/Manual/uji-pengajuan-budget-invoice.php
  *
- *  1. Ajukan alokasi + koreksi dari langkah Struktur → menunggu Finance (satu tahap), nomor dipesan.
- *  2. Approval Inbox: hanya Finance yang mendapat giliran; Alokasi Budget tampil dengan rinciannya.
- *  3. Satu disetujui, satu ditolak → pengajuan ditolak + alasan + notifikasi.
- *  4. Ajukan ulang → ronde baru (item lama tidak dihitung), nomor invoice tetap.
- *  5. Batal → item menunggu dibatalkan & hilang dari inbox; tidak bisa dipakai menyimpan invoice.
+ *  1. Ajukan alokasi + koreksi dari langkah Struktur → SATU approval mengikuti chain Invoice Hutang
+ *     (Accounting → Finance → GM → Direktur → MW / BA); alokasi & koreksi jadi turunannya.
+ *  2. Approval Inbox: kepala = invoice, turunan tampil; giliran mengikuti chain invoice.
+ *  3. Revisi Finance (saat gilirannya): ubah nilai → turunan diganti, approval diulang dari tahap 1 [REVISI].
+ *  4. Disetujui penuh → anggaran dipindah / dikoreksi sesuai revisi, pengajuan disetujui.
+ *  5. Ditolak → turunan ikut ditolak; ajukan ulang = ronde baru; batal → approval ditutup.
+ *  6. Invoice biasa (dari berkas): alokasi turunan approval Invoice Hutang — diterapkan saat invoice disetujui penuh.
  *
  * Semua dalam transaksi yang dibatalkan di akhir.
  */
@@ -65,13 +67,17 @@ try {
         return $u->fresh();
     };
     $staf = $buatUser('Staf Pengajuan Uji', ['Collection']);
-    $finance = $buatUser('Finance Pengajuan Uji', ['Finance']);
-    $gm = $buatUser('GM Pengajuan Uji', ['GM']);
-    // Chain Alokasi & Koreksi diarahkan ke user Finance uji (di lokal bisa sudah diatur ke user tertentu).
-    $chains = DB::table('approval_chains')->whereIn('code', ['AL-DEFAULT', 'KB-DEFAULT'])->pluck('id');
-    $cek('chain Alokasi (AL-DEFAULT) & Koreksi (KB-DEFAULT) satu tahap', $chains->count() === 2
-        && DB::table('approval_chain_steps')->whereIn('approval_chain_id', $chains)->count() === 2);
-    DB::table('approval_chain_steps')->whereIn('approval_chain_id', $chains)->update(['approver_type' => 'user', 'approver_value' => (string) $finance->id]);
+    $u = [];
+    foreach (['Accounting' => 'Accounting', 'Finance' => 'Finance', 'GM' => 'GM', 'Direktur' => 'Direktur', 'MW / BA' => 'Owner'] as $label => $role) {
+        $u[$label] = $buatUser("{$label} Pengajuan Uji", [$role]);
+    }
+    // Chain Invoice Hutang diarahkan ke user uji per label tahap (di lokal bisa sudah diatur ke user tertentu).
+    $chainInv = DB::table('approval_chains')->where('document_type', 'ap_invoice')->where('is_active', true)->pluck('id');
+    foreach ($u as $label => $x) {
+        DB::table('approval_chain_steps')->whereIn('approval_chain_id', $chainInv)->where('label', $label)
+            ->update(['approver_type' => 'user', 'approver_value' => (string) $x->id]);
+    }
+    $urutan = DB::table('approval_chain_steps')->whereIn('approval_chain_id', $chainInv)->orderBy('level')->pluck('label')->all();
 
     $akun = DB::table('bs_accounts')->where('code', 'like', '5%')->where('is_postable', 1)->orderBy('id')->limit(2)->pluck('id')->map(fn ($v) => (int) $v)->all();
     $cc = (int) DB::table('bs_cost_centers')->orderBy('id')->value('id');
@@ -85,59 +91,102 @@ try {
     $data = ['supplier_id' => DB::table('bs_suppliers')->value('id'), 'category_id' => $kategori, 'invoice_date' => "{$tahun}-05-10", 'description' => 'Uji pengajuan',
         'journal_lines' => [['account_id' => $akun[0], 'cost_center_id' => $cc, 'debit' => 1_300_000, 'credit' => 0], ['account_id' => $hutang, 'debit' => 0, 'credit' => 1_300_000]]];
     $svc = app(PengajuanBudgetInvoice::class);
+    $ikut = app(App\Domain\BusinessSupport\Services\BudgetIkutInvoice::class);
     $inbox = app(ApprovalInboxQuery::class);
+    $act = app(ActOnApproval::class);
+    $muat = fn (int $id) => Approval::with(['steps', 'approvable'])->findOrFail($id);
+    $setujui = function (int $id, array $labels) use ($u, $act, $muat) {
+        foreach ($labels as $l) {
+            auth()->setUser($u[$l]);
+            $act->execute($muat($id), 'approve');
+        }
+    };
     auth()->setUser($staf);
 
-    echo "=== 1. Ajukan ke Finance ===\n";
+    echo "=== 1. Ajukan → satu approval, chain Invoice Hutang ===\n";
     $cek('tanpa alokasi / koreksi → ditolak', $kode(fn () => $svc->ajukan($staf, 'invoice', $data)) === 'PENGAJUAN_KOSONG');
     $cek('kurang dari kekurangan → OVER_BUDGET', $kode(fn () => $svc->ajukan($staf, 'invoice', $data + ['koreksi' => [['budget_id' => $budgetB->id, 'nilai' => 100_000]]])) === 'OVER_BUDGET');
     $req = $svc->ajukan($staf, 'invoice', $data + [
         'alokasi' => [['budget_id' => $budgetB->id, 'dari_budget_id' => $budgetA->id, 'nilai' => 200_000]],
         'koreksi' => [['budget_id' => $budgetB->id, 'account_id' => $akun[0], 'cost_center_id' => $cc, 'nilai' => 100_000]],
     ]);
-    $item = $svc->ringkas($req)['item'];
-    $cek('pengajuan menunggu, nomor invoice dipesan, 2 item (Alokasi + Koreksi)', $req->status === 'menunggu' && str_starts_with((string) $req->invoice_number, 'AP.')
-        && collect($item)->pluck('jenis')->sort()->values()->all() === ['Alokasi', 'Koreksi'], json_encode($item));
+    $ap = $muat((int) $req->approval_id);
+    $cek('pengajuan menunggu, nomor dipesan, approval ap_budget_request ber-chain Invoice Hutang', $req->status === 'menunggu' && str_starts_with((string) $req->invoice_number, 'AP.')
+        && $ap->document_type === 'ap_budget_request' && $ap->steps->sortBy('level')->pluck('label')->all() === $urutan, json_encode($ap->steps->pluck('label')));
+    $tur = $ikut->turunan($ap);
+    $cek('2 turunan (alokasi + koreksi) TANPA approval sendiri', $tur->count() === 2 && $tur->every(fn ($m) => $m->approval_id === null && $m->status === 'baru'));
     $cek('anggaran belum berubah', $sama($budgetB->fresh()->m5, 1_000_000) && $sama($budgetA->fresh()->m5, 1_000_000));
 
     echo "\n=== 2. Approval Inbox ===\n";
-    $antre = $inbox->needsMe($finance)->filter(fn ($a) => in_array($a->approvable?->source_id, [$req->id], true));
-    $cek('Finance mendapat 2 giliran (Alokasi + Koreksi)', $antre->count() === 2, (string) $antre->count());
-    $cek('GM / pengaju tidak mendapat giliran', ! $inbox->needsMe($gm)->contains(fn ($a) => $a->approvable?->source_id === $req->id) && ! $inbox->needsMe($staf)->contains(fn ($a) => $a->approvable?->source_id === $req->id));
-    $apAl = $antre->first(fn ($a) => $a->document_type === 'budget_allocation');
-    $baris = $inbox->row($apAl);
-    $detail = $inbox->detail($apAl);
-    $cek('Alokasi Budget di inbox: label, nominal, rincian dari → ke', $baris['type'] === 'Alokasi Budget' && $sama($baris['amount'], 200_000)
-        && collect($detail['fields'] ?? [])->contains(fn ($f) => $f['label'] === 'Ke budget' && str_contains((string) $f['value'], $budgetB->doc_no)), json_encode([$baris, $detail['fields'] ?? null]));
+    $cek('giliran pertama tahap 1 chain invoice', $inbox->needsMe($u[$urutan[0]])->contains('id', $ap->id) && ! $inbox->needsMe($u['Finance'])->contains('id', $ap->id));
+    $baris = $inbox->row($ap);
+    $cek('kepala = Invoice Hutang (nomor invoice), turunan 2 di baris', $baris['type'] === 'Invoice Hutang' && $baris['number'] === $req->invoice_number && count($baris['turunan']) === 2, json_encode($baris));
+    $cek('alokasi & koreksi turunan tidak muncul sebagai dokumen sendiri', ! Approval::whereIn('document_type', ['budget_allocation', 'budget_correction'])
+        ->whereIn('approvable_id', $tur->pluck('id'))->where('submitted_at', '>=', now()->subMinute())->exists());
 
-    echo "\n=== 3. Satu disetujui, satu ditolak ===\n";
-    auth()->setUser($finance);
-    $act = app(ActOnApproval::class);
-    $act->execute(Approval::with('steps')->find($apAl->id), 'approve');
-    $cek('alokasi disetujui → anggaran pindah, pengajuan masih menunggu', $sama($budgetB->fresh()->m5, 1_200_000) && $sama($budgetA->fresh()->m5, 800_000) && $req->fresh()->status === 'menunggu');
-    $apKo = $antre->first(fn ($a) => $a->document_type === 'budget_correction');
-    $act->execute(Approval::with('steps')->find($apKo->id), 'reject', 'Pakai budget Q3 saja');
+    echo "\n=== 3. Revisi Finance ===\n";
+    $sebelumFinance = array_slice($urutan, 0, array_search('Finance', $urutan, true));
+    $setujui($ap->id, $sebelumFinance);
+    $ap = $muat($ap->id);
+    $cek('bukan Finance tidak bisa revisi', ! $ikut->bisaRevisi($u['GM'], $ap) && ! $ikut->bisaRevisi($staf, $ap));
+    $cek('Finance (gilirannya) bisa revisi', $ikut->bisaRevisi($u['Finance'], $ap));
+    $sekarang = collect($ikut->ringkas($ap))->map(fn ($r) => ['jenis' => $r['jenis'], 'dari_budget_id' => $r['dari_budget_id'], 'budget_id' => $r['budget_id'], 'nilai' => $r['nilai']])->all();
+    $cek('tanpa perubahan → tidak diulang', $ikut->revisi($ap, $u['Finance'], $sekarang) === false && $muat($ap->id)->steps->where('status', 'approved')->count() === count($sebelumFinance));
+    $ikut->revisi($ap, $u['Finance'], [
+        ['jenis' => 'alokasi', 'dari_budget_id' => $budgetA->id, 'budget_id' => $budgetB->id, 'nilai' => 250_000],
+        ['jenis' => 'koreksi', 'budget_id' => $budgetB->id, 'nilai' => 50_000],
+    ], 'Ambil lebih banyak dari budget A');
+    $ap = $muat($ap->id);
+    $tur = $ikut->turunan($ap);
+    $cek('turunan diganti (250 rb alokasi + 50 rb koreksi)', $tur->count() === 2 && $sama($tur->sum(fn ($m) => $m instanceof App\Domain\BusinessSupport\Models\BsBudgetAllocation ? $m->amount : array_sum($m->tambahanBulan())), 300_000)
+        && $tur->contains(fn ($m) => $m instanceof App\Domain\BusinessSupport\Models\BsBudgetAllocation && $sama($m->amount, 250_000)));
+    $cek('approval diulang dari tahap 1, semua tahap menunggu', $ap->status === 'pending' && $ap->steps->every(fn ($s) => $s->status === 'pending')
+        && $inbox->needsMe($u[$urutan[0]])->contains('id', $ap->id));
+    $cek('judul diberi [REVISI] + catatan revisi', str_starts_with((string) $inbox->row($ap)['subject'], '[REVISI]') && $inbox->detail($ap)['revisi'] === 1
+        && ($inbox->detail($ap)['riwayat_revisi'][0]['catatan'] ?? null) === 'Ambil lebih banyak dari budget A');
+
+    echo "\n=== 4. Disetujui penuh ===\n";
+    $setujui($ap->id, $urutan);
     $req->refresh();
-    $cek('koreksi ditolak → pengajuan ditolak + alasan', $req->status === 'ditolak' && str_contains((string) $req->catatan, 'Pakai budget Q3 saja'), (string) $req->catatan);
-    $cek('pengaju dapat notifikasi "ditolak"', DB::table('notifications')->where('notifiable_id', $staf->id)->where('type', 'budget.pengajuan_invoice')->where('data', 'like', '%ditolak%')->exists());
-    $cek('pengajuan ditolak tidak bisa dipakai menyimpan invoice', $kode(fn () => $svc->untukSimpan($staf, $req->id, 'invoice', null)) === 'PENGAJUAN_BELUM');
+    $cek('approval disetujui → budget B +300 rb, A −250 rb, pengajuan disetujui', $muat($ap->id)->status === 'approved' && $sama($budgetB->fresh()->m5, 1_300_000)
+        && $sama($budgetA->fresh()->m5, 750_000) && $req->status === 'disetujui', $budgetB->fresh()->m5.' / '.$budgetA->fresh()->m5.' / '.$req->status);
+    $cek('pengajuan disetujui bisa dipakai menyimpan invoice', $svc->untukSimpan($staf, $req->id, 'invoice', null)->id === $req->id);
 
-    echo "\n=== 4. Ajukan ulang ===\n";
+    echo "\n=== 5. Ditolak, ajukan ulang, batal ===\n";
     auth()->setUser($staf);
-    $nomor = $req->invoice_number;
+    $data2 = array_merge($data, ['invoice_date' => "{$tahun}-06-10"]);
+    $req2 = $svc->ajukan($staf, 'invoice', $data2 + ['koreksi' => [['budget_id' => $budgetB->id, 'account_id' => $akun[0], 'cost_center_id' => $cc, 'nilai' => 300_000]]]);
+    $ap2 = $muat((int) $req2->approval_id);
+    $setujui($ap2->id, array_slice($urutan, 0, 1));
+    auth()->setUser($u[$urutan[1]]);
+    $act->execute($muat($ap2->id), 'reject', 'Pakai budget Q3 saja');
+    $req2->refresh();
+    $cek('ditolak → koreksi turunan ikut ditolak, pengajuan ditolak + alasan', $req2->status === 'ditolak' && str_contains((string) $req2->catatan, 'Pakai budget Q3 saja')
+        && App\Domain\BusinessSupport\Models\BsBudgetCorrection::where('source_type', BsApBudgetRequest::SOURCE)->where('source_id', $req2->id)->value('status') === 'rejected', (string) $req2->catatan);
+    $cek('pengaju dapat notifikasi "ditolak"', DB::table('notifications')->where('notifiable_id', $staf->id)->where('type', 'budget.pengajuan_invoice')->where('data', 'like', '%ditolak%')->exists());
+    $cek('pengajuan ditolak tidak bisa dipakai menyimpan invoice', $kode(fn () => $svc->untukSimpan($staf, $req2->id, 'invoice', null)) === 'PENGAJUAN_BELUM');
+    auth()->setUser($staf);
+    $nomor = $req2->invoice_number;
     sleep(1); // ronde baru dibedakan dari waktu pengajuan
-    $req = $svc->ajukan($staf, 'invoice', $data + ['koreksi' => [['budget_id' => $budgetB->id, 'account_id' => $akun[0], 'cost_center_id' => $cc, 'nilai' => 100_000]]], $req);
-    $item = $svc->ringkas($req)['item'];
-    $cek('ronde baru: menunggu, nomor invoice tetap, item lama tidak dihitung', $req->status === 'menunggu' && $req->invoice_number === $nomor && count($item) === 1 && $item[0]['jenis'] === 'Koreksi', json_encode($item));
-    $cek('pengajuan yang menunggu tidak bisa diajukan ulang', $kode(fn () => $svc->ajukan($staf, 'invoice', $data + ['koreksi' => [['budget_id' => $budgetB->id, 'nilai' => 100_000]]], $req)) === 'PENGAJUAN_ULANG');
+    $req2 = $svc->ajukan($staf, 'invoice', $data2 + ['koreksi' => [['budget_id' => $budgetB->id, 'account_id' => $akun[0], 'cost_center_id' => $cc, 'nilai' => 300_000]]], $req2);
+    $ap3 = $muat((int) $req2->approval_id);
+    $cek('ajukan ulang: approval baru, nomor tetap, turunan ronde lama tidak dihitung', $ap3->id !== $ap2->id && $req2->invoice_number === $nomor && $ikut->turunan($ap3)->count() === 1);
+    $svc->batal($req2);
+    $cek('batal → approval ditutup, turunan dibatalkan', $req2->fresh()->status === 'batal' && $muat($ap3->id)->status === 'cancelled'
+        && App\Domain\BusinessSupport\Models\BsBudgetCorrection::where('source_type', BsApBudgetRequest::SOURCE)->where('source_id', $req2->id)->latest('id')->value('status') === 'batal');
 
-    echo "\n=== 5. Batal ===\n";
-    $svc->batal($req);
-    $req->refresh();
-    $ko = App\Domain\BusinessSupport\Models\BsBudgetCorrection::where('source_type', BsApBudgetRequest::SOURCE)->where('source_id', $req->id)->latest('id')->first();
-    $cek('pengajuan batal, koreksi menunggu dibatalkan, approval ditutup', $req->status === 'batal' && $ko->status === 'batal' && Approval::find($ko->approval_id)->status === 'cancelled');
-    $cek('hilang dari giliran Finance', ! $inbox->needsMe($finance)->contains('id', $ko->approval_id));
-    $cek('pengajuan batal tidak bisa dipakai menyimpan invoice', $kode(fn () => $svc->untukSimpan($staf, $req->id, 'invoice', null)) === 'PENGAJUAN_BELUM');
+    echo "\n=== 6. Invoice biasa: turunan approval Invoice Hutang ===\n";
+    auth()->setUser($staf);
+    $inv = App\Domain\BusinessSupport\Models\BsApInvoice::query()->latest('id')->firstOrFail();
+    $al = app(App\Domain\BusinessSupport\Services\BudgetAllocationService::class)->pindah($budgetA->id, $budgetB->id, [7 => 150_000], "{$tahun}-07-10",
+        'uji invoice biasa', $staf->id, ['type' => App\Domain\BusinessSupport\Models\BsBudgetAllocation::SOURCE_INVOICE, 'id' => $inv->id], null, langsung: false);
+    $apInv = app(App\Domain\Approval\Actions\SubmitForApproval::class)->execute('ap_invoice', $inv, ['invoice_number' => $inv->invoice_number, 'total' => (float) $inv->total]);
+    $apInv = $muat($apInv->id);
+    $cek('alokasi = turunan approval invoice (induk, tampil di baris)', $ikut->induk($al)?->id === $apInv->id && collect($inbox->row($apInv)['turunan'])->contains('id', $al->id));
+    $setujui($apInv->id, array_slice($urutan, 0, -1));
+    $cek('belum disetujui penuh → anggaran belum pindah', $al->fresh()->status === 'baru' && $sama($budgetB->fresh()->m7, 1_000_000));
+    $setujui($apInv->id, array_slice($urutan, -1));
+    $cek('invoice disetujui penuh → alokasi approved, anggaran Jul pindah 150 rb', $al->fresh()->status === 'approved' && $sama($budgetB->fresh()->m7, 1_150_000) && $sama($budgetA->fresh()->m7, 850_000));
 } catch (Throwable $e) {
     $gagal++;
     echo "GALAT: {$e->getMessage()}\n  di {$e->getFile()}:{$e->getLine()}\n";

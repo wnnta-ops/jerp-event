@@ -122,13 +122,17 @@ class BudgetCorrectionController extends Controller
             ->where('status', 'baru')->orderBy('doc_no')->get();
         // Dokumen approval = koreksi itu sendiri — dipasang langsung supaya stages() tidak memuat ulang (lazy load).
         $koreksi->each(fn ($c) => $c->approval?->setRelation('approvable', $c));
-        $bisa = fn (BsBudgetCorrection $c) => $c->approval ? $inbox->canAct($user, $c->approval)
-            : (bool) $user?->canAny(['budget.correction.approve', 'businesssupport.approval.act']);
+        // Turunan invoice (tanpa approval sendiri): tampil untuk dilihat, diputuskan di approval invoicenya.
+        $ikut = app(\App\Domain\BusinessSupport\Services\BudgetIkutInvoice::class);
+        $induk = $koreksi->mapWithKeys(fn ($c) => [$c->id => $ikut->induk($c)?->load('steps')]);
+        $bisa = fn (BsBudgetCorrection $c) => $induk[$c->id] ? false : ($c->approval ? $inbox->canAct($user, $c->approval)
+            : (bool) $user?->canAny(['budget.correction.approve', 'businesssupport.approval.act']));
         abort_unless($user?->can('budget.correction.approve') || $koreksi->contains(fn ($c) => $c->approval && $bisa($c)), 403);
 
         $invoice = \App\Domain\BusinessSupport\Models\BsApInvoice::query();
-        $rows = $koreksi->map(function ($c) use ($bisa, $inbox, $invoice) {
-            $tahap = $c->approval ? collect($inbox->stages($c->approval))->firstWhere('state', 'current') : null;
+        $rows = $koreksi->map(function ($c) use ($bisa, $inbox, $invoice, $induk) {
+            $ap = $induk[$c->id] ?? $c->approval;
+            $tahap = $ap ? collect($inbox->stages($ap))->firstWhere('state', 'current') : null;
 
             return [
                 'id' => $c->id, 'doc_no' => $c->doc_no, 'date' => $c->corr_date?->format('Y-m-d'),
@@ -141,8 +145,9 @@ class BudgetCorrectionController extends Controller
                     \App\Domain\BusinessSupport\Models\BsApBudgetRequest::SOURCE => \App\Domain\BusinessSupport\Models\BsApBudgetRequest::query()->whereKey($c->source_id)->value('invoice_number'),
                     default => null,
                 },
-                'tahap' => $tahap ? trim($tahap['label'].($tahap['role'] ? ' — '.$tahap['role'] : '')) : null,
-                'approval_url' => $c->approval_id ? route('approval-inbox.show', $c->approval_id) : null,
+                'tahap' => $tahap ? trim(($induk[$c->id] ? 'Ikut approval invoice · ' : '').$tahap['label'].($tahap['role'] ? ' — '.$tahap['role'] : '')) : null,
+                'approval_url' => $ap ? route('approval-inbox.show', $ap->id) : null,
+                'ikut_invoice' => (bool) $induk[$c->id],
                 'lampiran_url' => \App\Domain\BusinessSupport\Services\LampiranPerubahanBudget::url($c),
                 'bisa' => $bisa($c),
             ];
@@ -172,6 +177,11 @@ class BudgetCorrectionController extends Controller
         $gagal = [];
         foreach (BsBudgetCorrection::with('approval.steps')->whereIn('id', $v['ids'])->where('status', 'baru')->orderBy('id')->get() as $c) {
             try {
+                if (app(\App\Domain\BusinessSupport\Services\BudgetIkutInvoice::class)->induk($c)) {
+                    $gagal[] = $c->doc_no.': ikut approval invoice — putuskan di Approval Inbox';
+
+                    continue;
+                }
                 if ($c->approval) {
                     app(ActOnApproval::class)->execute($c->approval, $approve ? 'approve' : 'reject');
                     $c->refresh()->status !== 'baru' ? $hasil['final']++ : $hasil['tahap']++;

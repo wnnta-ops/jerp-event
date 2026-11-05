@@ -81,6 +81,34 @@ class ApInvoiceBerkasController extends Controller
         return response()->json(['ok' => true]);
     }
 
+    /** Tambah file ke berkas link yang sudah di-TTD penuh (link nonaktif bagi supplier). */
+    public function tambahFile(Request $request, BsApBerkasLink $link, ApBerkasService $berkas): JsonResponse
+    {
+        $this->milik($request, $link);
+        $v = $request->validate([
+            'files' => ['required', 'array', 'min:1', 'max:'.ApBerkasService::MAX_FILES],
+            'files.*.file' => ['required', 'file', 'mimes:pdf,jpg,jpeg,png', 'max:10240'],
+            'files.*.berkas_id' => ['required', 'integer', \Illuminate\Validation\Rule::in(\App\Domain\BusinessSupport\Models\BsApBerkas::jenisTetap()->pluck('id')->all())],
+            'files.*.keterangan' => ['nullable', 'string', 'max:100'],
+        ], [
+            'files.required' => 'Pilih minimal satu file.',
+            'files.*.file.mimes' => 'File harus PDF, JPG, atau PNG.',
+            'files.*.file.max' => 'Ukuran tiap file maksimal 10 MB.',
+            'files.*.berkas_id.required' => 'Pilih jenis dokumen untuk tiap file.',
+        ]);
+        $link->load('berkas');
+        if (! $link->berkas || ! $link->ttdSelesai()) {
+            return response()->json(['message' => 'Selama berkas belum selesai di-TTD, file diunggah supplier lewat link.'], 422);
+        }
+        try {
+            $berkas->tambahFileSesudahTtd($link->berkas, \App\Domain\BusinessSupport\Models\BsApBerkas::rapikanUnggahan($v['files']), $request->user());
+        } catch (BusinessRuleException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
+
+        return response()->json(['ok' => true]);
+    }
+
     /** Batalkan link (nomor invoice yang dipesan ikut hangus). */
     public function batal(Request $request, BsApBerkasLink $link): JsonResponse
     {
@@ -99,6 +127,8 @@ class ApInvoiceBerkasController extends Controller
 
     private function ringkas(BsApBerkasLink $link): array
     {
+        $link->loadMissing('berkas:id,berkas_number,status');
+
         return [
             'id' => $link->id, 'url' => $link->url(), 'invoice_number' => $link->invoice_number, 'status' => $link->status,
             'filled_at' => $link->filled_at?->toIso8601String(),
@@ -106,7 +136,9 @@ class ApInvoiceBerkasController extends Controller
             // No. invoice yang diketik supplier (ada setelah link terisi) → No. Invoice Supplier di wizard.
             'supplier_invoice_no' => $link->status === 'menunggu' ? null : ($link->data['supplier_invoice_no'] ?? null),
             // Riwayat unggahan supplier (link bisa dipakai mengunggah ulang).
-            'riwayat' => array_values(array_reverse($link->riwayat ?? [])),
+            'riwayat' => array_reverse($link->riwayatUnggahan()),
+            // false = berkas sudah di-TTD sampai tahap terakhir → link nonaktif bagi supplier.
+            'menerima' => $link->menerimaUnggahan(),
         ];
     }
 }

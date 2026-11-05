@@ -57,6 +57,7 @@ class AppServiceProvider extends ServiceProvider
             'ap_berkas_upload'  => \App\Domain\BusinessSupport\Models\BsApBerkasUpload::class, // Upload Berkas → TTD Dept Head
             'ap_invoice'        => \App\Domain\BusinessSupport\Models\BsApInvoice::class,      // approval invoice dari berkas
             'budget_correction' => \App\Domain\BusinessSupport\Models\BsBudgetCorrection::class, // koreksi budget dari invoice hutang
+            'ap_budget_request' => \App\Domain\BusinessSupport\Models\BsApBudgetRequest::class, // pengajuan budget invoice (chain Invoice Hutang)
             'budget_allocation' => \App\Domain\BusinessSupport\Models\BsBudgetAllocation::class, // alokasi budget dari invoice hutang
 
             // Phase 3 — Payment polymorphic sources

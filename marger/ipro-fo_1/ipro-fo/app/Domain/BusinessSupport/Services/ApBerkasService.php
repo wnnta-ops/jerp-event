@@ -131,6 +131,37 @@ final class ApBerkasService
         $this->log($berkas, 'file_ditambah', implode(', ', array_map(fn ($f) => $f['file']->getClientOriginalName(), $files)));
     }
 
+    /**
+     * Tambah file ke berkas yang SUDAH di-TTD penuh (link supplier sudah nonaktif) — hanya pemilik
+     * berkas. File lama dan TTD-nya tidak berubah; tambahan tercatat di log berkas.
+     *
+     * @param  list<array{file:UploadedFile, berkas_id:?int, keterangan?:?string}>  $files
+     */
+    public function tambahFileSesudahTtd(BsApBerkasUpload $berkas, array $files, User $user): void
+    {
+        $this->assertMilik($berkas, $user);
+        if (! in_array($berkas->status, [BsApBerkasUpload::STATUS_SIAP_INVOICE, BsApBerkasUpload::STATUS_SEBAGIAN], true)) {
+            throw new BusinessRuleException(
+                'File hanya bisa ditambahkan ke berkas yang sudah di-TTD dan belum habis diinvoice (status: '
+                .(BsApBerkasUpload::STATUS_LABELS[$berkas->status] ?? $berkas->status).').',
+                errorCode: 'BERKAS_LOCKED',
+            );
+        }
+        if ($berkas->files()->count() + count($files) > self::MAX_FILES) {
+            throw new BusinessRuleException('Maksimal '.self::MAX_FILES.' file per berkas.', errorCode: 'BERKAS_TOO_MANY');
+        }
+        $stored = [];
+        try {
+            DB::transaction(function () use ($berkas, $files, &$stored): void {
+                $stored = $this->simpanFiles($berkas, $files);
+            });
+        } catch (Throwable $e) {
+            $this->hapusFileDisk($stored);
+            throw $e;
+        }
+        $this->log($berkas, 'file_ditambah', 'Sesudah TTD: '.implode(', ', array_map(fn ($f) => $f['file']->getClientOriginalName(), $files)));
+    }
+
     public function removeFile(BsApBerkasUpload $berkas, BsApBerkasUploadFile $file, User $user): void
     {
         $this->assertBisaDiubah($berkas);
@@ -312,8 +343,11 @@ final class ApBerkasService
      * Tautkan invoice yang baru diregistrasi ke berkasnya lalu ajukan approval invoice.
      * Dipanggil DI DALAM transaksi yang sama dengan registrasi invoice. Satu berkas boleh
      * diinvoice beberapa kali sampai nominalnya habis.
+     *
+     * $ajukanApproval false: invoice Memo Urgent yang Pengajuan Budget-nya sudah disetujui penuh lewat
+     * chain Invoice Hutang — tidak diajukan approval lagi (tanpa approval = boleh dibayar).
      */
-    public function ajukanInvoice(BsApBerkasUpload $berkas, BsApInvoice $invoice): Approval
+    public function ajukanInvoice(BsApBerkasUpload $berkas, BsApInvoice $invoice, bool $ajukanApproval = true): ?Approval
     {
         $berkas = BsApBerkasUpload::query()->lockForUpdate()->findOrFail($berkas->id);
         $this->assertSiapInvoice($berkas);
@@ -333,6 +367,9 @@ final class ApBerkasService
             'ap_invoice_id' => $invoice->id,
         ]);
         $this->log($berkas, 'diinvoice', $invoice->invoice_number);
+        if (! $ajukanApproval) {
+            return null;
+        }
 
         return $this->submit->execute(BsApInvoice::APPROVAL_DOCUMENT_TYPE, $invoice, [
             'invoice_number' => $invoice->invoice_number,

@@ -59,7 +59,8 @@ class ApprovalInboxSeeder extends Seeder
             ->where('code', 'MI-DEFAULT')->update(['is_active' => false]);
 
         $alur = [
-            'MI-URGENT' => ['Memo Urgent', 'urgent', array_slice(MemoInternal::STEPS, 0, 4, true)],   // tanpa MW / BA
+            // Memo Urgent: tanpa Finance (Finance membayarkan, bukan menyetujui) dan tanpa MW / BA.
+            'MI-URGENT' => ['Memo Urgent', 'urgent', array_filter(array_slice(MemoInternal::STEPS, 0, 4, true), fn ($s) => $s[1] !== 'Finance')],
             'MI-REGULER' => ['Memo Reguler', 'reguler', MemoInternal::STEPS],                          // lengkap
         ];
         foreach ($alur as $code => [$nama, $jenis, $steps]) {

@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { router, Link } from '@inertiajs/vue3';
 import { ref, reactive, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue';
-import { Plus, ArrowLeft, HandCoins, Search, ChevronDown, CalendarClock, CalendarCheck, BookText, Tags, FileInput, ReceiptText, Eraser, FileSpreadsheet, FilterX, Printer } from 'lucide-vue-next';
+import { Plus, ArrowLeft, HandCoins, Search, ChevronDown, CalendarClock, CalendarCheck, BookText, Tags, FileInput, ReceiptText, Eraser, FileSpreadsheet, FilterX, Printer, Upload } from 'lucide-vue-next';
+import { berkasTitipan } from '@/Composables/berkasTitipan';
 import Button from '@/Components/UI/Button.vue';
 import Badge from '@/Components/UI/Badge.vue';
 import EmptyState from '@/Components/UI/EmptyState.vue';
@@ -47,6 +48,16 @@ const draftTerbuka = ref(false);
 const jumlahDraft = computed(() => (props.pengajuanBudget?.length ?? 0) + (props.menungguSupplier?.length ?? 0));
 const adaDraftBaru = computed(() => (props.pengajuanBudget ?? []).some((p) => p.baru) || (props.menungguSupplier ?? []).some((l) => l.baru));
 const modulInvoice = props.jenis.kunci === 'invoice';
+// Tombol kecil Upload file → file dititipkan, wizard dibuka di blok Berkas Tagihan.
+const inputBerkas = ref<HTMLInputElement | null>(null);
+function pilihBerkas(e: Event) {
+    const el = e.target as HTMLInputElement;
+    const files = Array.from(el.files ?? []);
+    el.value = '';
+    if (!files.length) return;
+    berkasTitipan.value = files;
+    router.visit(route('bs.ap.create', { mulai: 'berkas' }));
+}
 
 function fmtRp(v: number) { return 'Rp ' + Number(v ?? 0).toLocaleString('id-ID'); }
 function fmtDate(d: string | null) { return d ? new Date(d).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'; }
@@ -219,6 +230,13 @@ watch(rows, () => nextTick(measure));
                     <Printer class="h-4 w-4" /> Cetak PO<span v-if="selectedPoIds.length"> ({{ selectedPoIds.length }})</span>
                 </button>
                 <Link v-if="punyaIzin('ap.kuitansi.view')" :href="route('bs.ap.kuitansi.index')"><Button variant="secondary"><template #icon-left><ReceiptText class="h-4 w-4" /></template>Kuitansi</Button></Link>
+                <!-- Tombol kecil Upload file: pilih file tagihan → wizard Invoice terbuka di blok Berkas Tagihan (langkah 2) dengan file sudah di drop box. -->
+                <template v-if="modulInvoice && punyaIzin(jenis.izin + '.create')">
+                    <input ref="inputBerkas" type="file" multiple accept=".pdf,.jpg,.jpeg,.png" class="hidden" @change="pilihBerkas" />
+                    <button type="button" title="Upload file tagihan — langsung ke tahap Upload File / Generate Link" aria-label="Upload file tagihan"
+                        class="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-primary-300 text-primary-600 hover:bg-primary-50 dark:border-primary-700/50 dark:hover:bg-primary-900/30"
+                        @click="inputBerkas?.click()"><Upload class="h-4 w-4" /></button>
+                </template>
                 <Link v-if="punyaIzin(jenis.izin + '.create')" :href="route(modulInvoice ? 'bs.ap.create' : jenis.rute + '.create')"><Button><template #icon-left><Plus class="h-4 w-4" /></template>{{ modulInvoice ? 'Invoice' : jenis.judul.split(' ')[0] }}</Button></Link>
             </div>
         </div>
@@ -261,10 +279,10 @@ watch(rows, () => nextTick(measure));
         <div v-if="jumlahDraft" class="card overflow-hidden">
             <button type="button" class="flex w-full items-center justify-between gap-2 px-4 py-2.5 text-left text-sm font-semibold hover:bg-neutral-50 dark:hover:bg-neutral-800/40" @click="draftTerbuka = !draftTerbuka">
                 <span class="inline-flex items-center gap-2">
-                    <span v-if="adaDraftBaru" class="h-2 w-2 rounded-full bg-danger-500" title="Ada yang sudah diputuskan Finance / berkas supplier masuk"></span>
+                    <span v-if="adaDraftBaru" class="h-2 w-2 rounded-full bg-danger-500" title="Ada pengajuan budget yang sudah diputuskan / berkas supplier masuk"></span>
                     Draft <span class="font-normal text-neutral-400">({{ jumlahDraft }})</span>
                     <span class="text-xs font-normal text-neutral-500">
-                        <template v-if="pengajuanBudget?.length">· {{ pengajuanBudget.length }} pengajuan budget Finance</template>
+                        <template v-if="pengajuanBudget?.length">· {{ pengajuanBudget.length }} pengajuan budget</template>
                         <template v-if="menungguSupplier?.length"> · {{ menungguSupplier.length }} menunggu berkas supplier</template>
                     </span>
                 </span>
@@ -273,18 +291,18 @@ watch(rows, () => nextTick(measure));
             <div v-show="draftTerbuka">
             <!-- Invoice tertahan Pengajuan Budget: alokasi / koreksi langkah Struktur menunggu Finance. -->
             <div v-if="pengajuanBudget?.length">
-            <div class="border-y border-neutral-200 bg-neutral-50 px-4 py-1.5 text-xs font-semibold uppercase tracking-wide text-neutral-500 dark:border-neutral-800 dark:bg-neutral-800/40">Menunggu persetujuan budget Finance ({{ pengajuanBudget.length }})</div>
+            <div class="border-y border-neutral-200 bg-neutral-50 px-4 py-1.5 text-xs font-semibold uppercase tracking-wide text-neutral-500 dark:border-neutral-800 dark:bg-neutral-800/40">Menunggu approval budget ({{ pengajuanBudget.length }})</div>
             <table class="w-full text-sm">
                 <tbody>
                     <tr v-for="p in pengajuanBudget" :key="p.id" class="border-t border-neutral-100 first:border-t-0 dark:border-neutral-800">
                         <td class="whitespace-nowrap px-4 py-2 font-mono text-xs">
-                            <span class="inline-flex items-center gap-1.5"><span v-if="p.baru" class="h-2 w-2 rounded-full bg-danger-500" title="Sudah diputuskan Finance"></span>{{ p.invoice_number ?? '—' }}</span>
+                            <span class="inline-flex items-center gap-1.5"><span v-if="p.baru" class="h-2 w-2 rounded-full bg-danger-500" title="Sudah diputuskan"></span>{{ p.invoice_number ?? '—' }}</span>
                         </td>
                         <td class="px-4 py-2">{{ p.description ?? '—' }}<div v-if="p.status === 'ditolak' && p.catatan" class="text-[11px] text-danger-600">{{ p.catatan }}</div></td>
                         <td class="whitespace-nowrap px-4 py-2 text-xs text-neutral-500">{{ p.diajukan }}</td>
                         <td class="whitespace-nowrap px-4 py-2">
                             <span :class="['rounded-full px-2 py-0.5 text-[11px] font-medium', p.status === 'disetujui' ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300' : p.status === 'ditolak' ? 'bg-danger-50 text-danger-700 dark:bg-danger-950/40 dark:text-danger-300' : 'bg-amber-50 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300']">
-                                {{ p.status === 'disetujui' ? 'Disetujui — lanjutkan' : p.status === 'ditolak' ? 'Ditolak' : 'Menunggu Finance' }}</span>
+                                {{ p.status === 'disetujui' ? 'Disetujui — lanjutkan' : p.status === 'ditolak' ? 'Ditolak' : 'Menunggu approval' }}</span>
                         </td>
                         <td class="whitespace-nowrap px-4 py-2 text-right"><a :href="p.url" class="text-xs font-medium text-primary-600 hover:underline">Buka</a></td>
                     </tr>

@@ -58,7 +58,7 @@
 </style>
 </head>
 <body>
-@php $h = ['grup' => $grup, 'catatanBudget' => 'Angka budget dari Master Budget (anggaran berlaku − realisasi); realisasi sudah digunakan belum termasuk invoice ini.']; @endphp
+@php $h = ['grup' => $grup]; @endphp
 <div class="hal">
     <div class="atas">
         <img class="logo" src="/images/mup-logo.jpeg" alt="MUP">
@@ -79,7 +79,9 @@
         <div><b>Dibayar Via :</b>{{ $cb(! $bank['ada']) }} KAS<br>{{ $cb($bank['ada']) }} Bank{{ $bank['nama'] ? ' : '.$bank['nama'] : '' }}<br>No. Rek / a.n. : {{ $bank['rek'] }} / {{ $bank['an'] }}</div>
         <div><b>Type Pengeluaran :</b>{{ $cb($pekerjaan) }} Pekerjaan<br>{{ $cb(! $pekerjaan) }} Material</div>
         <div><b>Cara Pembayaran Bank :</b>{{ $cb($bank['ada']) }} Transfer<br>{{ $cb(! $bank['ada']) }} Tunai</div>
-        <div><b>Lampiran :</b>☑ Penunjukan Langsung<br>☐ Tender<br>☐ Non Pembelian</div>
+        {{-- Budget: Sesuai Budget bila invoice ini tidak membawa alokasi / koreksi (lihat halaman lampiran). --}}
+        @php $jenisUbah = collect($lampiran ?? [])->pluck('jenis'); @endphp
+        <div><b>Budget :</b>{{ $cb($jenisUbah->isEmpty()) }} Sesuai Budget<br>{{ $cb($jenisUbah->contains('Alokasi')) }} Alokasi Budget<br>{{ $cb($jenisUbah->contains('Koreksi')) }} Koreksi Budget</div>
     </div>
 
     <p>Dengan hormat, sehubungan dengan keperluan <b>{{ $perihal }}</b>, maka kami mengajukan permohonan pembayaran sebesar <b>Rp. {{ $rp($total) }}</b> dengan rincian sebagai berikut :</p>
@@ -87,13 +89,13 @@
     @php $bln = $bulanLabel; @endphp
     <table class="rinci">
         <colgroup>
-            <col style="width:4%"><col style="width:11%"><col style="width:22%"><col style="width:13%">
-            <col style="width:10%"><col style="width:10%"><col style="width:10%"><col style="width:10%"><col style="width:10%">
+            <col style="width:4%"><col style="width:11%"><col style="width:24%"><col style="width:13%">
+            <col style="width:12%"><col style="width:12%"><col style="width:12%"><col style="width:12%">
         </colgroup>
         <thead>
             <tr>
                 <th class="g">No.</th><th class="g">No. Account</th><th class="g">Uraian Pembayaran</th><th class="g">Jumlah (Rp)</th>
-                <th class="b1">Budget {{ $bln }}</th><th class="b2">Realisasi sudah digunakan</th><th class="b3">Realisasi pengajuan ini</th>
+                <th class="b1">Budget {{ $bln }}</th><th class="b2">Realisasi {{ $bln }}</th>
                 <th class="b4">Sisa budget {{ $bln }}</th><th class="b5">Sisa budget {{ $tahun }}</th>
             </tr>
         </thead>
@@ -111,11 +113,10 @@
                                 @php $x = $g['budget']; @endphp
                                 <td class="bud" rowspan="{{ count($g['baris']) }}">{{ $rp0($x['anggaran']) }}</td>
                                 <td class="bud" rowspan="{{ count($g['baris']) }}">{{ $rp0($x['terpakai']) }}<small>{{ $pct($x['terpakai'], $x['anggaran']) }} dari budget {{ $bln }}</small></td>
-                                <td class="bud" rowspan="{{ count($g['baris']) }}">{{ $rp0($x['pengajuan']) }}<small>{{ $pct($x['pengajuan'], $x['anggaran']) }} dari budget {{ $bln }}</small></td>
                                 <td class="bud {{ $x['sisa'] < 0 ? 'minus' : '' }}" rowspan="{{ count($g['baris']) }}">{{ $rp0($x['sisa']) }}<small>{{ $pct($x['sisa'], $x['anggaran']) }} dari budget {{ $bln }}</small></td>
                                 <td class="bud {{ $x['sisa_tahun'] < 0 ? 'minus' : '' }}" rowspan="{{ count($g['baris']) }}">{{ $rp0($x['sisa_tahun']) }}<small>{{ $pct($x['sisa_tahun'], $x['anggaran_tahun']) }} dari {{ $rp0($x['anggaran_tahun']) }}</small></td>
                             @else
-                                <td class="pos" colspan="5" rowspan="{{ count($g['baris']) }}">Non budget — akun tanpa anggaran</td>
+                                <td class="pos" colspan="4" rowspan="{{ count($g['baris']) }}">Non budget — akun tanpa anggaran</td>
                             @endif
                         @endif
                     </tr>
@@ -123,7 +124,7 @@
                 @if ($g['budget'])
                     @php $x = $g['budget']; $a = max($x['anggaran'], $x['terpakai'] + $x['pengajuan'], 1);
                         $w1 = min(100, $x['terpakai'] / $a * 100); $w2 = min(100 - $w1, $x['pengajuan'] / $a * 100); $w3 = max(0, 100 - $w1 - $w2); @endphp
-                    <tr><td colspan="4" style="border-top:0;border-bottom:0"></td><td colspan="5" style="padding:2px 4px">
+                    <tr><td colspan="4" style="border-top:0;border-bottom:0"></td><td colspan="4" style="padding:2px 4px">
                         <div class="bar">
                             @if ($w1 > 0)<span style="width:{{ $w1 }}%;background:#d1d5db">{{ $w1 >= 18 ? 'Terpakai '.$pct($x['terpakai'], $x['anggaran']) : '' }}</span>@endif
                             @if ($w2 > 0)<span style="width:{{ $w2 }}%;background:#e5e7eb;border-left:1px solid #111">{{ $w2 >= 22 ? 'Pengajuan ini '.$pct($x['pengajuan'], $x['anggaran']) : '' }}</span>@endif
@@ -132,25 +133,22 @@
                     </td></tr>
                 @endif
             @endforeach
-            <tr><td colspan="3" class="r">PPN {{ $ppnPct }}%</td><td class="r">{{ $rp($ppn) }}</td><td colspan="5" rowspan="3" class="pos" style="text-align:left;vertical-align:top">
-                {{ $h['catatanBudget'] }}</td></tr>
+            <tr><td colspan="3" class="r">PPN {{ $ppnPct }}%</td><td class="r">{{ $rp($ppn) }}</td><td colspan="4" rowspan="3" class="pos" style="text-align:left;vertical-align:top;color:#111">
+                <b>Terbilang :</b> {{ $terbilang }}</td></tr>
             <tr><td colspan="3" class="r">PPh</td><td class="r">{{ $pph > 0 ? '- '.$rp($pph) : $rp(0) }}</td></tr>
             <tr class="tot"><td colspan="3" class="r">TOTAL</td><td class="r">{{ $rp($total) }}</td></tr>
         </tbody>
     </table>
-    <div class="terbilang"><b>Terbilang :</b> {{ $terbilang }}</div>
-
     <table class="ttd">
-        <colgroup>@for ($k = 0; $k < 9; $k++)<col style="width:11.11%">@endfor</colgroup>
+        <colgroup>@for ($k = 0; $k < 8; $k++)<col style="width:12.5%">@endfor</colgroup>
         <tr>
-            <td class="cap">Hormat Kami,</td><td class="cap o" colspan="2">Diverifikasi,</td><td class="cap" colspan="2">Menyetujui,</td>
+            <td class="cap">Hormat Kami,</td><td class="cap o">Diverifikasi,</td><td class="cap" colspan="2">Menyetujui,</td>
             <td class="cap" colspan="2">Mengetahui,</td><td class="cap o">Dibayarkan,</td><td class="cap o">Diterima,</td>
         </tr>
-        <tr>@for ($k = 0; $k < 9; $k++)<td class="sp"></td>@endfor</tr>
+        <tr>@for ($k = 0; $k < 8; $k++)<td class="sp"></td>@endfor</tr>
         <tr>
             <td><div class="nm">{{ $dari }}</div><div class="jb">Dept. Head</div></td>
-            <td><div class="nm">(………………)</div><div class="jb">Manager Accounting</div></td>
-            <td><div class="nm">(………………)</div><div class="jb">Manager Finance</div></td>
+            <td><div class="nm">(………………)</div><div class="jb">Manager Accounting &amp; Finance</div></td>
             <td><div class="nm">Rizki Setyawardana</div><div class="jb">General Manager</div></td>
             <td><div class="nm">Rachmat Suhendra</div><div class="jb">Direktur</div></td>
             <td><div class="nm">Moch Winarto</div><div class="jb">&nbsp;</div></td>

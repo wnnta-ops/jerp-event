@@ -32,6 +32,14 @@
     .alasan { border: 1px solid #9ca3af; padding: 5px 8px; min-height: 34px; white-space: pre-line; background: #fff7ed; }
     .noprint { margin: 12px auto; width: 210mm; text-align: right; }
     .noprint button { font: inherit; padding: 6px 14px; border-radius: 6px; border: 1px solid #9ca3af; background: #fff; cursor: pointer; }
+    .ttd { margin-top: 16px; table-layout: fixed; page-break-inside: avoid; }
+    .ttd td { text-align: center; vertical-align: top; padding: 0 6px; }
+    .ttd .ruang { height: 60px; display: flex; align-items: center; justify-content: center; }
+    .ttd img { max-height: 54px; max-width: 100%; }
+    .ttd .garis { border-top: 1px solid #555; padding-top: 2px; font-weight: bold; min-height: 15px; }
+    .ttd .wkt { color: #6b7280; font-size: 8px; }
+    .cap-ok, .cap-tolak { display: inline-block; transform: rotate(-8deg); border: 2px solid #047857; color: #047857; font-weight: bold; padding: 1px 6px; font-size: 9px; }
+    .cap-tolak { border-color: #b91c1c; color: #b91c1c; }
     @media print { .noprint { display: none; } }
     @media screen { body { background: #e5e7eb; } .hal { background: #fff; width: 210mm; min-height: 297mm; margin: 0 auto 12px; padding: 10mm; box-shadow: 0 1px 4px rgba(0,0,0,.15); } }
 </style>
@@ -95,6 +103,33 @@
             @endforelse
         </tbody>
     </table>
+    {{-- TTD: pengaju + tiap tahap yang sudah memutuskan. Tahap yang belum bertindak tidak ditampilkan. --}}
+    @php $diputus = array_values(array_filter($langkah, fn ($l) => in_array($l['status'], ['approved', 'rejected'], true))); @endphp
+    <table class="ttd">
+        <tr>
+            <td>Diajukan oleh,</td>
+            @foreach ($diputus as $l)<td>{{ $l['status'] === 'rejected' ? 'Ditolak,' : 'Disetujui,' }}</td>@endforeach
+        </tr>
+        <tr>
+            <td>
+                <div class="ruang">@if ($pengaju_ttd)<img src="{{ $pengaju_ttd }}" alt="TTD {{ $pengaju }}">@endif</div>
+                <div class="garis">{{ $pengaju ?? '(………………)' }}</div>
+                <div class="wkt">Pengaju</div>
+            </td>
+            @foreach ($diputus as $l)
+                <td>
+                    <div class="ruang">
+                        @if ($l['status'] === 'rejected')<span class="cap-tolak">DITOLAK</span>
+                        @elseif ($l['ttd'] ?? null)<img src="{{ $l['ttd'] }}" alt="TTD {{ $l['oleh'] }}">
+                        @else<span class="cap-ok">DISETUJUI</span>@endif
+                    </div>
+                    <div class="garis">{{ $l['oleh'] ?? '(………………)' }}</div>
+                    <div class="wkt">{{ $l['label'] }} · {{ $l['tanggal'] ?? '' }}</div>
+                </td>
+            @endforeach
+        </tr>
+    </table>
+
     <p style="color:#6b7280;font-size:8.5px;margin-top:8px">
         @if ($status_kode === 'approved')Perubahan sudah masuk Master Budget — "sesudah" = anggaran saat ini.
         @elseif ($status_kode === 'rejected')Pengajuan ditolak — Master Budget tidak berubah.

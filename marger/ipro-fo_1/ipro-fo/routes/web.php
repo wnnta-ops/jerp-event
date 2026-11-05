@@ -715,6 +715,7 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::post('/business-support/payable/berkas-link', [App\Http\Controllers\Web\BusinessSupport\Payable\ApInvoiceBerkasController::class, 'buatLink'])->name('bs.ap.berkas-link.store');
     Route::get('/business-support/payable/berkas-link/{link}', [App\Http\Controllers\Web\BusinessSupport\Payable\ApInvoiceBerkasController::class, 'status'])->name('bs.ap.berkas-link.status');
     Route::put('/business-support/payable/berkas-link/{link}/draft', [App\Http\Controllers\Web\BusinessSupport\Payable\ApInvoiceBerkasController::class, 'simpanDraft'])->name('bs.ap.berkas-link.draft');
+    Route::post('/business-support/payable/berkas-link/{link}/file', [App\Http\Controllers\Web\BusinessSupport\Payable\ApInvoiceBerkasController::class, 'tambahFile'])->name('bs.ap.berkas-link.file');
     Route::post('/business-support/payable/berkas-link/{link}/batal', [App\Http\Controllers\Web\BusinessSupport\Payable\ApInvoiceBerkasController::class, 'batal'])->name('bs.ap.berkas-link.batal');
     Route::get('/business-support/payable/sisa-budget', [BsApController::class, 'sisaBudget'])->name('bs.ap.sisa-budget'); // kolom Sisa Budget di langkah Struktur
     // Pengajuan Budget Invoice — alokasi / koreksi langkah Struktur disetujui Finance dulu, baru invoice bisa diselesaikan.
@@ -1573,6 +1574,7 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
         Route::get('/', [$c, 'index'])->name('index');
         Route::get('/{approval}', [$c, 'show'])->whereNumber('approval')->name('show');
         Route::post('/{approval}/act', [$c, 'act'])->whereNumber('approval')->name('act');
+        Route::post('/{approval}/revisi-budget', [$c, 'revisiBudget'])->whereNumber('approval')->name('revisi-budget'); // Finance: ubah alokasi / koreksi turunan invoice
         Route::get('/{approval}/cetak', [$c, 'cetak'])->whereNumber('approval')->name('cetak'); // lembar Memo Urgent
         Route::post('/pengingat-memo/tutup', [$c, 'tutupPengingat'])->name('pengingat.tutup'); // pop-up login
     });

@@ -5,7 +5,7 @@ declare(strict_types=1);
 /*
  * Uji System › Approval Chain (per user) — jalankan: php tests/Manual/uji-approval-chain.php
  *
- *  1. Memo Urgent → chain MI-URGENT (4 level, tanpa MW / BA); Memo Reguler → MI-REGULER (5 level).
+ *  1. Memo Urgent → chain MI-URGENT (3 level, tanpa Finance & MW / BA); Memo Reguler → MI-REGULER (5 level).
  *  2. Level per USER: hanya user yang ditunjuk yang bisa menyetujui (peran sama tidak cukup).
  *  3. Snapshot: mengubah / menambah / menghapus level hanya berlaku untuk pengajuan berikutnya.
  *  4. Layar: tambah, edit, hapus level → level dinomori ulang tanpa celah, terakhir = final.
@@ -82,9 +82,9 @@ try {
     $sebagai($pengaju);
     $urgent = $muat($ajukan('urgent')->approval_id);
     $reguler = $muat($ajukan('reguler')->approval_id);
-    $cek('Memo Urgent → MI-URGENT, 4 level tanpa MW / BA', (int) $urgent->approval_chain_id === (int) $chains['MI-URGENT'] && $urgent->steps->count() === 4, $label2($urgent));
+    $cek('Memo Urgent → MI-URGENT, 3 level tanpa Finance & MW / BA', (int) $urgent->approval_chain_id === (int) $chains['MI-URGENT'] && $urgent->steps->count() === 3, $label2($urgent));
     $cek('Memo Reguler → MI-REGULER, 5 level', (int) $reguler->approval_chain_id === (int) $chains['MI-REGULER'] && $reguler->steps->count() === 5);
-    $cek('tracker urgent: Dept. Head → … → Direktur', $label2($urgent) === 'Dept. Head → Accounting → Finance → GM → Direktur', $label2($urgent));
+    $cek('tracker urgent: Dept. Head → … → Direktur', $label2($urgent) === 'Dept. Head → Accounting → GM → Direktur', $label2($urgent));
     $cek('tracker reguler diakhiri MW / BA', str_ends_with($label2($reguler), 'Direktur → MW / BA'), $label2($reguler));
     $cek('snapshot tersimpan di approval_steps', $urgent->steps->every(fn ($s) => $s->approver_type === 'user' && $s->label));
 
@@ -99,7 +99,7 @@ try {
         $ditolak = $e->errorCode() === 'APPROVAL_FORBIDDEN';
     }
     $cek('Accounting lain tidak bisa menyetujui', $ditolak);
-    foreach (['Accounting', 'Finance', 'GM', 'Direktur'] as $r) {
+    foreach (['Accounting', 'GM', 'Direktur'] as $r) {
         $sebagai($u[$r]);
         $act->execute($muat($urgent->id), 'approve');
     }

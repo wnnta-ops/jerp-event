@@ -25,7 +25,7 @@ final class BudgetCorrectionService
      * @param  list<array{budget_id:int, account_id:int, cost_center_id:?int, keterangan:?string, nilai:float|int|string}>  $koreksi
      * @return list<BsBudgetCorrection>
      */
-    public function ajukanDariInvoice(BsApInvoice $invoice, array $koreksi, int $userId): array
+    public function ajukanDariInvoice(BsApInvoice $invoice, array $koreksi, int $userId, bool $approvalSendiri = true): array
     {
         $tgl = Carbon::parse($invoice->invoice_date);
         $bulan = (int) $tgl->month;
@@ -47,12 +47,15 @@ final class BudgetCorrectionService
                 'status' => 'baru', 'note' => mb_substr($note, 0, 255), 'created_by' => $userId,
                 'source_type' => BsBudgetCorrection::SOURCE_INVOICE, 'source_id' => $invoice->id,
             ]);
-            $approval = $this->submit->execute(BsBudgetCorrection::DOCUMENT_TYPE, $c, [
-                'doc_no' => $c->doc_no,
-                'invoice_number' => $invoice->invoice_number,
-                'nilai' => $nilai,
-            ]);
-            $c->forceFill(['approval_id' => $approval->id])->save();
+            // false = turunan approval invoice (BudgetIkutInvoice) — diputuskan bersama invoicenya.
+            if ($approvalSendiri) {
+                $approval = $this->submit->execute(BsBudgetCorrection::DOCUMENT_TYPE, $c, [
+                    'doc_no' => $c->doc_no,
+                    'invoice_number' => $invoice->invoice_number,
+                    'nilai' => $nilai,
+                ]);
+                $c->forceFill(['approval_id' => $approval->id])->save();
+            }
             $hasil[] = $c;
         }
 
@@ -66,7 +69,7 @@ final class BudgetCorrectionService
      *
      * @param  array<int,float>  $tambahan
      */
-    public function ajukanManual(BsBudget $budget, array $tambahan, string $tanggal, ?string $note, int $userId, ?array $sumber = null, ?int $costCenterId = null): BsBudgetCorrection
+    public function ajukanManual(BsBudget $budget, array $tambahan, string $tanggal, ?string $note, int $userId, ?array $sumber = null, ?int $costCenterId = null, bool $approvalSendiri = true): BsBudgetCorrection
     {
         $tambahan = array_filter(array_map(fn ($v) => round((float) $v, 2), $tambahan), fn ($v) => $v != 0.0);
         ksort($tambahan);
@@ -83,8 +86,11 @@ final class BudgetCorrectionService
             'status' => 'baru', 'note' => $note !== null ? mb_substr($note, 0, 255) : null, 'created_by' => $userId,
             'source_type' => $sumber['type'] ?? null, 'source_id' => $sumber['id'] ?? null,
         ]);
-        $approval = $this->submit->execute(BsBudgetCorrection::DOCUMENT_TYPE, $c, ['doc_no' => $c->doc_no, 'nilai' => $total]);
-        $c->forceFill(['approval_id' => $approval->id])->save();
+        // false = turunan approval invoice / pengajuan budget invoice (BudgetIkutInvoice).
+        if ($approvalSendiri) {
+            $approval = $this->submit->execute(BsBudgetCorrection::DOCUMENT_TYPE, $c, ['doc_no' => $c->doc_no, 'nilai' => $total]);
+            $c->forceFill(['approval_id' => $approval->id])->save();
+        }
 
         return $c;
     }

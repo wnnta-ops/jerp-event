@@ -25,12 +25,12 @@ use Illuminate\Support\Facades\DB;
  * dan ditutup dengan Alokasi (pindah dari budget lain) / Koreksi Budget (tambah anggaran).
  *
  *   1. ajukan()  — di langkah Struktur. Isian wizard disimpan sebagai draft di pengajuan, nomor
- *                  invoice dipesan (registrasi baru), lalu tiap alokasi & koreksi masuk Approval
- *                  Inbox — satu tahap Finance (chain AL-DEFAULT / KB-DEFAULT). Belum ada invoice
- *                  maupun jurnal.
- *   2. Finance memutuskan di Approval Alokasi / Koreksi Budget atau Approval Inbox. Tiap keputusan
- *      → sinkron(): semua disetujui → 'disetujui' (budget barunya sudah berlaku); satu ditolak →
- *      'ditolak' (sisanya dibatalkan) dan user kembali ke langkah Struktur. Pengaju dapat notifikasi.
+ *                  invoice dipesan (registrasi baru), lalu pengajuan masuk Approval Inbox sebagai
+ *                  SATU approval yang mengikuti chain Invoice Hutang; alokasi & koreksinya turunan
+ *                  approval itu (BudgetIkutInvoice). Belum ada invoice maupun jurnal.
+ *   2. Approver memutuskan di Approval Inbox (Finance boleh merevisi turunannya → diulang dari
+ *      tahap 1). Diputuskan penuh → turunan ikut → sinkron(): 'disetujui' (budget barunya sudah
+ *      berlaku) atau 'ditolak' dan user kembali ke langkah Struktur. Pengaju dapat notifikasi.
  *   3. Disetujui → user lanjut ke Selesai; Simpan & Buat Jurnal memakai pengajuan ini (pakai()).
  *
  * Penjaga budget tetap memeriksa saat invoice disimpan — pengajuan hanya menambah ruangnya.
@@ -102,17 +102,20 @@ final class PengajuanBudgetInvoice
             $bulan = (int) Carbon::parse($tanggal)->month;
             $sumber = ['type' => BsApBudgetRequest::SOURCE, 'id' => $req->id];
             $label = $req->invoice_number ?? $edit?->invoice_number;
+            // Turunan tanpa approval sendiri — diputuskan bersama approval pengajuan (chain Invoice Hutang).
             foreach ($alokasi as $a) {
-                $al = $this->alokasi->pindah((int) $a['dari_budget_id'], (int) $a['budget_id'], [$bulan => (float) $a['nilai']], $tanggal,
+                $this->alokasi->pindah((int) $a['dari_budget_id'], (int) $a['budget_id'], [$bulan => (float) $a['nilai']], $tanggal,
                     mb_substr(trim(($a['keterangan'] ?? '').' · '.$label, ' ·'), 0, 200), $user->id, $sumber, $edit?->journal_id, langsung: false);
-                $approval = $this->submit->execute(BsBudgetAllocation::DOCUMENT_TYPE, $al, ['doc_no' => $al->doc_no, 'invoice_number' => $label, 'nilai' => (float) $a['nilai']]);
-                $al->forceFill(['approval_id' => $approval->id])->save();
             }
             foreach ($koreksi as $k) {
                 $budget = BsBudget::query()->lockForUpdate()->findOrFail((int) $k['budget_id']);
                 $this->koreksi->ajukanManual($budget, [$bulan => (float) $k['nilai']], $tanggal,
-                    trim(($k['keterangan'] ?? '').' · '.$label, ' ·'), $user->id, $sumber, $k['cost_center_id'] ?? null);
+                    trim(($k['keterangan'] ?? '').' · '.$label, ' ·'), $user->id, $sumber, $k['cost_center_id'] ?? null, approvalSendiri: false);
             }
+            $approval = $this->submit->execute(BsApBudgetRequest::DOCUMENT_TYPE, $req, [
+                'invoice_number' => $label, 'total' => (float) ($data['total'] ?? $data['dpp'] ?? 0),
+            ], [], BsApInvoice::APPROVAL_DOCUMENT_TYPE);
+            $req->forceFill(['approval_id' => $approval->id])->save();
 
             return $req->refresh();
         });
@@ -131,8 +134,9 @@ final class PengajuanBudgetInvoice
         $ditolak = $item->first(fn ($m) => $m->status === 'rejected');
         if ($ditolak) {
             $this->batalkanItem($item);
-            $alasan = $ditolak->approval_id
-                ? \App\Domain\Approval\Models\ApprovalStep::query()->where('approval_id', $ditolak->approval_id)->where('status', 'rejected')->value('notes')
+            // Alasan penolakan: dari approval pengajuan (turunan) atau approval item itu sendiri (pengajuan lama).
+            $alasan = ($aid = $ditolak->approval_id ?: $req->approval_id)
+                ? \App\Domain\Approval\Models\ApprovalStep::query()->where('approval_id', $aid)->where('status', 'rejected')->value('notes')
                 : null;
             $req->update(['status' => BsApBudgetRequest::DITOLAK, 'decided_at' => now(), 'seen_at' => null,
                 'catatan' => mb_substr($ditolak->doc_no.' ditolak'.($alasan ? ': '.$alasan : ''), 0, 255)]);
@@ -142,7 +146,7 @@ final class PengajuanBudgetInvoice
         }
         if ($item->isNotEmpty() && $item->every(fn ($m) => $m->status === 'approved')) {
             $req->update(['status' => BsApBudgetRequest::DISETUJUI, 'decided_at' => now(), 'seen_at' => null]);
-            $this->kabari($req, 'Pengajuan budget disetujui', 'Budget untuk '.$this->label($req).' sudah disetujui Finance — lanjutkan ke Selesai & simpan invoicenya.');
+            $this->kabari($req, 'Pengajuan budget disetujui', 'Budget untuk '.$this->label($req).' sudah disetujui — lanjutkan ke Selesai & simpan invoicenya.');
         }
     }
 
@@ -154,6 +158,7 @@ final class PengajuanBudgetInvoice
         }
         DB::transaction(function () use ($req): void {
             $this->batalkanItem($this->itemModel($req));
+            $this->tutupApproval($req);
             $req->update(['status' => BsApBudgetRequest::BATAL]);
         });
     }
@@ -171,7 +176,7 @@ final class PengajuanBudgetInvoice
         }
         if ($req->status !== BsApBudgetRequest::DISETUJUI) {
             throw new BusinessRuleException($req->status === BsApBudgetRequest::MENUNGGU
-                ? 'Pengajuan budget masih menunggu persetujuan Finance.'
+                ? 'Pengajuan budget masih menunggu approval.'
                 : 'Pengajuan budget '.($req->status === BsApBudgetRequest::DITOLAK ? 'ditolak — ajukan ulang dari langkah Struktur.' : 'sudah tidak berlaku.'), errorCode: 'PENGAJUAN_BELUM');
         }
 
@@ -195,12 +200,13 @@ final class PengajuanBudgetInvoice
             'doc_no' => $m->doc_no,
             'nilai' => $m instanceof BsBudgetAllocation ? (float) $m->amount : round(array_sum($m->tambahanBulan()), 2),
             'status' => $m->status,
-            'approval_url' => $m->approval_id ? route('approval-inbox.show', $m->approval_id) : null,
+            'approval_url' => ($aid = $m->approval_id ?: $req->approval_id) ? route('approval-inbox.show', $aid) : null,
         ])->values();
 
         return [
             'id' => $req->id, 'status' => $req->status, 'catatan' => $req->catatan, 'invoice_number' => $req->invoice_number,
             'diajukan' => $req->updated_at?->toIso8601String(), 'diputuskan' => $req->decided_at?->toIso8601String(), 'item' => $item,
+            'approval_url' => $req->approval_id ? route('approval-inbox.show', $req->approval_id) : null,
         ];
     }
 
@@ -224,6 +230,15 @@ final class PengajuanBudgetInvoice
                     ->update(['status' => 'cancelled', 'completed_at' => now()]);
             }
             $m->forceFill(['status' => 'batal'])->save();
+        }
+    }
+
+    /** Approval pengajuan yang masih berjalan ditutup (dibatalkan). */
+    private function tutupApproval(BsApBudgetRequest $req): void
+    {
+        if ($req->approval_id) {
+            Approval::query()->whereKey($req->approval_id)->whereIn('status', ['pending', 'in_review'])
+                ->update(['status' => 'cancelled', 'completed_at' => now()]);
         }
     }
 

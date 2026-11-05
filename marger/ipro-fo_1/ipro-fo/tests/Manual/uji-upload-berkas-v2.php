@@ -171,6 +171,10 @@ try {
     $cek('sisa 7,1jt', abs($b->fresh()->sisa() - 7100000) < 0.01, (string) $b->fresh()->sisa());
     $cek('invoice melebihi sisa ditolak', $kode(fn () => $svc->ajukanInvoice($b->fresh(), $invoice(8000000))) === 'BERKAS_OVER');
     $cek('tidak bisa batal setelah ada invoice', $kode(fn () => $svc->cancel($b->fresh(), $staf, 'x')) === 'BERKAS_NO_CANCEL');
+    // Invoice Memo Urgent yang Pengajuan Budget-nya sudah disetujui penuh: tertaut ke berkas tanpa approval kedua.
+    $tanpa = $invoice(1000000);
+    $cek('pengajuan budget sudah disetujui → tanpa approval kedua, boleh dibayar', $svc->ajukanInvoice($b->fresh(), $tanpa, ajukanApproval: false) === null
+        && $tanpa->fresh()->approvalPembayaran() === null && $kode(fn () => $tanpa->fresh()->assertBolehDibayar()) === null && abs($b->fresh()->sisa() - 6100000) < 0.01);
     $cek('Accounting dapat notifikasi approval invoice', $notif($acc, 'approval.menunggu') >= 1);
 
     echo "\n=== 7. Pengaju tidak menyetujui sendiri ===\n";

@@ -31,6 +31,7 @@ class EventServiceProvider extends ServiceProvider
             \App\Domain\BusinessSupport\Listeners\SyncApBerkasStatus::class,
             \App\Domain\BusinessSupport\Listeners\SyncBudgetCorrectionStatus::class,
             \App\Domain\BusinessSupport\Listeners\SyncPengajuanBudgetInvoice::class,
+            \App\Domain\BusinessSupport\Listeners\SyncBudgetIkutInvoice::class,
             \App\Domain\ApprovalInbox\Listeners\NotifyApprovalProgress::class,
         ],
         \App\Domain\Approval\Events\ApprovalRejected::class => [
@@ -38,6 +39,7 @@ class EventServiceProvider extends ServiceProvider
             \App\Domain\BusinessSupport\Listeners\SyncApBerkasStatus::class,
             \App\Domain\BusinessSupport\Listeners\SyncBudgetCorrectionStatus::class,
             \App\Domain\BusinessSupport\Listeners\SyncPengajuanBudgetInvoice::class,
+            \App\Domain\BusinessSupport\Listeners\SyncBudgetIkutInvoice::class,
             \App\Domain\ApprovalInbox\Listeners\NotifyApprovalProgress::class,
         ],
         \App\Domain\Approval\Events\ApprovalSubmitted::class => [

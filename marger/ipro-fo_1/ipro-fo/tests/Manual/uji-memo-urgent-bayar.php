@@ -122,7 +122,7 @@ try {
     $memo = app(SubmitMemoInternal::class)->execute(['memo_date' => $tgl, 'department' => 'Uji', 'supplier_id' => $supplier,
         'subject' => 'Memo bayar uji', 'body' => 'Isi', 'amount' => 1_000_000]);
     $cek('memo belum sampai Direktur → belum bisa dibayar', ! $svc->bisaDibayar()->contains('id', $memo->id));
-    $setujui($memo->approval_id, ['Accounting', 'Finance', 'GM', 'Direktur']);
+    $setujui($memo->approval_id, ['Accounting', 'GM', 'Direktur']);   // Memo Urgent tanpa tahap Finance
     $cek('Direktur menyetujui → bisa dibayar', $svc->bisaDibayar()->contains('id', $memo->id));
     $tarik = app(App\Domain\ApprovalInbox\Services\MemoUntukInvoice::class);
     $cek('belum dibayar → BELUM bisa ditarik ke invoice hutang', ! $tarik->boleh($memo->id));

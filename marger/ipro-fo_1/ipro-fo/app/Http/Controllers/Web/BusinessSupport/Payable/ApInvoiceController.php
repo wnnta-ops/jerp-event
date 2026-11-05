@@ -444,7 +444,7 @@ class ApInvoiceController extends Controller
             // Detil Tagihan › Upload File / Generate Link.
             'linkBerkas' => $link ? ['id' => $link->id, 'url' => $link->url(), 'invoice_number' => $link->invoice_number, 'status' => $link->status,
                 'filled_at' => $link->filled_at?->toIso8601String(), 'berkas_upload_id' => $link->berkas_upload_id,
-                'riwayat' => array_values(array_reverse($link->riwayat ?? []))] : null,
+                'riwayat' => array_reverse($link->riwayatUnggahan()), 'menerima' => $link->menerimaUnggahan()] : null,
             // Drop box Upload File: jenis tetap Invoice, Kuitansi, Faktur Pajak, Lainnya (sama dengan halaman supplier).
             'jenisBerkas' => $wajibBerkas ? \App\Domain\BusinessSupport\Models\BsApBerkas::jenisTetap() : [],
             // Penerima Reimburse/Deposit tercatat sebagai supplier berkategori khusus
@@ -914,6 +914,16 @@ class ApInvoiceController extends Controller
         // PENGECUALIAN: akun bertanda cost_center_optional (lihat CoaTanpaCostCenterSeeder) —
         // mis. Utang Usaha Supplier — memang boleh tanpa cost center. Aturannya sama dengan
         // Jurnal Memorial (JournalController), bukan aturan kedua yang berdiri sendiri.
+        // Detil Tagihan (bila diisi) wajib berjumlah sama dengan DPP — layar menahan langkahnya,
+        // ini untuk kiriman yang lolos dari layar.
+        if (! empty($v['lines'])) {
+            $dppNet = \App\Domain\BusinessSupport\Support\PajakHutang::hitung($v)['dpp'];
+            $jumlahBaris = round(collect($v['lines'])->sum(fn ($l) => (float) ($l['amount'] ?? 0)), 2);
+            if (abs($jumlahBaris - $dppNet) >= 1) {
+                return back()->withInput()->with('error', 'Total Detil Tagihan (Rp '.number_format($jumlahBaris, 0, ',', '.')
+                    .') harus sama dengan DPP (Rp '.number_format($dppNet, 0, ',', '.').').');
+            }
+        }
         if ($kurang = $this->akunKurangCostCenter($v['journal_lines'] ?? [])) {
             return back()->withInput()->with('error',
                 'Cost center wajib diisi untuk akun: '.implode(', ', $kurang).'.');
@@ -1010,21 +1020,28 @@ class ApInvoiceController extends Controller
                 $budgetGuard->assertWithinBudget($v['journal_lines'] ?? [], null, $v['invoice_date'], $lama?->journal_id, $tambahan);
                 $inv = $action->execute($v + ['jenis' => $jenis], $request->user()->id, $lama);
                 if ($tambahan !== []) {
-                    // Invoice biasa: alokasi / koreksi diajukan ke Finance (Approval Inbox) tanpa menahan invoice.
+                    // Invoice biasa: alokasi / koreksi tanpa menahan invoice. Invoice dari berkas (punya
+                    // approval Invoice Hutang) → turunan approval invoice itu (BudgetIkutInvoice), satu
+                    // keputusan untuk semuanya. Tanpa approval invoice → approval sendiri (Finance).
+                    $ikutInvoice = $berkas !== null;
                     $bulan = (int) \Illuminate\Support\Carbon::parse($v['invoice_date'])->month;
                     foreach ($alokasi as $a) {
                         $al = app(\App\Domain\BusinessSupport\Services\BudgetAllocationService::class)->pindah(
                             (int) $a['dari_budget_id'], (int) $a['budget_id'], [$bulan => (float) $a['nilai']], $v['invoice_date'],
                             mb_substr(trim(($a['keterangan'] ?? '').' · '.$inv->invoice_number, ' ·'), 0, 200), $request->user()->id,
                             ['type' => \App\Domain\BusinessSupport\Models\BsBudgetAllocation::SOURCE_INVOICE, 'id' => $inv->id], $lama?->journal_id, langsung: false);
-                        $ap = app(\App\Domain\Approval\Actions\SubmitForApproval::class)->execute(\App\Domain\BusinessSupport\Models\BsBudgetAllocation::DOCUMENT_TYPE, $al,
-                            ['doc_no' => $al->doc_no, 'invoice_number' => $inv->invoice_number, 'nilai' => (float) $a['nilai']]);
-                        $al->forceFill(['approval_id' => $ap->id])->save();
+                        if (! $ikutInvoice) {
+                            $ap = app(\App\Domain\Approval\Actions\SubmitForApproval::class)->execute(\App\Domain\BusinessSupport\Models\BsBudgetAllocation::DOCUMENT_TYPE, $al,
+                                ['doc_no' => $al->doc_no, 'invoice_number' => $inv->invoice_number, 'nilai' => (float) $a['nilai']]);
+                            $al->forceFill(['approval_id' => $ap->id])->save();
+                        }
                         $diajukan['alokasi']++;
                     }
                     if ($koreksi !== []) {
-                        $diajukan['koreksi'] = count(app(\App\Domain\BusinessSupport\Services\BudgetCorrectionService::class)->ajukanDariInvoice($inv, $koreksi, $request->user()->id));
+                        $diajukan['koreksi'] = count(app(\App\Domain\BusinessSupport\Services\BudgetCorrectionService::class)
+                            ->ajukanDariInvoice($inv, $koreksi, $request->user()->id, approvalSendiri: ! $ikutInvoice));
                     }
+                    $diajukan['ikut'] = $ikutInvoice;
                 }
                 if ($linkBerkas) {
                     app(\App\Domain\BusinessSupport\Services\LinkBerkasSupplier::class)->pakai($linkBerkas, $inv);
@@ -1039,7 +1056,8 @@ class ApInvoiceController extends Controller
                 // di invoice (no. PO, master barang) dibangkitkan sistem — lihat actionnya.
                 $po = app(\App\Domain\BusinessSupport\Actions\GeneratePoFromApInvoice::class)->execute($inv, $request->user()->id);
                 if ($berkas !== null) {
-                    app(\App\Domain\BusinessSupport\Services\ApBerkasService::class)->ajukanInvoice($berkas, $inv);
+                    // Pengajuan Budget (Memo Urgent) sudah disetujui penuh lewat chain Invoice Hutang → tidak diulang.
+                    app(\App\Domain\BusinessSupport\Services\ApBerkasService::class)->ajukanInvoice($berkas, $inv, ajukanApproval: $pengajuan === null);
                 }
 
                 return [$inv, $po];
@@ -1054,7 +1072,9 @@ class ApInvoiceController extends Controller
 
         if ($diajukan['koreksi'] || $diajukan['alokasi']) {
             session()->flash('info', trim(($diajukan['alokasi'] ? $diajukan['alokasi'].' alokasi' : '').($diajukan['alokasi'] && $diajukan['koreksi'] ? ' & ' : '')
-                .($diajukan['koreksi'] ? $diajukan['koreksi'].' koreksi' : '')).' budget diajukan ke Finance (Approval Inbox) — invoice tetap berjalan.');
+                .($diajukan['koreksi'] ? $diajukan['koreksi'].' koreksi' : '')).' budget '.(! empty($diajukan['ikut'])
+                    ? 'ikut approval invoice ini (Approval Inbox) — diputuskan bersama invoicenya.'
+                    : 'diajukan ke Finance (Approval Inbox) — invoice tetap berjalan.'));
         }
 
         if ($lama === null) {
