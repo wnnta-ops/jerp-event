@@ -156,4 +156,31 @@ class BoInboxBridgeTest extends TestCase
         $this->getJson('/api/mobile/dashboard?date_from=kemarin')->assertStatus(422);
         Http::assertNothingSent();
     }
+
+    public function test_dokumen_diteruskan_apa_adanya(): void
+    {
+        $pdf = "%PDF-1.4\n".random_bytes(64);
+        Http::fake(['bo.test/*' => Http::response($pdf, 200, [
+            'Content-Type' => 'application/pdf',
+            'Content-Disposition' => 'inline; filename="faktur-01.pdf"',
+        ])]);
+        $this->login();
+
+        $res = $this->get('/api/mobile/inbox/90/dokumen/file-12')->assertOk();
+
+        $this->assertSame($pdf, $res->getContent());
+        $this->assertSame('application/pdf', $res->headers->get('Content-Type'));
+        $this->assertStringContainsString('faktur-01.pdf', (string) $res->headers->get('Content-Disposition'));
+        Http::assertSent(fn (HttpRequest $r) => str_ends_with($r->url(), '/approval-inbox/90/dokumen/file-12') && $this->sahDiBo($r));
+    }
+
+    public function test_dokumen_ditolak_bo_diteruskan_dan_kunci_aneh_404(): void
+    {
+        Http::fake(['bo.test/*' => Http::response(['message' => 'Anda tidak berhak melihat dokumen ini.'], 403)]);
+        $this->login();
+
+        $this->getJson('/api/mobile/inbox/90/dokumen/memo')->assertForbidden()->assertJsonPath('message', 'Anda tidak berhak melihat dokumen ini.');
+        $this->getJson('/api/mobile/inbox/90/dokumen/../../etc')->assertNotFound();
+        $this->getJson('/api/mobile/inbox/90/dokumen/rahasia')->assertNotFound();
+    }
 }

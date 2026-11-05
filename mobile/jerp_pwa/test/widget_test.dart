@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -11,6 +12,8 @@ import 'package:jerp_pwa/auth/session.dart';
 import 'package:jerp_pwa/main.dart';
 import 'package:jerp_pwa/kunci/biometrik.dart';
 import 'package:jerp_pwa/kunci/kunci_store.dart';
+import 'package:jerp_pwa/dokumen/dokumen_platform.dart';
+import 'package:jerp_pwa/dokumen/dokumen_popup.dart';
 import 'package:jerp_pwa/prefs.dart';
 import 'package:jerp_pwa/push/push_browser.dart';
 import 'package:intl/date_symbol_data_local.dart';
@@ -121,7 +124,16 @@ MockClient serverPalsu({List<String>? log, List<String>? aksi}) => MockClient((r
           return json({'data': riwayat});
         case '/api/mobile/inbox/20':
           return json({'data': {...inbox.first, 'fields': [{'label': 'Supplier', 'value': 'PT Beton'}], 'body': 'Isi memo', 'jumlah_file': 0,
-            'stages': [{'label': 'Accounting', 'state': 'done', 'by': 'Andi'}, {'label': 'GM', 'state': 'current'}], 'can_act': true}});
+            'stages': [{'label': 'Accounting', 'state': 'done', 'by': 'Andi'}, {'label': 'GM', 'state': 'current'}], 'can_act': true,
+            'dokumen': [
+              {'kunci': 'file-1', 'nama': 'faktur.pdf', 'jenis': 'Faktur', 'mime': 'application/pdf', 'ukuran': 26285},
+              {'kunci': 'memo', 'nama': 'Lembar MI/2611/00001', 'jenis': 'Lembar memo', 'mime': 'text/html', 'ukuran': null},
+            ]}});
+        case '/api/mobile/inbox/20/dokumen/file-1':
+          return http.Response.bytes(utf8.encode('%PDF-1.4 uji'), 200,
+              headers: {'content-type': 'application/pdf', 'content-disposition': 'inline; filename="faktur.pdf"'});
+        case '/api/mobile/inbox/20/dokumen/memo':
+          return http.Response.bytes(utf8.encode('<html><body>Memo</body></html>'), 200, headers: {'content-type': 'text/html; charset=UTF-8'});
         case '/api/mobile/inbox/20/act':
           final b = jsonDecode(req.body) as Map<String, dynamic>;
           aksi?.add('${b['action']}:${b['notes'] ?? ''}');
@@ -170,6 +182,14 @@ Future<Session> pasang(
 }
 
 late KunciStore kunciTerakhir;
+
+class DokumenPalsu implements DokumenPlatform {
+  final unduhan = <String>[];
+  @override
+  Widget html(String isi, String kunci) => Text('HTML $kunci: $isi');
+  @override
+  Future<void> unduh(Uint8List isi, String nama, String mime) async => unduhan.add('$nama $mime ${isi.length}');
+}
 Map<String, dynamic>? pushServer;
 
 class PushPalsu implements PushBrowser {
@@ -528,5 +548,31 @@ void main() {
     await tester.tap(find.widgetWithText(SwitchListTile, 'Notifikasi di perangkat ini'));
     await tester.pumpAndSettle();
     expect(find.textContaining('Izin notifikasi ditolak'), findsOneWidget);
+  });
+
+  testWidgets('Detail: preview PDF & lembar memo dalam popup, lalu unduh', (tester) async {
+    final dok = DokumenPalsu();
+    DokumenPlatform.instance = dok;
+    penampilPdf = (isi, kunci) => Text('PDF ${isi.length} byte');
+    await pasang(tester, simpanan: {'jerp_token': '1|abc'});
+    await tester.tap(find.text('Approval'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Perbaikan pompa'));
+    await tester.pumpAndSettle();
+    expect(find.text('faktur.pdf'), findsOneWidget);
+    expect(find.text('Faktur · 26 KB'), findsOneWidget);
+
+    await tester.tap(find.text('faktur.pdf'));
+    await tester.pumpAndSettle();
+    expect(find.text('PDF 12 byte'), findsOneWidget);
+    await tester.tap(find.byTooltip('Unduh'));
+    await tester.pumpAndSettle();
+    expect(dok.unduhan, ['faktur.pdf application/pdf 12']);
+    await tester.tap(find.byTooltip('Tutup'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Lembar MI/2611/00001'));
+    await tester.pumpAndSettle();
+    expect(find.text('HTML memo: <html><body>Memo</body></html>'), findsOneWidget);
   });
 }

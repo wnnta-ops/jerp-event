@@ -47,6 +47,8 @@ Route::prefix('mobile')->middleware('throttle:api')->group(function () {
         Route::get('/inbox/profil', [BoInboxController::class, 'profil']);
         Route::get('/inbox/{id}', [BoInboxController::class, 'show'])->whereNumber('id');
         Route::post('/inbox/{id}/act', [BoInboxController::class, 'act'])->whereNumber('id');
+        Route::get('/inbox/{id}/dokumen/{kunci}', [BoInboxController::class, 'dokumen'])
+            ->whereNumber('id')->where('kunci', 'memo|lampiran|file-[0-9]+');
         Route::get('/dashboard', [BoInboxController::class, 'dashboard']);
 
         // Notifikasi push (PWA) — dikirim job pwa:push tiap menit.

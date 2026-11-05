@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../api/api_client.dart';
 import '../config.dart';
+import '../dokumen/dokumen_popup.dart';
 import '../inbox/inbox_models.dart';
 import '../inbox/inbox_store.dart';
 import '../inbox/widgets.dart';
@@ -128,9 +129,24 @@ class _DetailPageState extends State<DetailPage> {
             const SizedBox(height: 4),
             Text(d.body!),
           ],
-          if (d.jumlahFile > 0) ...[
-            const SizedBox(height: 12),
-            Text('${d.jumlahFile} lampiran — buka di J-ERP web untuk melihat file.', style: redup),
+          if (d.dokumen.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            Text('Dokumen', style: tema.textTheme.titleSmall),
+            const SizedBox(height: 4),
+            for (final dok in d.dokumen)
+              Card(
+                margin: const EdgeInsets.only(bottom: 6),
+                child: ListTile(
+                  leading: Icon(
+                    dok.pdf ? Icons.picture_as_pdf_outlined : (dok.gambar ? Icons.image_outlined : Icons.description_outlined),
+                    color: oranye,
+                  ),
+                  title: Text(dok.nama, maxLines: 2, overflow: TextOverflow.ellipsis),
+                  subtitle: Text([dok.jenis, _ukuran(dok.ukuran)].whereType<String>().join(' · ')),
+                  trailing: const Icon(Icons.visibility_outlined),
+                  onTap: () => bukaDokumen(context, widget.store.api, i.id, dok),
+                ),
+              ),
           ],
           const Divider(height: 32),
           Text('Alur persetujuan (${i.done}/${i.total})', style: tema.textTheme.titleSmall),
@@ -167,6 +183,12 @@ class _DetailPageState extends State<DetailPage> {
           ),
         ),
     ]);
+  }
+
+  String? _ukuran(int? b) {
+    if (b == null) return null;
+    if (b >= 1024 * 1024) return '${(b / 1024 / 1024).toStringAsFixed(1).replaceAll('.', ',')} MB';
+    return '${(b / 1024).ceil()} KB';
   }
 
   Widget _tahap(BuildContext context, Tahap s) {

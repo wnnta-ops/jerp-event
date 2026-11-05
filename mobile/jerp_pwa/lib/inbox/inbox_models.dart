@@ -61,6 +61,25 @@ class Tahap {
   final String? notes;
 }
 
+/// Dokumen yang bisa di-preview: file berkas (file-ID), lembar memo, lampiran budget.
+class DokumenItem {
+  DokumenItem.fromJson(Map<String, dynamic> j)
+      : kunci = j['kunci'] as String,
+        nama = (j['nama'] ?? 'Dokumen') as String,
+        jenis = j['jenis'] as String?,
+        mime = (j['mime'] ?? '') as String,
+        ukuran = (j['ukuran'] as num?)?.toInt();
+
+  final String kunci;
+  final String nama;
+  final String? jenis;
+  final String mime;
+  final int? ukuran;
+
+  bool get pdf => mime.contains('pdf');
+  bool get gambar => mime.startsWith('image/');
+}
+
 class InboxDetail {
   InboxDetail.fromJson(Map<String, dynamic> j)
       : item = InboxItem.fromJson(j),
@@ -70,6 +89,7 @@ class InboxDetail {
         ],
         body = j['body'] as String?,
         jumlahFile = (j['jumlah_file'] ?? 0) as int,
+        dokumen = [for (final d in (j['dokumen'] as List? ?? const [])) DokumenItem.fromJson(d as Map<String, dynamic>)],
         stages = [for (final s in (j['stages'] as List? ?? const [])) Tahap.fromJson(s as Map<String, dynamic>)],
         canAct = j['can_act'] == true;
 
@@ -77,6 +97,7 @@ class InboxDetail {
   final List<({String label, String? value})> fields;
   final String? body;
   final int jumlahFile;
+  final List<DokumenItem> dokumen;
   final List<Tahap> stages;
   final bool canAct;
 }

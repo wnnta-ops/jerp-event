@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\Mobile;
 use App\Modules\FO\Approval\Services\BoInboxBridge;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\Response;
 
 /**
  * BO Approval Inbox & Dashboard untuk app approver (PWA) — FO meneruskan ke BO lewat BoInboxBridge
@@ -33,6 +34,22 @@ class BoInboxController
     public function show(Request $request, int $id): JsonResponse
     {
         return $this->balas($this->bridge->get($this->email($request), "/{$id}"));
+    }
+
+    /** Isi dokumen untuk preview / unduh di PWA — byte & Content-Type dari BO apa adanya. */
+    public function dokumen(Request $request, int $id, string $kunci): Response
+    {
+        $res = $this->bridge->dokumen($this->email($request), $id, $kunci);
+        $nama = $res['nama'] ?? 'dokumen';
+
+        return response($res['isi'], $res['status'], array_filter([
+            'Content-Type' => $res['tipe'],
+            'Content-Disposition' => $res['status'] === 200 ? 'inline; filename="'.addcslashes($nama, '"\\').'"' : null,
+            // Nama file untuk tombol Unduh di PWA — perlu di-expose saat PWA beda origin (lokal :8083).
+            'Access-Control-Expose-Headers' => 'Content-Disposition',
+            'Cache-Control' => 'private, no-store',
+            'X-Content-Type-Options' => 'nosniff',
+        ]));
     }
 
     public function act(Request $request, int $id): JsonResponse

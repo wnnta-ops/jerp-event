@@ -58,10 +58,15 @@ $panggil = function (string $method, string $path, string $email, array $body = 
     foreach ($h as $k => $v) {
         $server['HTTP_'.strtoupper(str_replace('-', '_', $k))] = $v;
     }
+    // Skrip ini mengirim puluhan permintaan per user — kosongkan hitungan batas per user
+    // (VerifyFoBridge) supaya menjalankan ulang dalam semenit tidak terkena 429.
+    if ($u = User::where('email', $email)->first()) {
+        Illuminate\Support\Facades\RateLimiter::clear(VerifyFoBridge::kunciBatas((int) $u->id));
+    }
     $res = $kernel->handle(Request::create($path, $method, [], [], [], $server, $isi));
     auth()->forgetGuards();
 
-    return [$res->getStatusCode(), json_decode((string) $res->getContent(), true), $h];
+    return [$res->getStatusCode(), json_decode((string) $res->getContent(), true), $h, (string) $res->getContent(), $res->headers];
 };
 
 $base = '/api/v1/fo-bridge/approval-inbox';
@@ -82,6 +87,31 @@ try {
     $cek('nonce dipakai ulang → 403', $s === 403, "dapat {$s}");
     [$s] = $panggil('GET', $base, 'tidak-ada@contoh.test');
     $cek('user tidak ada di BO → 403', $s === 403, "dapat {$s}");
+
+    // Batas per user (bukan per IP server FO): user penuh → 429, user lain tetap jalan.
+    $gm = User::where('email', 'gm@jerp.test')->first();
+    $fin = User::where('email', 'finance@jerp.test')->first();
+    if ($gm && $fin) {
+        $kernelBatas = function (int $id) {
+            for ($i = 0; $i < VerifyFoBridge::MAKS_PER_MENIT; $i++) {
+                Illuminate\Support\Facades\RateLimiter::hit(VerifyFoBridge::kunciBatas($id), 60);
+            }
+        };
+        $kernelBatas((int) $gm->id);
+        $tanpaReset = function (string $email) use ($kernel, $secret, $base) {
+            $ts = (string) now()->timestamp;
+            $nonce = (string) Str::uuid();
+            $server = ['HTTP_ACCEPT' => 'application/json', 'HTTP_X_BRIDGE_EMAIL' => $email, 'HTTP_X_BRIDGE_TS' => $ts, 'HTTP_X_BRIDGE_NONCE' => $nonce,
+                'HTTP_X_BRIDGE_SIG' => hash_hmac('sha256', VerifyFoBridge::kanonik($ts, $nonce, 'GET', $base, $email, ''), $secret)];
+            $s = $kernel->handle(Request::create($base, 'GET', [], [], [], $server))->getStatusCode();
+            auth()->forgetGuards();
+
+            return $s;
+        };
+        $cek('user melewati batas per menit → 429', $tanpaReset('gm@jerp.test') === 429);
+        $cek('user lain (IP sama) tetap 200', $tanpaReset('finance@jerp.test') === 200);
+        Illuminate\Support\Facades\RateLimiter::clear(VerifyFoBridge::kunciBatas((int) $gm->id));
+    }
 
     echo "Daftar perlu persetujuan\n";
     foreach (['accounting', 'finance', 'gm', 'direktur', 'owner', 'pengaju'] as $nama) {
@@ -184,6 +214,47 @@ try {
         $dapat = collect($j['data'] ?? [])->pluck('id')->sort()->values()->all();
         $cek("{$nama}: pengajuan = mine() 90 hari (".count($harap).')', $s === 200 && $harap === $dapat, json_encode([$s, $harap, $dapat]));
     }
+
+    echo "Dokumen (preview PWA)\n";
+    $admin = User::where('email', '1234@jerp.test')->first();
+    $contoh = [
+        'file' => Approval::where('document_type', 'ap_berkas')->with('approvable')->get()->first(fn ($a) => $a->approvable?->files()->exists()),
+        'memo' => Approval::where('document_type', 'memo_internal')->latest('id')->first(),
+        'lampiran' => Approval::whereIn('document_type', ['budget_correction', 'budget_allocation'])->latest('id')->first(),
+    ];
+    foreach ($contoh as $jenis => $a) {
+        if (! $a || ! $admin) {
+            echo "  (lewati {$jenis}: tidak ada data)\n";
+
+            continue;
+        }
+        [$s, $j] = $panggil('GET', "{$base}/{$a->id}", $admin->email);
+        $dok = collect($j['data']['dokumen'] ?? []);
+        $item = $dok->first(fn ($d) => $jenis === 'file' ? str_starts_with($d['kunci'], 'file-') : $d['kunci'] === $jenis);
+        $cek("{$jenis}: detail #{$a->id} memuat daftar dokumen", $s === 200 && $item !== null, json_encode($dok));
+        if (! $item) {
+            continue;
+        }
+        [$s, , , $isi, $hdr] = $panggil('GET', "{$base}/{$a->id}/dokumen/{$item['kunci']}", $admin->email);
+        $tipe = (string) $hdr->get('Content-Type');
+        if ($jenis === 'file') {
+            $f = App\Domain\BusinessSupport\Models\BsApBerkasUploadFile::find((int) substr($item['kunci'], 5));
+            $asli = Illuminate\Support\Facades\Storage::disk('local')->get($f->path);
+            $cek("file: isi = file asli ({$tipe}, ".strlen($isi).' byte)', $s === 200 && $isi === $asli && str_starts_with($tipe, (string) $f->mime));
+        } else {
+            $cek("{$jenis}: HTML mandiri tanpa skrip, logo jadi data URI", $s === 200 && str_starts_with($tipe, 'text/html')
+                && ! preg_match('/<script/i', $isi) && str_contains($isi, 'data:image/') && ! str_contains($isi, 'src="/images/'), "{$s} {$tipe}");
+        }
+        if ($staff) {
+            $bukan = ! $query->canView($staff, $a->load('steps'));
+            if ($bukan) {
+                [$s] = $panggil('GET', "{$base}/{$a->id}/dokumen/{$item['kunci']}", $staff->email);
+                $cek("{$jenis}: staff tanpa hak → 403", $s === 403, "dapat {$s}");
+            }
+        }
+    }
+    [$s] = $panggil('GET', "{$base}/1/dokumen/rahasia", '1234@jerp.test');
+    $cek('kunci dokumen asal-asalan → 404', $s === 404, "dapat {$s}");
 
     echo "Dashboard\n";
     $dash = '/api/v1/fo-bridge/dashboard';

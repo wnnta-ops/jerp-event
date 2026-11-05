@@ -27,7 +27,9 @@ Route::prefix('v1')->name('api.')->group(function (): void {
 
     // ── Jembatan FO → Approval Inbox (app approver PWA), HMAC sso.secret ──
     Route::prefix('fo-bridge/approval-inbox')->name('fo-bridge.inbox.')
-        ->middleware([App\Http\Middleware\VerifyFoBridge::class, 'set-tenant', 'audit-context', 'throttle:120,1'])
+        // Throttle grup API (per IP) dilepas — batasnya per user di VerifyFoBridge.
+        ->withoutMiddleware(Illuminate\Routing\Middleware\ThrottleRequests::class.':api')
+        ->middleware([App\Http\Middleware\VerifyFoBridge::class, 'set-tenant', 'audit-context'])
         ->group(function (): void {
             $c = App\Http\Controllers\Api\V1\FoBridge\ApprovalInboxBridgeController::class;
             Route::get('/', [$c, 'index'])->name('index');
@@ -36,9 +38,13 @@ Route::prefix('v1')->name('api.')->group(function (): void {
             Route::get('/pengajuan', [$c, 'pengajuan'])->name('pengajuan');
             Route::get('/{approval}', [$c, 'show'])->whereNumber('approval')->name('show');
             Route::post('/{approval}/act', [$c, 'act'])->whereNumber('approval')->name('act');
+            Route::get('/{approval}/dokumen/{kunci}', [$c, 'dokumen'])->whereNumber('approval')
+                ->where('kunci', 'memo|lampiran|file-[0-9]+')->name('dokumen');
         });
     Route::get('fo-bridge/dashboard', App\Http\Controllers\Api\V1\FoBridge\DashboardBridgeController::class)
-        ->middleware([App\Http\Middleware\VerifyFoBridge::class, 'set-tenant', 'audit-context', 'throttle:120,1'])
+        // Throttle grup API (per IP) dilepas — batasnya per user di VerifyFoBridge.
+        ->withoutMiddleware(Illuminate\Routing\Middleware\ThrottleRequests::class.':api')
+        ->middleware([App\Http\Middleware\VerifyFoBridge::class, 'set-tenant', 'audit-context'])
         ->name('fo-bridge.dashboard');
 
     // ── Authenticated ─────────────────────────────────

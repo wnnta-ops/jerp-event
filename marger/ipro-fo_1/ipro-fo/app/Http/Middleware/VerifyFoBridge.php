@@ -9,6 +9,7 @@ use Closure;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\RateLimiter;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
@@ -23,10 +24,16 @@ use Symfony\Component\HttpFoundation\Response;
  *
  * Sesudah lolos, user BO di-set sebagai user request (tanpa sesi) supaya
  * set-tenant / audit-context / ActOnApproval berjalan seperti di web.
+ *
+ * Batas permintaan dihitung PER USER di sini (bukan throttle:api grup API, yang memakai IP
+ * sebelum user dikenal — semua permintaan jembatan datang dari satu IP server FO, sehingga
+ * seluruh approver + job push akan berbagi satu kuota). Route jembatan melepas throttle grup.
  */
 final class VerifyFoBridge
 {
     private const JENDELA_DETIK = 60;
+
+    public const MAKS_PER_MENIT = 120;
 
     public function handle(Request $request, Closure $next): Response
     {
@@ -48,10 +55,19 @@ final class VerifyFoBridge
         $user = User::where('email', $email)->first();
         abort_unless($user && $user->is_active, 403, "User '{$email}' tidak ada / nonaktif di BO.");
 
+        $kunciBatas = self::kunciBatas((int) $user->id);
+        abort_if(RateLimiter::tooManyAttempts($kunciBatas, self::MAKS_PER_MENIT), 429, 'Terlalu banyak permintaan dari app approver. Coba lagi sebentar.');
+        RateLimiter::hit($kunciBatas, 60);
+
         Auth::setUser($user);
         $request->setUserResolver(fn () => $user);
 
         return $next($request);
+    }
+
+    public static function kunciBatas(int $userId): string
+    {
+        return 'fo-bridge:'.$userId;
     }
 
     public static function kanonik(string $ts, string $nonce, string $method, string $path, string $email, string $body): string

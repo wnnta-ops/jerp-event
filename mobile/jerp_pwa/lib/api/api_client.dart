@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
 
@@ -14,6 +15,14 @@ class ApiException implements Exception {
 
   @override
   String toString() => message;
+}
+
+/// Isi file mentah dari API (dokumen approval).
+class Unduhan {
+  const Unduhan({required this.isi, required this.tipe, this.nama});
+  final Uint8List isi;
+  final String tipe;
+  final String? nama;
 }
 
 /// Klien HTTP tipis ke `/api/mobile` FO (Sanctum Bearer token).
@@ -34,6 +43,25 @@ class ApiClient {
 
   Future<Map<String, dynamic>> delete(String path) =>
       _kirim(() => _http.delete(_uri(path), headers: _headers()));
+
+  /// Ambil file mentah (PDF/foto/HTML). Error tetap jadi ApiException berpesan.
+  Future<Unduhan> getBytes(String path) async {
+    final http.Response res;
+    try {
+      res = await _http.get(_uri(path), headers: {..._headers(), 'Accept': '*/*'});
+    } catch (_) {
+      throw ApiException('Tidak bisa terhubung ke server J-ERP. Cek koneksi internet.');
+    }
+    if (res.statusCode < 200 || res.statusCode >= 300) {
+      throw ApiException(_pesanError(res.statusCode, _decode(res.body)), status: res.statusCode);
+    }
+    final cd = res.headers['content-disposition'] ?? '';
+    return Unduhan(
+      isi: res.bodyBytes,
+      tipe: res.headers['content-type'] ?? 'application/octet-stream',
+      nama: RegExp(r'filename="([^"]+)"').firstMatch(cd)?.group(1),
+    );
+  }
 
   Uri _uri(String path) => Uri.parse('$apiBaseUrl$path');
 

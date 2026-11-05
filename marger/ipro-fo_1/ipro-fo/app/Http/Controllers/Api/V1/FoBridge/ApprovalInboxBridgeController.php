@@ -95,10 +95,21 @@ class ApprovalInboxBridgeController extends Controller
                 'fields' => $doc['fields'],
                 'body' => $doc['body'],
                 'jumlah_file' => count($doc['files']),
+                'dokumen' => app(DokumenApproval::class)->daftar($approval),
                 'stages' => $this->inbox->stages($approval),
                 'can_act' => $this->inbox->canAct($user, $approval),
             ],
         ]);
+    }
+
+    /** Isi satu dokumen untuk preview / unduh di PWA (lihat DokumenApproval). */
+    public function dokumen(Request $request, int $approval, string $kunci): \Symfony\Component\HttpFoundation\Response
+    {
+        $user = $this->user($request);
+        $approval = $this->muat($approval);
+        abort_unless($this->inbox->canView($user, $approval), 403, 'Anda tidak berhak melihat dokumen ini.');
+
+        return app(DokumenApproval::class)->isi($approval, $kunci, $request);
     }
 
     public function act(Request $request, int $approval, ActOnApproval $action): JsonResponse
