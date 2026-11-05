@@ -25,6 +25,22 @@ Route::prefix('v1')->name('api.')->group(function (): void {
         Route::post('bank/va', [BankVaController::class, 'handle'])->name('bank.va');
     });
 
+    // ── Jembatan FO → Approval Inbox (app approver PWA), HMAC sso.secret ──
+    Route::prefix('fo-bridge/approval-inbox')->name('fo-bridge.inbox.')
+        ->middleware([App\Http\Middleware\VerifyFoBridge::class, 'set-tenant', 'audit-context', 'throttle:120,1'])
+        ->group(function (): void {
+            $c = App\Http\Controllers\Api\V1\FoBridge\ApprovalInboxBridgeController::class;
+            Route::get('/', [$c, 'index'])->name('index');
+            Route::get('/history', [$c, 'history'])->name('history');
+            Route::get('/profil', [$c, 'profil'])->name('profil');
+            Route::get('/pengajuan', [$c, 'pengajuan'])->name('pengajuan');
+            Route::get('/{approval}', [$c, 'show'])->whereNumber('approval')->name('show');
+            Route::post('/{approval}/act', [$c, 'act'])->whereNumber('approval')->name('act');
+        });
+    Route::get('fo-bridge/dashboard', App\Http\Controllers\Api\V1\FoBridge\DashboardBridgeController::class)
+        ->middleware([App\Http\Middleware\VerifyFoBridge::class, 'set-tenant', 'audit-context', 'throttle:120,1'])
+        ->name('fo-bridge.dashboard');
+
     // ── Authenticated ─────────────────────────────────
     Route::middleware(['auth:sanctum', 'set-tenant', 'audit-context', 'idempotency'])
         ->group(function (): void {

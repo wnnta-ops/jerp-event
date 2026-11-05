@@ -3,6 +3,8 @@
 namespace App\Http\Controllers\Api;
 
 use App\Models\User;
+use App\Modules\FO\Approval\Models\PushSubscription;
+use App\Modules\FO\Approval\Services\BoChainApproverCheck;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
@@ -49,12 +51,18 @@ class AuthController
 
     public function logout(Request $request): JsonResponse
     {
-        $request->user()->currentAccessToken()->delete();
+        $token = $request->user()->currentAccessToken();
+        // Perangkat ini berhenti menerima notifikasi push akun ini.
+        PushSubscription::hapusUntukToken($token->getKey());
+        $token->delete();
 
         return response()->json(['ok' => true]);
     }
 
-    /** User boleh masuk app approver bila bisa bertindak atas minimal satu jenis approval. */
+    /**
+     * User boleh masuk app approver bila bisa bertindak atas minimal satu jenis approval FO,
+     * atau punya tahap di Approval Chain BO Approval Inbox.
+     */
     private function isApprover(User $user): bool
     {
         if ($user->hasRole('super_admin') || $user->hasAnyRole((array) config('approval.final_roles', []))) {
@@ -70,7 +78,7 @@ class AuthController
             }
         }
 
-        return false;
+        return app(BoChainApproverCheck::class)->isApprover((string) $user->email);
     }
 
     /** @return array<string,mixed> */

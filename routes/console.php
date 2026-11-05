@@ -26,6 +26,9 @@ Schedule::command('collection:run')->dailyAt($jamKirim)->withoutOverlapping();
 // Lepas unit yang masa hold-nya habis (tak ada transfer cocok) → TERSEDIA.
 Schedule::command('hold:release')->everyTenMinutes()->withoutOverlapping();
 
+// Notifikasi push app approver (PWA): cek BO Approval Inbox tiap menit — lihat PushApprover.
+Schedule::command('pwa:push')->everyMinute()->withoutOverlapping()->runInBackground();
+
 /*
  * Backup terjadwal MULTI — loop semua BackupSchedule yang aktif. Tiap jadwal punya
  * frekuensi/jam/only_db sendiri (lokasi global ikut jadwal aktif pertama, lihat

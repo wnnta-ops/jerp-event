@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <!--
+    Diganti oleh `flutter build web --base-href /path/` kalau app tidak
+    di-serve dari root domain. Harus diawali & diakhiri "/".
+  -->
+  <base href="/approver/">
+
+  <meta charset="UTF-8">
+  <meta content="IE=Edge" http-equiv="X-UA-Compatible">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="description" content="J-ERP Approver — approval dari HP">
+  <meta name="theme-color" content="#f97316">
+
+  <!-- iOS: supaya bisa "Add to Home Screen" dan buka full-screen -->
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="J-ERP">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+
+  <link rel="icon" type="image/png" href="favicon.png"/>
+
+  <title>J-ERP Approver</title>
+  <link rel="manifest" href="manifest.json">
+
+  <style>
+    /* Splash sederhana selama Flutter engine dimuat */
+    html, body { margin: 0; height: 100%; background: #ffffff; }
+    #splash {
+      position: fixed; inset: 0; display: flex; flex-direction: column;
+      align-items: center; justify-content: center; gap: 16px;
+      font-family: -apple-system, system-ui, sans-serif; color: #9a3412;
+    }
+    #splash img { width: 96px; height: 96px; border-radius: 22px; }
+  </style>
+</head>
+<body>
+  <div id="splash">
+    <img src="icons/Icon-192.png" alt="">
+    <div>Memuat J-ERP Approver…</div>
+  </div>
+  <script>
+    window.addEventListener('flutter-first-frame', function () {
+      var s = document.getElementById('splash');
+      if (s) s.remove();
+    });
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', function () {
+        navigator.serviceWorker.register('pwa_sw.js');
+      });
+    }
+  </script>
+  <script src="kunci.js"></script>
+  <script src="push.js"></script>
+  <script src="flutter_bootstrap.js" async></script>
+</body>
+</html>

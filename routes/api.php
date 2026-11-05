@@ -2,6 +2,9 @@
 
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\Mobile\ApprovalController;
+use App\Http\Controllers\Api\Mobile\BoInboxController;
+use App\Http\Controllers\Api\Mobile\PushController;
+use App\Http\Controllers\Api\Mobile\SesiController;
 use App\Http\Controllers\Api\SurveiSprController;
 use App\Modules\BO\IproBridge\Controllers\LegalBridgeController;
 use App\Modules\FO\Launching\Controllers\XenditWebhookController;
@@ -25,6 +28,9 @@ Route::prefix('mobile')->middleware('throttle:api')->group(function () {
     Route::middleware('auth:sanctum')->group(function () {
         Route::get('/auth/me', [AuthController::class, 'me']);
         Route::post('/auth/logout', [AuthController::class, 'logout']);
+        Route::get('/auth/sessions', [SesiController::class, 'index']);
+        Route::delete('/auth/sessions/{id}', [SesiController::class, 'destroy'])->whereNumber('id');
+        Route::post('/auth/logout-all', [SesiController::class, 'destroyAll']);
 
         Route::get('/approvals', [ApprovalController::class, 'queue']);
         Route::get('/approvals/history', [ApprovalController::class, 'history']);
@@ -34,6 +40,22 @@ Route::prefix('mobile')->middleware('throttle:api')->group(function () {
         Route::get('/approvals/{approval}/docs', [ApprovalController::class, 'docs']);
         Route::post('/approvals/{approval}/decision', [ApprovalController::class, 'decide']);
         Route::post('/approvals/{approval}/review', [ApprovalController::class, 'review']);
+
+        // BO Approval Inbox (PWA) — diteruskan ke BO, lihat BoInboxBridge.
+        Route::get('/inbox', [BoInboxController::class, 'index']);
+        Route::get('/inbox/history', [BoInboxController::class, 'history']);
+        Route::get('/inbox/profil', [BoInboxController::class, 'profil']);
+        Route::get('/inbox/{id}', [BoInboxController::class, 'show'])->whereNumber('id');
+        Route::post('/inbox/{id}/act', [BoInboxController::class, 'act'])->whereNumber('id');
+        Route::get('/dashboard', [BoInboxController::class, 'dashboard']);
+
+        // Notifikasi push (PWA) — dikirim job pwa:push tiap menit.
+        Route::get('/push/config', [PushController::class, 'config']);
+        Route::post('/push/status', [PushController::class, 'status']);
+        Route::post('/push/subscribe', [PushController::class, 'subscribe']);
+        Route::put('/push/subscription', [PushController::class, 'update']);
+        Route::post('/push/unsubscribe', [PushController::class, 'unsubscribe']);
+        Route::post('/push/uji', [PushController::class, 'uji'])->middleware('throttle:6,1');
     });
 });
 
