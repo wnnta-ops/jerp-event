@@ -129,11 +129,47 @@ class _DetailPageState extends State<DetailPage> {
             const SizedBox(height: 4),
             Text(d.body!),
           ],
-          if (d.dokumen.isNotEmpty) ...[
+          if (i.turunan.isNotEmpty || d.revisi > 0) ...[
+            const SizedBox(height: 16),
+            Text('Alokasi / Koreksi Budget (${i.turunan.length})', style: tema.textTheme.titleSmall),
+            Text('Ikut diputuskan bersama invoice ini', style: redup),
+            const SizedBox(height: 6),
+            if (d.revisi > 0)
+              Container(
+                width: double.infinity,
+                margin: const EdgeInsets.only(bottom: 6),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                decoration: BoxDecoration(color: const Color(0xFFFEF3C7), borderRadius: BorderRadius.circular(8)),
+                child: Text(
+                  [
+                    '[REVISI] ke-${d.revisi} — approval diulang dari tahap pertama.',
+                    for (final r in d.riwayatRevisi) '${r.nama} · ${tanggal(r.at)}${r.catatan != null && r.catatan!.isNotEmpty ? ' — ${r.catatan}' : ''}',
+                  ].join('\n'),
+                  style: const TextStyle(color: Color(0xFF92400E), fontSize: 12),
+                ),
+              ),
+            for (final t in i.turunan)
+              Card(
+                margin: const EdgeInsets.only(bottom: 6),
+                child: ListTile(
+                  dense: true,
+                  title: Row(children: [
+                    Expanded(child: Text('${t.jenis == 'alokasi' ? 'Alokasi' : 'Koreksi'} · ${t.docNo ?? '#${t.id}'}')),
+                    Text(rupiah(t.nilai), style: const TextStyle(fontWeight: FontWeight.w600)),
+                  ]),
+                  subtitle: Text([if (t.dari != null) 'Dari ${t.dari}', 'Ke ${t.ke ?? '—'}'].join('\n')),
+                  trailing: const Icon(Icons.visibility_outlined),
+                  onTap: () => _bukaLampiran(context, d, t),
+                ),
+              ),
+            if (d.bisaRevisi)
+              Text('Ubah alokasi / koreksi (Finance) dilakukan di J-ERP BO versi desktop.', style: redup),
+          ],
+          if (d.dokumenLain.isNotEmpty) ...[
             const SizedBox(height: 16),
             Text('Dokumen', style: tema.textTheme.titleSmall),
             const SizedBox(height: 4),
-            for (final dok in d.dokumen)
+            for (final dok in d.dokumenLain)
               Card(
                 margin: const EdgeInsets.only(bottom: 6),
                 child: ListTile(
@@ -176,13 +212,20 @@ class _DetailPageState extends State<DetailPage> {
                   onPressed: _proses ? null : () => _putuskan(true),
                   child: _proses
                       ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                      : const Text('Setujui'),
+                      : Text(i.turunan.isEmpty ? 'Setujui' : 'Setujui + ${i.turunan.length} alokasi/koreksi'),
                 ),
               ),
             ]),
           ),
         ),
     ]);
+  }
+
+  /// Lampiran perubahan budget satu alokasi / koreksi (dari daftar dokumen BO, atau dibentuk dari kuncinya).
+  void _bukaLampiran(BuildContext context, InboxDetail d, Turunan t) {
+    final dok = d.dokumen.where((x) => x.kunci == t.kunci).firstOrNull ??
+        DokumenItem.fromJson({'kunci': t.kunci, 'nama': 'Lampiran ${t.jenis} ${t.docNo ?? ''}', 'mime': 'text/html'});
+    bukaDokumen(context, widget.store.api, d.item.id, dok);
   }
 
   String? _ukuran(int? b) {

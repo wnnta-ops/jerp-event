@@ -253,6 +253,25 @@ try {
             }
         }
     }
+    // Invoice Hutang dengan alokasi / koreksi turunan: daftar turunan (tanpa URL BO) + lampirannya per kunci.
+    $ikut = app(App\Domain\BusinessSupport\Services\BudgetIkutInvoice::class);
+    $inv = Approval::whereIn('document_type', ['ap_invoice', 'ap_budget_request'])->latest('id')->limit(200)->get()
+        ->first(fn ($a) => $ikut->turunan($a)->isNotEmpty());
+    if ($inv && $admin) {
+        [$s, $j] = $panggil('GET', "{$base}/{$inv->id}", $admin->email);
+        $t = $j['data']['turunan'][0] ?? null;
+        $cek("turunan: detail #{$inv->id} memuat alokasi/koreksi tanpa URL BO", $s === 200 && $t && ! isset($t['lampiran_url']) && array_key_exists('revisi', $j['data']), json_encode($t));
+        if ($t) {
+            [$s, , , $isi, $hdr] = $panggil('GET', "{$base}/{$inv->id}/dokumen/{$t['jenis']}-{$t['id']}", $admin->email);
+            $cek("turunan: lampiran {$t['jenis']}-{$t['id']} HTML mandiri", $s === 200 && str_starts_with((string) $hdr->get('Content-Type'), 'text/html') && ! preg_match('/<script/i', $isi), "dapat {$s}");
+        }
+    } else {
+        echo "  (lewati turunan: tidak ada invoice dengan alokasi / koreksi)\n";
+    }
+    if ($contoh['memo'] ?? null) {
+        [$s] = $panggil('GET', "{$base}/{$contoh['memo']->id}/dokumen/alokasi-1", '1234@jerp.test');
+        $cek('alokasi-ID di approval yang bukan invoice → 404', $s === 404, "dapat {$s}");
+    }
     [$s] = $panggil('GET', "{$base}/1/dokumen/rahasia", '1234@jerp.test');
     $cek('kunci dokumen asal-asalan → 404', $s === 404, "dapat {$s}");
 

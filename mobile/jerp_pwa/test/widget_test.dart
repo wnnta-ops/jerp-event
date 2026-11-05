@@ -24,7 +24,10 @@ final inbox = [
   {'id': 20, 'type': 'Memo Urgent', 'kategori': 'urgent', 'number': 'MI/2611/00001', 'subject': 'Perbaikan pompa', 'department': 'Engineering',
     'catatan': 'Segera', 'amount': 45000000, 'submitter': 'Dewi', 'status': 'pending', 'done': 1, 'total': 4},
   {'id': 31, 'type': 'Invoice Hutang', 'kategori': 'reguler', 'number': 'INV-1', 'subject': 'Invoice PT Beton', 'department': 'Project',
-    'amount': 120500000, 'submitter': 'Sari', 'status': 'pending', 'done': 2, 'total': 5},
+    'amount': 120500000, 'submitter': 'Sari', 'status': 'pending', 'done': 2, 'total': 5,
+    'turunan': [
+      {'jenis': 'alokasi', 'id': 5, 'doc_no': 'ALK-0005', 'status': 'menunggu', 'dari': '5010 Iklan · Marketing', 'ke': '5020 Sewa · Project', 'nilai': 2500000},
+    ]},
 ];
 // PNG 1x1 transparan.
 const ttdPalsu = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
@@ -129,6 +132,12 @@ MockClient serverPalsu({List<String>? log, List<String>? aksi}) => MockClient((r
               {'kunci': 'file-1', 'nama': 'faktur.pdf', 'jenis': 'Faktur', 'mime': 'application/pdf', 'ukuran': 26285},
               {'kunci': 'memo', 'nama': 'Lembar MI/2611/00001', 'jenis': 'Lembar memo', 'mime': 'text/html', 'ukuran': null},
             ]}});
+        case '/api/mobile/inbox/31':
+          return json({'data': {...inbox[1], 'fields': [], 'body': null, 'jumlah_file': 0, 'stages': [], 'can_act': true,
+            'revisi': 1, 'riwayat_revisi': [{'nama': 'Fina Finance', 'at': '2026-11-05T07:00:00Z', 'catatan': 'Ganti sumber'}], 'bisa_revisi': false,
+            'dokumen': [{'kunci': 'alokasi-5', 'nama': 'Lampiran alokasi ALK-0005', 'jenis': 'Lampiran alokasi budget', 'mime': 'text/html', 'ukuran': null}]}});
+        case '/api/mobile/inbox/31/dokumen/alokasi-5':
+          return http.Response.bytes(utf8.encode('<p>Lampiran</p>'), 200, headers: {'content-type': 'text/html; charset=UTF-8'});
         case '/api/mobile/inbox/20/dokumen/file-1':
           return http.Response.bytes(utf8.encode('%PDF-1.4 uji'), 200,
               headers: {'content-type': 'application/pdf', 'content-disposition': 'inline; filename="faktur.pdf"'});
@@ -574,5 +583,23 @@ void main() {
     await tester.tap(find.text('Lembar MI/2611/00001'));
     await tester.pumpAndSettle();
     expect(find.text('HTML memo: <html><body>Memo</body></html>'), findsOneWidget);
+  });
+
+  testWidgets('Invoice dengan alokasi/koreksi: penanda di kartu, [REVISI], lampiran, tombol setujui', (tester) async {
+    DokumenPlatform.instance = DokumenPalsu();
+    await pasang(tester, simpanan: {'jerp_token': '1|abc'});
+    await tester.tap(find.text('Approval'));
+    await tester.pumpAndSettle();
+    expect(find.text('+ 1 alokasi/koreksi budget'), findsOneWidget);
+    await tester.tap(find.text('Invoice PT Beton'));
+    await tester.pumpAndSettle();
+    expect(find.text('Alokasi / Koreksi Budget (1)'), findsOneWidget);
+    expect(find.textContaining('[REVISI] ke-1'), findsOneWidget);
+    expect(find.text('Setujui + 1 alokasi/koreksi'), findsOneWidget);
+    // Lampirannya dibuka dari daftar turunan, tidak diulang di bagian Dokumen.
+    expect(find.text('Lampiran alokasi ALK-0005'), findsNothing);
+    await tester.tap(find.text('Alokasi · ALK-0005'));
+    await tester.pumpAndSettle();
+    expect(find.text('HTML alokasi-5: <p>Lampiran</p>'), findsOneWidget);
   });
 }

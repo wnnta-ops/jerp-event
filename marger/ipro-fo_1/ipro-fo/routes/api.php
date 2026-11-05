@@ -39,7 +39,7 @@ Route::prefix('v1')->name('api.')->group(function (): void {
             Route::get('/{approval}', [$c, 'show'])->whereNumber('approval')->name('show');
             Route::post('/{approval}/act', [$c, 'act'])->whereNumber('approval')->name('act');
             Route::get('/{approval}/dokumen/{kunci}', [$c, 'dokumen'])->whereNumber('approval')
-                ->where('kunci', 'memo|lampiran|file-[0-9]+')->name('dokumen');
+                ->where('kunci', 'memo|lampiran|file-[0-9]+|(alokasi|koreksi)-[0-9]+')->name('dokumen');
         });
     Route::get('fo-bridge/dashboard', App\Http\Controllers\Api\V1\FoBridge\DashboardBridgeController::class)
         // Throttle grup API (per IP) dilepas — batasnya per user di VerifyFoBridge.

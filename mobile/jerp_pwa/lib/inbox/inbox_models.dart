@@ -19,7 +19,8 @@ class InboxItem {
         total = (j['total'] ?? 0) as int,
         keputusan = j['keputusan'] as String?,
         diputuskanAt = _tgl(j['diputuskan_at']),
-        catatanSaya = j['catatan_saya'] as String?;
+        catatanSaya = j['catatan_saya'] as String?,
+        turunan = [for (final t in (j['turunan'] as List? ?? const [])) Turunan.fromJson(t as Map<String, dynamic>)];
 
   final int id;
   final String type;
@@ -41,7 +42,33 @@ class InboxItem {
   final DateTime? diputuskanAt;
   final String? catatanSaya;
 
+  /// Invoice Hutang: alokasi / koreksi budget yang ikut diputuskan bersama invoice ini.
+  final List<Turunan> turunan;
+
   String get judul => subject?.isNotEmpty == true ? subject! : (number ?? '#$id');
+}
+
+/// Alokasi / koreksi budget turunan invoice (lampirannya: dokumen `alokasi-ID` / `koreksi-ID`).
+class Turunan {
+  Turunan.fromJson(Map<String, dynamic> j)
+      : jenis = (j['jenis'] ?? '') as String,
+        id = (j['id'] ?? 0) as int,
+        docNo = j['doc_no'] as String?,
+        dari = j['dari'] as String?,
+        ke = j['ke'] as String?,
+        nilai = (j['nilai'] as num?)?.toDouble() ?? 0,
+        keterangan = j['keterangan'] as String?;
+
+  /// alokasi | koreksi
+  final String jenis;
+  final int id;
+  final String? docNo;
+  final String? dari;
+  final String? ke;
+  final double nilai;
+  final String? keterangan;
+
+  String get kunci => '$jenis-$id';
 }
 
 class Tahap {
@@ -91,7 +118,13 @@ class InboxDetail {
         jumlahFile = (j['jumlah_file'] ?? 0) as int,
         dokumen = [for (final d in (j['dokumen'] as List? ?? const [])) DokumenItem.fromJson(d as Map<String, dynamic>)],
         stages = [for (final s in (j['stages'] as List? ?? const [])) Tahap.fromJson(s as Map<String, dynamic>)],
-        canAct = j['can_act'] == true;
+        canAct = j['can_act'] == true,
+        revisi = (j['revisi'] ?? 0) as int,
+        riwayatRevisi = [
+          for (final r in (j['riwayat_revisi'] as List? ?? const []))
+            (nama: (r['nama'] ?? '') as String, at: _tgl(r['at']), catatan: r['catatan'] as String?),
+        ],
+        bisaRevisi = j['bisa_revisi'] == true;
 
   final InboxItem item;
   final List<({String label, String? value})> fields;
@@ -100,6 +133,17 @@ class InboxDetail {
   final List<DokumenItem> dokumen;
   final List<Tahap> stages;
   final bool canAct;
+
+  /// Revisi Finance atas alokasi / koreksi: ke-berapa (0 = belum), riwayatnya, dan boleh-tidaknya saya merevisi (di BO).
+  final int revisi;
+  final List<({String nama, DateTime? at, String? catatan})> riwayatRevisi;
+  final bool bisaRevisi;
+
+  /// Dokumen selain lampiran alokasi / koreksi (yang itu dibuka dari daftar turunannya).
+  List<DokumenItem> get dokumenLain {
+    final kunciTurunan = {for (final t in item.turunan) t.kunci};
+    return [for (final d in dokumen) if (!kunciTurunan.contains(d.kunci)) d];
+  }
 }
 
 DateTime? _tgl(Object? v) => v is String ? DateTime.tryParse(v)?.toLocal() : null;

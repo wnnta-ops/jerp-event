@@ -8,10 +8,12 @@ use App\Domain\Approval\Models\Approval;
 use App\Domain\ApprovalInbox\Models\MemoInternal;
 use App\Domain\BusinessSupport\Models\BsApBerkasUpload;
 use App\Domain\BusinessSupport\Models\BsApBerkasUploadFile;
+use App\Domain\BusinessSupport\Models\BsApBudgetRequest;
 use App\Domain\BusinessSupport\Models\BsApInvoice;
 use App\Domain\BusinessSupport\Models\BsBudgetAllocation;
 use App\Domain\BusinessSupport\Models\BsBudgetCorrection;
 use App\Domain\BusinessSupport\Services\ApBerkasService;
+use App\Domain\BusinessSupport\Services\BudgetIkutInvoice;
 use App\Domain\BusinessSupport\Services\LampiranPerubahanBudget;
 use App\Http\Controllers\Web\ApprovalInbox\ApprovalInboxController;
 use App\Models\User;
@@ -24,6 +26,7 @@ use Symfony\Component\HttpFoundation\Response;
  *   file-{id}  : lampiran berkas (TTD Berkas / Invoice Hutang dari berkas) — file asli
  *   memo       : lembar Memo Urgent (ApprovalInboxController::cetak, mode preview)
  *   lampiran   : lampiran perubahan budget (Alokasi / Koreksi)
+ *   alokasi-{id} / koreksi-{id} : lampiran alokasi / koreksi turunan Invoice Hutang (diputuskan bersamanya)
  * Lembar HTML dikirim mandiri: logo & TTD disisipkan sebagai data URI, karena alamat aslinya
  * butuh sesi BO. Hak lihat dicek pemanggil (ApprovalInboxQuery::canView).
  */
@@ -39,6 +42,10 @@ final class DokumenApproval
         }
         if ($m instanceof BsBudgetAllocation || $m instanceof BsBudgetCorrection) {
             $out[] = ['kunci' => 'lampiran', 'nama' => 'Lampiran perubahan budget '.($m->doc_no ?? ''), 'jenis' => 'Lampiran', 'mime' => 'text/html', 'ukuran' => null];
+        }
+        foreach ($this->turunan($approval) as $t) {
+            $jenis = $t instanceof BsBudgetAllocation ? 'alokasi' : 'koreksi';
+            $out[] = ['kunci' => $jenis.'-'.$t->id, 'nama' => 'Lampiran '.$jenis.' '.($t->doc_no ?? ''), 'jenis' => 'Lampiran '.$jenis.' budget', 'mime' => 'text/html', 'ukuran' => null];
         }
         foreach ($this->berkas($approval)?->files ?? [] as $f) {
             $out[] = ['kunci' => 'file-'.$f->id, 'nama' => (string) $f->original_name, 'jenis' => $f->labelJenis(), 'mime' => (string) ($f->mime ?: 'application/octet-stream'), 'ukuran' => $f->size !== null ? (int) $f->size : null];
@@ -66,6 +73,16 @@ final class DokumenApproval
             return $this->html(view('pdf.lampiran-perubahan-budget', $data)->render(), 'lampiran-'.($m->doc_no ?? $approval->id));
         }
 
+        if (preg_match('/^(alokasi|koreksi)-(\d+)$/', $kunci, $x)) {
+            $kelas = $x[1] === 'alokasi' ? BsBudgetAllocation::class : BsBudgetCorrection::class;
+            $t = $this->turunan($approval)->first(fn ($t) => $t instanceof $kelas && (int) $t->id === (int) $x[2]);
+            abort_unless($t !== null, 404, 'Dokumen tidak ditemukan.');
+            $lampiran = app(LampiranPerubahanBudget::class);
+            $data = $t instanceof BsBudgetAllocation ? $lampiran->alokasi($t) : $lampiran->koreksi($t);
+
+            return $this->html(view('pdf.lampiran-perubahan-budget', $data)->render(), 'lampiran-'.($t->doc_no ?? $t->id));
+        }
+
         if (preg_match('/^file-(\d+)$/', $kunci, $x)) {
             $berkas = $this->berkas($approval);
             $file = $berkas?->files->firstWhere('id', (int) $x[1]);
@@ -83,7 +100,13 @@ final class DokumenApproval
         abort(404, 'Dokumen tidak ditemukan.');
     }
 
-    /** Berkas di balik approval: TTD Berkas itu sendiri, atau berkas sumber Invoice Hutang. */
+    /** Alokasi / koreksi turunan Invoice Hutang (kosong untuk jenis lain). */
+    private function turunan(Approval $approval): \Illuminate\Support\Collection
+    {
+        return BudgetIkutInvoice::berlaku($approval) ? app(BudgetIkutInvoice::class)->turunan($approval) : collect();
+    }
+
+    /** Berkas di balik approval: TTD Berkas itu sendiri, atau berkas sumber Invoice Hutang (juga yang masih menunggu alokasi / koreksi). */
     private function berkas(Approval $approval): ?BsApBerkasUpload
     {
         $m = $approval->approvable;
@@ -92,6 +115,9 @@ final class DokumenApproval
         }
         if ($m instanceof BsApInvoice && $m->source_type === ApBerkasService::INVOICE_SOURCE) {
             return BsApBerkasUpload::withTrashed()->with('files.jenis:id,name')->find($m->source_id);
+        }
+        if ($m instanceof BsApBudgetRequest && ! empty($m->data['berkas_upload_id'])) {
+            return BsApBerkasUpload::withTrashed()->with('files.jenis:id,name')->find((int) $m->data['berkas_upload_id']);
         }
 
         return null;

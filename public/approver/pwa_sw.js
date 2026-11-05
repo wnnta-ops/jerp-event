@@ -3,7 +3,9 @@
 // Service worker PWA J-ERP Approver.
 // Strategi network-first: selalu ambil versi terbaru kalau online, pakai cache
 // hanya saat offline. Request ke API (origin lain / /api/) tidak pernah di-cache.
-const CACHE = 'jerp-pwa-v8';
+// cache: 'no-cache' — selalu tanya server (ETag, murah) supaya tidak tertahan cache
+// browser 4 jam dari Cloudflare (max-age=14400) setelah deploy baru.
+const CACHE = 'jerp-pwa-v9';
 const SHELL = ['./', 'index.html', 'kunci.js', 'push.js', 'manifest.json', 'favicon.png', 'icons/Icon-192.png'];
 
 self.addEventListener('install', (event) => {
@@ -26,7 +28,7 @@ self.addEventListener('fetch', (event) => {
     return;
   }
   event.respondWith(
-    fetch(req)
+    fetch(req.mode === 'navigate' ? req : new Request(req, { cache: 'no-cache' }))
       .then((res) => {
         if (res.ok) {
           const salinan = res.clone();

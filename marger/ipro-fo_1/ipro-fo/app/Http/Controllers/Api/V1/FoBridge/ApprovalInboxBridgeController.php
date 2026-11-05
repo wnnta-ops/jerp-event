@@ -98,6 +98,10 @@ class ApprovalInboxBridgeController extends Controller
                 'dokumen' => app(DokumenApproval::class)->daftar($approval),
                 'stages' => $this->inbox->stages($approval),
                 'can_act' => $this->inbox->canAct($user, $approval),
+                // Revisi Finance atas alokasi / koreksi: ditampilkan saja — mengubahnya tetap di BO (desktop).
+                'revisi' => (int) ($doc['revisi'] ?? 0),
+                'riwayat_revisi' => array_values($doc['riwayat_revisi'] ?? []),
+                'bisa_revisi' => app(\App\Domain\BusinessSupport\Services\BudgetIkutInvoice::class)->bisaRevisi($user, $approval),
             ],
         ]);
     }
@@ -248,6 +252,9 @@ class ApprovalInboxBridgeController extends Controller
         $doc ??= $this->inbox->detail($approval);
         $row = $this->inbox->row($approval);
         unset($row['stages']);
+        // Alokasi / koreksi turunan invoice: tanpa id budget & URL lampiran BO (lampiran lewat dokumen/{alokasi|koreksi}-ID).
+        $row['turunan'] = array_map(fn (array $t) => array_intersect_key($t, array_flip(['jenis', 'id', 'doc_no', 'status', 'dari', 'ke', 'nilai', 'keterangan'])),
+            $row['turunan'] ?? []);
 
         return $row + [
             'kategori' => $m instanceof MemoInternal && $m->jenis === 'urgent' ? 'urgent' : 'reguler',

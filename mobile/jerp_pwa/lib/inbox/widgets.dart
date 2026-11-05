@@ -65,6 +65,15 @@ class KartuInbox extends StatelessWidget {
                 const SizedBox(height: 4),
                 Text('Catatan: ${item.catatan}', style: redup, maxLines: 2, overflow: TextOverflow.ellipsis),
               ],
+              if (item.turunan.isNotEmpty) ...[
+                const SizedBox(height: 6),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  decoration: BoxDecoration(color: const Color(0xFFFFF1E6), borderRadius: BorderRadius.circular(12)),
+                  child: Text('+ ${item.turunan.length} alokasi/koreksi budget',
+                      style: const TextStyle(color: Color(0xFF9A3412), fontSize: 11, fontWeight: FontWeight.w500)),
+                ),
+              ],
               ?bawah,
             ],
           ),
