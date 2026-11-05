@@ -914,6 +914,16 @@ class ApInvoiceController extends Controller
         // PENGECUALIAN: akun bertanda cost_center_optional (lihat CoaTanpaCostCenterSeeder) —
         // mis. Utang Usaha Supplier — memang boleh tanpa cost center. Aturannya sama dengan
         // Jurnal Memorial (JournalController), bukan aturan kedua yang berdiri sendiri.
+        // Detil Tagihan (bila diisi) wajib berjumlah sama dengan DPP — layar menahan langkahnya,
+        // ini untuk kiriman yang lolos dari layar.
+        if (! empty($v['lines'])) {
+            $dppNet = \App\Domain\BusinessSupport\Support\PajakHutang::hitung($v)['dpp'];
+            $jumlahBaris = round(collect($v['lines'])->sum(fn ($l) => (float) ($l['amount'] ?? 0)), 2);
+            if (abs($jumlahBaris - $dppNet) >= 1) {
+                return back()->withInput()->with('error', 'Total Detil Tagihan (Rp '.number_format($jumlahBaris, 0, ',', '.')
+                    .') harus sama dengan DPP (Rp '.number_format($dppNet, 0, ',', '.').').');
+            }
+        }
         if ($kurang = $this->akunKurangCostCenter($v['journal_lines'] ?? [])) {
             return back()->withInput()->with('error',
                 'Cost center wajib diisi untuk akun: '.implode(', ', $kurang).'.');

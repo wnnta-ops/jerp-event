@@ -330,6 +330,8 @@ const dueDate = computed(() => {
 // Sinkron ke form.due_date agar nilai yang tersimpan = tampilan kotak Tgl. Jatuh Tempo.
 watch(dueDate, (v) => { form.due_date = v; }, { immediate: true });
 const linesSum = computed(() => form.lines.reduce((s: number, l: any) => s + (Number(l.amount) || 0), 0));
+// Detil Tagihan wajib sama dengan DPP (net, sesudah PPN include dikeluarkan) bila barisnya diisi.
+const barisTakSamaDpp = computed(() => form.lines.length > 0 && Math.abs(linesSum.value - dppNet.value) >= 1);
 const schedSum = computed(() => form.schedules.reduce((s: number, l: any) => s + (Number(l.amount) || 0), 0));
 const jurnalDebit = computed(() => form.journal_lines.reduce((s: number, l: any) => s + (Number(l.debit) || 0), 0));
 const jurnalKredit = computed(() => form.journal_lines.reduce((s: number, l: any) => s + (Number(l.credit) || 0), 0));
@@ -1075,6 +1077,7 @@ function canNext() {
     // Alokasi / koreksi WAJIB disetujui Finance dulu (Pengajuan Budget) sebelum boleh ke Selesai.
     // Sesudah disetujui, anggaran sudah berubah (sisa asal alokasi berkurang) — kelengkapan koreksi/alokasi
     // tidak dinilai ulang; penjaga budget server tetap memeriksa saat simpan.
+    if (step.value === 3) return !barisTakSamaDpp.value;
     if (step.value === 4) return jurnalBalanced.value && kurangCc.value.length === 0
         && (statusPengajuan.value === 'disetujui' || (koreksiBelumCukup.value.length === 0 && !butuhPengajuan.value));
     return true;
@@ -1561,7 +1564,8 @@ const cellArea = 'w-full rounded-md border border-neutral-300 bg-white px-2 py-1
                 </tbody>
             </table>
             <p v-if="!form.lines.length" class="py-4 text-center text-sm text-neutral-400">Opsional — rincian tagihan. Total DPP {{ fmtRp(form.dpp) }} bisa dipecah ke baris.</p>
-            <div v-else class="mt-2 flex justify-end gap-6 text-sm"><span class="text-neutral-500">Total baris: <b class="font-mono">{{ fmtRp(linesSum) }}</b></span><span :class="Math.abs(linesSum - form.dpp) < 1 ? 'text-success-600' : 'text-amber-600'">DPP: {{ fmtRp(form.dpp) }}</span></div>
+            <div v-else class="mt-2 flex justify-end gap-6 text-sm"><span class="text-neutral-500">Total baris: <b class="font-mono">{{ fmtRp(linesSum) }}</b></span><span :class="barisTakSamaDpp ? 'text-danger-600' : 'text-success-600'">DPP: {{ fmtRp(dppNet) }}</span></div>
+            <p v-if="barisTakSamaDpp" class="mt-1 text-right text-xs text-danger-600">Total baris harus sama dengan DPP — selisih {{ fmtRp(linesSum - dppNet) }}. Betulkan baris sebelum lanjut.</p>
         </div>
 
         <!-- Step 4: Struktur (Jurnal Dr/Cr) -->
