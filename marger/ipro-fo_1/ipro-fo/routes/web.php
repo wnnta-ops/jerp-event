@@ -863,6 +863,9 @@ Route::middleware(['auth', 'set-tenant', 'audit-context'])->group(function (): v
     Route::post('/business-support/payable/{invoice}/batal', [BsApController::class, 'batal'])->name('bs.ap.batal');
     Route::get('/business-support/payable/{invoice}/memo', [BsApController::class, 'memo'])->name('bs.ap.memo'); // cetak Memo Internal + Bukti Permohonan Pembayaran
     Route::post('/business-support/payable/{invoice}/berkas-notes', [BsApController::class, 'updateBerkasNotes'])->name('bs.ap.berkas-notes'); // catatan kelengkapan berkas (free-text)
+    Route::post('/business-support/payable/{invoice}/kelengkapan-file', [BsApController::class, 'tambahKelengkapanFile'])->name('bs.ap.kelengkapan-file.store'); // file kelengkapan berkas
+    Route::delete('/business-support/payable/{invoice}/kelengkapan-file/{file}', [BsApController::class, 'hapusKelengkapanFile'])->whereNumber('file')->name('bs.ap.kelengkapan-file.destroy');
+    Route::get('/business-support/payable/{invoice}/kelengkapan-file/{file}', [BsApController::class, 'lihatKelengkapanFile'])->whereNumber('file')->name('bs.ap.kelengkapan-file.show')->withTrashed();
     Route::post('/business-support/payable/{invoice}/berkas-finance', [BsApController::class, 'updateBerkasFinance'])->name('bs.ap.berkas-finance'); // tanggal berkas diterima Finance (khusus Dept Finance)
     Route::post('/business-support/payable/{invoice}/pay', [BsApController::class, 'pay'])->name('bs.ap.pay');
 

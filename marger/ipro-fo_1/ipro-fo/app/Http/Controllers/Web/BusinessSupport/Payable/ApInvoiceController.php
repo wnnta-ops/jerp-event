@@ -1190,6 +1190,10 @@ class ApInvoiceController extends Controller
             'perubahanBudget' => \App\Domain\BusinessSupport\Services\LampiranPerubahanBudget::untukInvoice($invoice),
             'writeoffs' => $writeoffs,
             'writeoffTotal' => round((float) $writeoffs->sum('amount'), 2),
+            // Kelengkapan Berkas: file berkas invoice + tambahan dari rincian ini.
+            'kelengkapanFiles' => app(\App\Domain\BusinessSupport\Services\KelengkapanBerkasInvoice::class)->ringkas($invoice),
+            'jenisBerkas' => \App\Domain\BusinessSupport\Models\BsApBerkas::jenisTetap(),
+            'bolehKelengkapan' => ! $invoice->batal() && (bool) $request->user()?->can('ap.berkas.update'),
             // Tombol Edit / Batal — keputusannya di server, layar hanya mencerminkannya.
             'aksi' => $invoice->batal() ? null : [
                 'dariRegistrasi' => $invoice->dariRegistrasi(),
@@ -1220,6 +1224,58 @@ class ApInvoiceController extends Controller
         $invoice->update(['berkas_notes' => ($data['notes'] ?? '') !== '' ? $data['notes'] : null]);
 
         return back(303);
+    }
+
+    /** Kelengkapan Berkas: tambah file (masuk ke berkas invoice; tanpa berkas → lampiran invoice). */
+    public function tambahKelengkapanFile(Request $request, BsApInvoice $invoice, \App\Domain\BusinessSupport\Services\KelengkapanBerkasInvoice $kelengkapan): RedirectResponse
+    {
+        abort_unless($request->user()?->can('ap.berkas.update'), 403);
+        $v = $request->validate([
+            'files' => ['required', 'array', 'min:1', 'max:'.\App\Domain\BusinessSupport\Services\KelengkapanBerkasInvoice::MAX_FILES],
+            'files.*.file' => ['required', 'file', 'mimes:pdf,jpg,jpeg,png', 'max:10240'],
+            'files.*.berkas_id' => ['required', 'integer', \Illuminate\Validation\Rule::in(\App\Domain\BusinessSupport\Models\BsApBerkas::jenisTetap()->pluck('id')->all())],
+            'files.*.keterangan' => ['nullable', 'string', 'max:100'],
+        ], [
+            'files.required' => 'Pilih minimal satu file.',
+            'files.*.file.mimes' => 'File harus PDF, JPG, atau PNG.',
+            'files.*.file.max' => 'Ukuran tiap file maksimal 10 MB.',
+            'files.*.berkas_id.required' => 'Pilih jenis dokumen untuk tiap file.',
+        ]);
+        try {
+            $kelengkapan->tambah($invoice, \App\Domain\BusinessSupport\Models\BsApBerkas::rapikanUnggahan($v['files']), $request->user());
+        } catch (BusinessRuleException $e) {
+            return back(303)->with('error', $e->getMessage());
+        }
+
+        return back(303)->with('success', count($v['files']).' file kelengkapan ditambahkan.');
+    }
+
+    /** Hapus file kelengkapan — hanya yang ditambahkan dari rincian invoice ini. */
+    public function hapusKelengkapanFile(Request $request, BsApInvoice $invoice, \App\Domain\BusinessSupport\Models\BsApBerkasUploadFile $file, \App\Domain\BusinessSupport\Services\KelengkapanBerkasInvoice $kelengkapan): RedirectResponse
+    {
+        abort_unless($request->user()?->can('ap.berkas.update'), 403);
+        try {
+            $kelengkapan->hapus($invoice, $file);
+        } catch (BusinessRuleException $e) {
+            return back(303)->with('error', $e->getMessage());
+        }
+
+        return back(303)->with('success', 'File kelengkapan dihapus.');
+    }
+
+    /** Buka file kelengkapan (berkas invoice atau lampiran invoice) — siapa pun yang boleh melihat invoice. */
+    public function lihatKelengkapanFile(Request $request, BsApInvoice $invoice, \App\Domain\BusinessSupport\Models\BsApBerkasUploadFile $file, \App\Domain\BusinessSupport\Services\KelengkapanBerkasInvoice $kelengkapan): \Symfony\Component\HttpFoundation\Response
+    {
+        abort_unless($request->user()?->can('ap.invoice.show') || $this->bolehModulJenis($request, $invoice), 403);
+        abort_unless($kelengkapan->milikInvoice($invoice, $file), 404);
+        $disk = \Illuminate\Support\Facades\Storage::disk(\App\Domain\BusinessSupport\Services\ApBerkasService::DISK);
+        abort_unless($disk->exists($file->path), 404);
+
+        return response()->file($disk->path($file->path), [
+            'Content-Type' => $file->mime,
+            'Content-Disposition' => 'inline; filename="'.addcslashes($file->original_name, '"\\').'"',
+            'Cache-Control' => 'private, max-age=300',
+        ]);
     }
 
     /**
