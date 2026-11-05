@@ -106,6 +106,10 @@ final class LinkBerkasSupplier
         if (! $link->aktif()) {
             throw new BusinessRuleException('Link ini sudah tidak menerima dokumen.', errorCode: 'LINK_TUTUP');
         }
+        // Berkas sudah di-TTD sampai tahap terakhir → link nonaktif bagi supplier.
+        if ($link->ttdSelesai()) {
+            throw new BusinessRuleException('Berkas sudah disetujui — link ini tidak menerima dokumen lagi.', errorCode: 'LINK_TUTUP');
+        }
         $ulang = $link->status === BsApBerkasLink::TERISI;
         if ($files === []) {
             throw new BusinessRuleException('Unggah minimal satu file.', errorCode: 'LINK_KOSONG');
@@ -150,7 +154,7 @@ final class LinkBerkasSupplier
                 // sudah dipakai invoice — dibiarkan
             }
         }
-        $riwayat = $link->riwayat ?? [];
+        $riwayat = $link->riwayatUnggahan();
         $riwayat[] = ['at' => now()->toIso8601String(), 'berkas_id' => $berkas->id, 'berkas_number' => $berkas->berkas_number,
             'no_invoice' => $data['supplier_invoice_no'] ?? null, 'file' => count($files), 'catatan' => $catatan];
         $link->update(['data' => $data, 'berkas_upload_id' => $berkas->id, 'status' => BsApBerkasLink::TERISI, 'filled_at' => now(),

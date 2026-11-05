@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { router, Link } from '@inertiajs/vue3';
 import { ref, reactive, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue';
-import { Plus, ArrowLeft, HandCoins, Search, ChevronDown, CalendarClock, CalendarCheck, BookText, Tags, FileInput, ReceiptText, Eraser, FileSpreadsheet, FilterX, Printer } from 'lucide-vue-next';
+import { Plus, ArrowLeft, HandCoins, Search, ChevronDown, CalendarClock, CalendarCheck, BookText, Tags, FileInput, ReceiptText, Eraser, FileSpreadsheet, FilterX, Printer, Upload } from 'lucide-vue-next';
+import { berkasTitipan } from '@/Composables/berkasTitipan';
 import Button from '@/Components/UI/Button.vue';
 import Badge from '@/Components/UI/Badge.vue';
 import EmptyState from '@/Components/UI/EmptyState.vue';
@@ -47,6 +48,16 @@ const draftTerbuka = ref(false);
 const jumlahDraft = computed(() => (props.pengajuanBudget?.length ?? 0) + (props.menungguSupplier?.length ?? 0));
 const adaDraftBaru = computed(() => (props.pengajuanBudget ?? []).some((p) => p.baru) || (props.menungguSupplier ?? []).some((l) => l.baru));
 const modulInvoice = props.jenis.kunci === 'invoice';
+// Tombol kecil Upload file → file dititipkan, wizard dibuka di blok Berkas Tagihan.
+const inputBerkas = ref<HTMLInputElement | null>(null);
+function pilihBerkas(e: Event) {
+    const el = e.target as HTMLInputElement;
+    const files = Array.from(el.files ?? []);
+    el.value = '';
+    if (!files.length) return;
+    berkasTitipan.value = files;
+    router.visit(route('bs.ap.create', { mulai: 'berkas' }));
+}
 
 function fmtRp(v: number) { return 'Rp ' + Number(v ?? 0).toLocaleString('id-ID'); }
 function fmtDate(d: string | null) { return d ? new Date(d).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'; }
@@ -219,6 +230,13 @@ watch(rows, () => nextTick(measure));
                     <Printer class="h-4 w-4" /> Cetak PO<span v-if="selectedPoIds.length"> ({{ selectedPoIds.length }})</span>
                 </button>
                 <Link v-if="punyaIzin('ap.kuitansi.view')" :href="route('bs.ap.kuitansi.index')"><Button variant="secondary"><template #icon-left><ReceiptText class="h-4 w-4" /></template>Kuitansi</Button></Link>
+                <!-- Tombol kecil Upload file: pilih file tagihan → wizard Invoice terbuka di blok Berkas Tagihan (langkah 2) dengan file sudah di drop box. -->
+                <template v-if="modulInvoice && punyaIzin(jenis.izin + '.create')">
+                    <input ref="inputBerkas" type="file" multiple accept=".pdf,.jpg,.jpeg,.png" class="hidden" @change="pilihBerkas" />
+                    <button type="button" title="Upload file tagihan — langsung ke tahap Upload File / Generate Link" aria-label="Upload file tagihan"
+                        class="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-primary-300 text-primary-600 hover:bg-primary-50 dark:border-primary-700/50 dark:hover:bg-primary-900/30"
+                        @click="inputBerkas?.click()"><Upload class="h-4 w-4" /></button>
+                </template>
                 <Link v-if="punyaIzin(jenis.izin + '.create')" :href="route(modulInvoice ? 'bs.ap.create' : jenis.rute + '.create')"><Button><template #icon-left><Plus class="h-4 w-4" /></template>{{ modulInvoice ? 'Invoice' : jenis.judul.split(' ')[0] }}</Button></Link>
             </div>
         </div>

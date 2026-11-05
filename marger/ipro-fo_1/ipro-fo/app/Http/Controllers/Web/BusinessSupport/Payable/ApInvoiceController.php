@@ -444,7 +444,7 @@ class ApInvoiceController extends Controller
             // Detil Tagihan › Upload File / Generate Link.
             'linkBerkas' => $link ? ['id' => $link->id, 'url' => $link->url(), 'invoice_number' => $link->invoice_number, 'status' => $link->status,
                 'filled_at' => $link->filled_at?->toIso8601String(), 'berkas_upload_id' => $link->berkas_upload_id,
-                'riwayat' => array_values(array_reverse($link->riwayat ?? []))] : null,
+                'riwayat' => array_reverse($link->riwayatUnggahan()), 'menerima' => $link->menerimaUnggahan()] : null,
             // Drop box Upload File: jenis tetap Invoice, Kuitansi, Faktur Pajak, Lainnya (sama dengan halaman supplier).
             'jenisBerkas' => $wajibBerkas ? \App\Domain\BusinessSupport\Models\BsApBerkas::jenisTetap() : [],
             // Penerima Reimburse/Deposit tercatat sebagai supplier berkategori khusus

@@ -47,6 +47,49 @@ class BsApBerkasLink extends Model
         return in_array($this->status, [self::MENUNGGU, self::TERISI], true);
     }
 
+    /**
+     * Supplier masih boleh mengunggah lewat link: link aktif DAN berkasnya belum selesai di-TTD
+     * sampai tahap terakhir chain TTD Berkas. Sesudah itu link nonaktif bagi supplier — pembuat
+     * invoice masih bisa menambah file dari wizard (ApBerkasService::tambahFileSesudahTtd).
+     */
+    public function menerimaUnggahan(): bool
+    {
+        return $this->aktif() && ! $this->ttdSelesai();
+    }
+
+    /** Berkas link sudah disetujui penuh di chain TTD Berkas. */
+    public function ttdSelesai(): bool
+    {
+        if (! $this->berkas_upload_id) {
+            return false;
+        }
+        $status = $this->relationLoaded('berkas') ? $this->berkas?->status
+            : BsApBerkasUpload::query()->whereKey($this->berkas_upload_id)->value('status');
+
+        return in_array($status, [BsApBerkasUpload::STATUS_SIAP_INVOICE, BsApBerkasUpload::STATUS_SEBAGIAN,
+            BsApBerkasUpload::STATUS_DIINVOICE, BsApBerkasUpload::STATUS_DITUTUP], true);
+    }
+
+    /**
+     * Riwayat unggahan (lama → baru). Link yang terisi sebelum riwayat dicatat (kolom riwayat
+     * kosong) tetap menampilkan unggahan terakhirnya dari filled_at.
+     *
+     * @return list<array<string,mixed>>
+     */
+    public function riwayatUnggahan(): array
+    {
+        $riwayat = $this->riwayat ?? [];
+        if ($riwayat === [] && $this->filled_at && $this->berkas_upload_id) {
+            $riwayat[] = ['at' => $this->filled_at->toIso8601String(), 'berkas_id' => $this->berkas_upload_id,
+                'berkas_number' => BsApBerkasUpload::query()->whereKey($this->berkas_upload_id)->value('berkas_number'),
+                'no_invoice' => $this->data['supplier_invoice_no'] ?? null,
+                'file' => BsApBerkasUploadFile::query()->where('berkas_upload_id', $this->berkas_upload_id)->count(),
+                'catatan' => null];
+        }
+
+        return array_values($riwayat);
+    }
+
     public function url(): string
     {
         return route('berkas-supplier.show', $this->token);

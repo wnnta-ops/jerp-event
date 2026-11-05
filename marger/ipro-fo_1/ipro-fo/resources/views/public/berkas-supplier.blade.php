@@ -2,9 +2,10 @@
 @php
     $wajib = $jenis->where('is_mandatory', true);
     // Link hidup selama invoicenya belum disimpan / dibatalkan — supplier boleh mengunggah ulang.
-    $terima = ! $link->aktif();
+    // Ditutup juga begitu berkasnya sudah di-TTD sampai tahap terakhir.
+    $terima = ! $link->menerimaUnggahan();
     $sudah = $link->status === \App\Domain\BusinessSupport\Models\BsApBerkasLink::TERISI;
-    $riwayat = array_reverse($link->riwayat ?? []);
+    $riwayat = array_reverse($link->riwayatUnggahan());
     $jam = fn ($iso) => \Illuminate\Support\Carbon::parse($iso)->timezone(config('app.timezone'))->format('d/m/Y H:i');
     $idLainnya = $jenis->firstWhere('code', \App\Domain\BusinessSupport\Models\BsApBerkas::KODE_LAINNYA)?->id;
     // Tebakan jenis dari nama file (pengunggah tetap bisa mengganti).
@@ -80,7 +81,8 @@
         <div class="card">
             <div class="ok">✓ Dokumen sudah kami terima</div>
             <p class="muted" style="margin-bottom:0">Terakhir diunggah <b>{{ $link->filled_at?->timezone(config('app.timezone'))->format('d/m/Y H:i') }}</b> untuk invoice {{ $link->data['supplier_invoice_no'] ?? '' }}.
-                @if ($terima) Link ini sudah ditutup — hubungi tim AP kami bila ada dokumen yang perlu diganti.
+                @if ($terima && $link->ttdSelesai()) Dokumen sudah <b>disetujui</b> dan link ini sudah ditutup — bila ada dokumen tambahan, kirimkan ke tim AP kami.
+                @elseif ($terima) Link ini sudah ditutup — hubungi tim AP kami bila ada dokumen yang perlu diganti.
                 @else Masih bisa <b>mengunggah ulang</b> di bawah bila ada dokumen yang salah / kurang — unggahan baru <b>menggantikan</b> yang sebelumnya (unggah ulang semua dokumennya).@endif</p>
             @if ($riwayat)
                 <div class="muted" style="margin-top:10px;font-weight:600">Riwayat unggahan</div>

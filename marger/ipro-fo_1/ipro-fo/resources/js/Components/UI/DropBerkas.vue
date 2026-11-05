@@ -7,6 +7,7 @@
  */
 import { computed, ref } from 'vue';
 import { UploadCloud, X } from 'lucide-vue-next';
+import { tebakJenis } from '@/Composables/berkasTitipan';
 
 export type FileBerkas = { file: File; berkas_id: number | ''; keterangan: string };
 type Jenis = { id: number; code?: string; name: string; is_mandatory: boolean };
@@ -15,18 +16,12 @@ const props = withDefaults(defineProps<{ modelValue: FileBerkas[]; jenis: Jenis[
 const emit = defineEmits<{ (e: 'update:modelValue', v: FileBerkas[]): void }>();
 
 const MAKS_UKURAN = 10 * 1024 * 1024;
-const POLA: Record<string, RegExp> = {
-    INVOICE: /invoice|inv|nota|tagihan/i, KUITANSI: /kuitansi|kwitansi|receipt/i, 'FAKTUR-PAJAK': /faktur|efaktur|pajak|tax/i,
-};
 const idLainnya = computed(() => props.jenis.find((j) => j.code === 'LAINNYA')?.id ?? null);
 const input = ref<HTMLInputElement | null>(null);
 const aktif = ref(false);
 const galat = ref('');
 
-function tebak(nama: string): number | '' {
-    for (const j of props.jenis) if (j.code && POLA[j.code]?.test(nama)) return j.id;
-    return '';
-}
+const tebak = (nama: string) => tebakJenis(nama, props.jenis);
 function tambah(files: FileList | null) {
     galat.value = '';
     const daftar = [...props.modelValue];
