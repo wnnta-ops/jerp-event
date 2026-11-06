@@ -221,9 +221,11 @@ class _DetailPageState extends State<DetailPage> {
     ]);
   }
 
-  /// Lampiran perubahan budget satu alokasi / koreksi (dari daftar dokumen BO, atau dibentuk dari kuncinya).
+  /// Lampiran perubahan budget satu alokasi / koreksi. Invoice dengan Memo Internal: satu dokumen
+  /// gabungan (memo + semua lampiran), sama seperti di BO. Selain itu lampirannya sendiri.
   void _bukaLampiran(BuildContext context, InboxDetail d, Turunan t) {
-    final dok = d.dokumen.where((x) => x.kunci == t.kunci).firstOrNull ??
+    final dok = d.dokumen.where((x) => x.kunci == 'memo-internal').firstOrNull ??
+        d.dokumen.where((x) => x.kunci == t.kunci).firstOrNull ??
         DokumenItem.fromJson({'kunci': t.kunci, 'nama': 'Lampiran ${t.jenis} ${t.docNo ?? ''}', 'mime': 'text/html'});
     bukaDokumen(context, widget.store.api, d.item.id, dok);
   }

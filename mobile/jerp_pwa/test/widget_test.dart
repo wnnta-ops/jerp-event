@@ -135,7 +135,12 @@ MockClient serverPalsu({List<String>? log, List<String>? aksi}) => MockClient((r
         case '/api/mobile/inbox/31':
           return json({'data': {...inbox[1], 'fields': [], 'body': null, 'jumlah_file': 0, 'stages': [], 'can_act': true,
             'revisi': 1, 'riwayat_revisi': [{'nama': 'Fina Finance', 'at': '2026-11-05T07:00:00Z', 'catatan': 'Ganti sumber'}], 'bisa_revisi': false,
-            'dokumen': [{'kunci': 'alokasi-5', 'nama': 'Lampiran alokasi ALK-0005', 'jenis': 'Lampiran alokasi budget', 'mime': 'text/html', 'ukuran': null}]}});
+            'dokumen': [
+              {'kunci': 'memo-internal', 'nama': 'Memo Internal + Lampiran INV-1', 'jenis': 'Memo Internal', 'mime': 'text/html', 'ukuran': null},
+              {'kunci': 'alokasi-5', 'nama': 'Lampiran alokasi ALK-0005', 'jenis': 'Lampiran alokasi budget', 'mime': 'text/html', 'ukuran': null},
+            ]}});
+        case '/api/mobile/inbox/31/dokumen/memo-internal':
+          return http.Response.bytes(utf8.encode('<p>Memo + lampiran</p>'), 200, headers: {'content-type': 'text/html; charset=UTF-8'});
         case '/api/mobile/inbox/31/dokumen/alokasi-5':
           return http.Response.bytes(utf8.encode('<p>Lampiran</p>'), 200, headers: {'content-type': 'text/html; charset=UTF-8'});
         case '/api/mobile/inbox/20/dokumen/file-1':
@@ -596,10 +601,11 @@ void main() {
     expect(find.text('Alokasi / Koreksi Budget (1)'), findsOneWidget);
     expect(find.textContaining('[REVISI] ke-1'), findsOneWidget);
     expect(find.text('Setujui + 1 alokasi/koreksi'), findsOneWidget);
-    // Lampirannya dibuka dari daftar turunan, tidak diulang di bagian Dokumen.
+    // Lampiran per turunan tidak diulang di bagian Dokumen; Memo Internal (memo + lampiran) yang tampil.
     expect(find.text('Lampiran alokasi ALK-0005'), findsNothing);
+    expect(find.text('Memo Internal + Lampiran INV-1'), findsOneWidget);
     await tester.tap(find.text('Alokasi · ALK-0005'));
     await tester.pumpAndSettle();
-    expect(find.text('HTML alokasi-5: <p>Lampiran</p>'), findsOneWidget);
+    expect(find.text('HTML memo-internal: <p>Memo + lampiran</p>'), findsOneWidget);
   });
 }

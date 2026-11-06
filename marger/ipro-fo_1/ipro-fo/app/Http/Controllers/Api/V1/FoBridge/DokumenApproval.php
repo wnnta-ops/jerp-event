@@ -25,6 +25,7 @@ use Symfony\Component\HttpFoundation\Response;
  * Dokumen yang bisa di-preview app approver (PWA) untuk satu approval Approval Inbox:
  *   file-{id}  : lampiran berkas (TTD Berkas / Invoice Hutang dari berkas) — file asli
  *   memo       : lembar Memo Urgent (ApprovalInboxController::cetak, mode preview)
+ *   memo-internal : Memo Internal Invoice Hutang + Lampiran Perubahan Budget (ApprovalInboxController::memoInternal)
  *   lampiran   : lampiran perubahan budget (Alokasi / Koreksi)
  *   alokasi-{id} / koreksi-{id} : lampiran alokasi / koreksi turunan Invoice Hutang (diputuskan bersamanya)
  * Lembar HTML dikirim mandiri: logo & TTD disisipkan sebagai data URI, karena alamat aslinya
@@ -39,6 +40,9 @@ final class DokumenApproval
         $out = [];
         if ($m instanceof MemoInternal) {
             $out[] = ['kunci' => 'memo', 'nama' => 'Lembar '.($m->memo_number ?: 'memo'), 'jenis' => 'Lembar memo', 'mime' => 'text/html', 'ukuran' => null];
+        }
+        if ($m instanceof BsApInvoice) {
+            $out[] = ['kunci' => 'memo-internal', 'nama' => 'Memo Internal + Lampiran '.($m->invoice_number ?? ''), 'jenis' => 'Memo Internal', 'mime' => 'text/html', 'ukuran' => null];
         }
         if ($m instanceof BsBudgetAllocation || $m instanceof BsBudgetCorrection) {
             $out[] = ['kunci' => 'lampiran', 'nama' => 'Lampiran perubahan budget '.($m->doc_no ?? ''), 'jenis' => 'Lampiran', 'mime' => 'text/html', 'ukuran' => null];
@@ -64,6 +68,14 @@ final class DokumenApproval
             $html = app(ApprovalInboxController::class)->cetak($sub, $approval)->getContent();
 
             return $this->html((string) $html, 'memo-'.($m->memo_number ?: $approval->id));
+        }
+
+        if ($kunci === 'memo-internal' && $m instanceof BsApInvoice) {
+            $sub = Request::create('/approval-inbox/'.$approval->id.'/memo-internal', 'GET', ['preview' => 1]);
+            $sub->setUserResolver(fn () => $request->user());
+            $html = app(ApprovalInboxController::class)->memoInternal($sub, $approval)->getContent();
+
+            return $this->html((string) $html, 'memo-internal-'.($m->invoice_number ?: $approval->id));
         }
 
         if ($kunci === 'lampiran' && ($m instanceof BsBudgetAllocation || $m instanceof BsBudgetCorrection)) {
@@ -142,6 +154,8 @@ final class DokumenApproval
         }, $html) ?? $html;
 
         $html = preg_replace('#<script\b[^>]*>.*?</script>#is', '', $html) ?? $html;
+        // Tombol layar (Cetak / Kembali ke BO) tidak berguna di app — sembunyikan.
+        $html = preg_replace('#</head>#i', '<style>.noprint{display:none!important}</style></head>', $html, 1) ?? $html;
         $file = preg_replace('/[^A-Za-z0-9._-]+/', '-', $nama).'.html';
 
         return response($html, 200, [

@@ -221,6 +221,7 @@ try {
         'file' => Approval::where('document_type', 'ap_berkas')->with('approvable')->get()->first(fn ($a) => $a->approvable?->files()->exists()),
         'memo' => Approval::where('document_type', 'memo_internal')->latest('id')->first(),
         'lampiran' => Approval::whereIn('document_type', ['budget_correction', 'budget_allocation'])->latest('id')->first(),
+        'memo-internal' => Approval::where('document_type', 'ap_invoice')->latest('id')->first(),
     ];
     foreach ($contoh as $jenis => $a) {
         if (! $a || ! $admin) {
