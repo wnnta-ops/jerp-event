@@ -4,11 +4,14 @@ import '../auth/session.dart';
 import '../config.dart';
 import '../dashboard/dashboard_store.dart';
 import '../dashboard/kartu_grafik.dart';
+import '../inbox/inbox_models.dart';
 import '../inbox/inbox_store.dart';
 import '../inbox/widgets.dart';
 import 'approval_page.dart';
+import 'detail_page.dart';
 
-class HomePage extends StatelessWidget {
+/// Home: header oranye → kartu "Menunggu Anda" → Perlu tindakan → Dashboard (bila ada izin BO).
+class HomePage extends StatefulWidget {
   const HomePage({
     super.key,
     required this.session,
@@ -24,85 +27,238 @@ class HomePage extends StatelessWidget {
   final ValueChanged<Saring> bukaApproval;
 
   @override
+  State<HomePage> createState() => _HomePageState();
+}
+
+class _HomePageState extends State<HomePage> {
+  /// Grup dashboard yang sedang dipilih (key); null = grup pertama.
+  String? _grup;
+
+  InboxStore get store => widget.store;
+  DashboardStore get dashboard => widget.dashboard;
+
+  @override
   Widget build(BuildContext context) {
     final tema = Theme.of(context);
-    final user = session.user!;
     return Scaffold(
-      appBar: AppBar(
-        backgroundColor: oranye,
-        foregroundColor: Colors.white,
-        title: Text('Halo, ${user.name.split(' ').first}'),
-      ),
       body: ListenableBuilder(
         listenable: Listenable.merge([store, dashboard]),
         builder: (context, _) => RefreshIndicator(
-          onRefresh: () => Future.wait([store.muatInbox(), muatDashboard()]),
-          child: ListView(padding: const EdgeInsets.all(16), children: [
-            Text('Menunggu persetujuan Anda', style: tema.textTheme.titleSmall),
-            const SizedBox(height: 8),
-            Row(children: [
-              Expanded(child: _angka(context, 'Urgent', store.urgent, true, () => bukaApproval(Saring.urgent))),
-              const SizedBox(width: 12),
-              Expanded(child: _angka(context, 'Reguler', store.reguler, false, () => bukaApproval(Saring.reguler))),
+          onRefresh: () => Future.wait([store.muatInbox(), widget.muatDashboard()]),
+          child: ListView(padding: EdgeInsets.zero, children: [
+            // Latar oranye berhenti 44 px sebelum bawah → kartu "Menunggu Anda" setengah menumpang di atasnya.
+            Stack(children: [
+              const Positioned(
+                left: 0,
+                right: 0,
+                top: 0,
+                bottom: 44,
+                child: DecoratedBox(
+                  decoration: BoxDecoration(color: oranye, borderRadius: BorderRadius.vertical(bottom: Radius.circular(24))),
+                ),
+              ),
+              Column(children: [
+                _header(context),
+                Padding(padding: const EdgeInsets.symmetric(horizontal: 16), child: _menunggu(context)),
+              ]),
             ]),
-            if (store.error != null) ...[
-              const SizedBox(height: 8),
-              Text(store.error!, style: TextStyle(color: tema.colorScheme.error)),
-            ],
-            ..._dashboard(context),
-          ]),
-        ),
-      ),
-    );
-  }
-
-  /// Dashboard BO — hanya tampil bila user punya izin dashboard.{grup}.view di BO.
-  List<Widget> _dashboard(BuildContext context) {
-    final tema = Theme.of(context);
-    if (dashboard.error != null && dashboard.allowed == null) {
-      return [const SizedBox(height: 24), PesanError(pesan: dashboard.error!, ulang: muatDashboard)];
-    }
-    if (dashboard.allowed == null) {
-      return const [Padding(padding: EdgeInsets.all(32), child: Center(child: CircularProgressIndicator()))];
-    }
-    if (dashboard.allowed == false) return const [];
-    return [
-      const SizedBox(height: 24),
-      Row(children: [
-        Expanded(child: Text('Dashboard', style: tema.textTheme.titleMedium)),
-        if (dashboard.periode != null) Text(dashboard.periode!, style: tema.textTheme.bodySmall),
-      ]),
-      for (final g in dashboard.grup) ...[
-        const SizedBox(height: 12),
-        Text(g.judul, style: tema.textTheme.labelLarge?.copyWith(color: const Color(0xFFC2410C))),
-        const SizedBox(height: 6),
-        for (final k in g.charts)
-          if (dashboard.charts[k] is Map<String, dynamic>) KartuGrafik(kunci: k, data: dashboard.charts[k] as Map<String, dynamic>),
-      ],
-    ];
-  }
-
-  Widget _angka(BuildContext context, String label, int n, bool urgent, VoidCallback onTap) {
-    return Card(
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-        side: BorderSide(color: urgent ? const Color(0xFFFDBA74) : Theme.of(context).colorScheme.outlineVariant),
-      ),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(12),
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(label, style: Theme.of(context).textTheme.bodySmall),
-            const SizedBox(height: 4),
-            Text(
-              store.memuat && store.perlu.isEmpty ? '…' : '$n',
-              style: TextStyle(fontSize: 28, fontWeight: FontWeight.w600, color: urgent ? const Color(0xFFC2410C) : null),
+            const SizedBox(height: 8),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                if (store.error != null) ...[
+                  Text(store.error!, style: TextStyle(color: tema.colorScheme.error)),
+                  const SizedBox(height: 8),
+                ],
+                ..._perluTindakan(context),
+                ..._dashboard(context),
+              ]),
             ),
           ]),
         ),
       ),
     );
+  }
+
+  Widget _header(BuildContext context) {
+    final user = widget.session.user!;
+    final jam = DateTime.now().hour;
+    final salam = jam < 11 ? 'Selamat pagi' : (jam < 15 ? 'Selamat siang' : (jam < 18 ? 'Selamat sore' : 'Selamat malam'));
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 16, 12, 20),
+      child: SafeArea(
+        bottom: false,
+        child: Row(children: [
+          Expanded(
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(salam, style: TextStyle(color: Colors.white.withValues(alpha: 0.85), fontSize: 13)),
+              const SizedBox(height: 2),
+              Text('Halo, ${user.name.split(' ').first}',
+                  style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w600)),
+            ]),
+          ),
+          IconButton(
+            tooltip: 'Approval inbox',
+            color: Colors.white,
+            onPressed: () => widget.bukaApproval(Saring.semua),
+            icon: Badge(
+              isLabelVisible: store.urgent > 0,
+              backgroundColor: Colors.white,
+              smallSize: 8,
+              child: const Icon(Icons.notifications_none),
+            ),
+          ),
+        ]),
+      ),
+    );
+  }
+
+  /// Satu angka besar (semua yang menunggu) + label urgent / reguler yang bisa diketuk.
+  Widget _menunggu(BuildContext context) {
+    final tema = Theme.of(context);
+    final memuat = store.memuat && store.perlu.isEmpty;
+    final gelap = tema.brightness == Brightness.dark;
+    return Card(
+      margin: EdgeInsets.zero,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: () => widget.bukaApproval(Saring.semua),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 14),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text('Menunggu Anda', style: tema.textTheme.bodySmall?.copyWith(color: tema.colorScheme.onSurfaceVariant)),
+            Row(crossAxisAlignment: CrossAxisAlignment.baseline, textBaseline: TextBaseline.alphabetic, children: [
+              Text(memuat ? '…' : '${store.perlu.length}', style: const TextStyle(fontSize: 32, fontWeight: FontWeight.w600)),
+              const SizedBox(width: 6),
+              Text('dokumen', style: TextStyle(color: tema.colorScheme.onSurfaceVariant)),
+            ]),
+            const SizedBox(height: 6),
+            Row(children: [
+              _label('${store.urgent} urgent', gelap ? const Color(0xFF7F1D1D) : const Color(0xFFFEE2E2),
+                  gelap ? const Color(0xFFFECACA) : const Color(0xFFB91C1C), () => widget.bukaApproval(Saring.urgent)),
+              const SizedBox(width: 8),
+              _label('${store.reguler} reguler', tema.colorScheme.surfaceContainerHighest, tema.colorScheme.onSurfaceVariant,
+                  () => widget.bukaApproval(Saring.reguler)),
+            ]),
+          ]),
+        ),
+      ),
+    );
+  }
+
+  Widget _label(String teks, Color latar, Color warna, VoidCallback onTap) {
+    return Material(
+      color: latar,
+      borderRadius: BorderRadius.circular(20),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(20),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+          child: Text(teks, style: TextStyle(color: warna, fontSize: 12, fontWeight: FontWeight.w500)),
+        ),
+      ),
+    );
+  }
+
+  /// 3 dokumen teratas (urgent dulu) → langsung ke detail.
+  List<Widget> _perluTindakan(BuildContext context) {
+    final tema = Theme.of(context);
+    final teratas = [...store.perlu.where((i) => i.urgent), ...store.perlu.where((i) => !i.urgent)].take(3).toList();
+    return [
+      _judul(context, 'Perlu tindakan', aksi: store.perlu.length > 3 ? 'Semua' : null, onAksi: () => widget.bukaApproval(Saring.semua)),
+      if (teratas.isEmpty)
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Text(store.memuat ? 'Memuat…' : 'Tidak ada dokumen yang menunggu Anda.',
+                style: tema.textTheme.bodySmall?.copyWith(color: tema.colorScheme.onSurfaceVariant)),
+          ),
+        )
+      else
+        Card(
+          child: Column(children: [
+            for (final (n, i) in teratas.indexed) ...[
+              if (n > 0) const Divider(height: 1, indent: 16, endIndent: 16),
+              _baris(context, i),
+            ],
+          ]),
+        ),
+    ];
+  }
+
+  Widget _baris(BuildContext context, InboxItem i) {
+    final tema = Theme.of(context);
+    return ListTile(
+      dense: true,
+      leading: Container(
+        width: 8,
+        height: 8,
+        decoration: BoxDecoration(shape: BoxShape.circle, color: i.urgent ? const Color(0xFFDC2626) : const Color(0xFFA8A29E)),
+      ),
+      minLeadingWidth: 8,
+      title: Text(i.judul, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w500)),
+      subtitle: Text([i.type, i.department].whereType<String>().where((s) => s.isNotEmpty).join(' · '),
+          maxLines: 1, overflow: TextOverflow.ellipsis),
+      trailing: Text(rupiah(i.amount), style: tema.textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w600)),
+      onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => DetailPage(store: store, id: i.id))),
+    );
+  }
+
+  Widget _judul(BuildContext context, String teks, {String? aksi, VoidCallback? onAksi, String? kanan}) {
+    final tema = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.only(top: 16, bottom: 6),
+      child: Row(children: [
+        Expanded(child: Text(teks, style: tema.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600))),
+        if (kanan != null) Text(kanan, style: tema.textTheme.bodySmall?.copyWith(color: tema.colorScheme.onSurfaceVariant)),
+        if (aksi != null)
+          TextButton(
+            style: TextButton.styleFrom(visualDensity: VisualDensity.compact, foregroundColor: const Color(0xFFC2410C)),
+            onPressed: onAksi,
+            child: Text(aksi),
+          ),
+      ]),
+    );
+  }
+
+  /// Dashboard BO — hanya tampil bila user punya izin dashboard.{grup}.view di BO. Satu grup sekaligus.
+  List<Widget> _dashboard(BuildContext context) {
+    if (dashboard.error != null && dashboard.allowed == null) {
+      return [const SizedBox(height: 24), PesanError(pesan: dashboard.error!, ulang: widget.muatDashboard)];
+    }
+    if (dashboard.allowed == null) {
+      return const [Padding(padding: EdgeInsets.all(32), child: Center(child: CircularProgressIndicator()))];
+    }
+    if (dashboard.allowed == false || dashboard.grup.isEmpty) return const [];
+    final aktif = dashboard.grup.where((g) => g.key == _grup).firstOrNull ?? dashboard.grup.first;
+    final gelap = Theme.of(context).brightness == Brightness.dark;
+    return [
+      _judul(context, 'Dashboard', kanan: dashboard.periode),
+      if (dashboard.grup.length > 1)
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Row(children: [
+            for (final g in dashboard.grup)
+              Padding(
+                padding: const EdgeInsets.only(right: 8),
+                child: ChoiceChip(
+                  label: Text(g.judul),
+                  selected: g == aktif,
+                  showCheckmark: false,
+                  selectedColor: gelap ? const Color(0xFF7C2D12) : const Color(0xFFFFEDD5),
+                  labelStyle: TextStyle(
+                    color: g == aktif ? (gelap ? const Color(0xFFFED7AA) : const Color(0xFF9A3412)) : null,
+                    fontWeight: g == aktif ? FontWeight.w600 : null,
+                  ),
+                  onSelected: (_) => setState(() => _grup = g.key),
+                ),
+              ),
+          ]),
+        ),
+      const SizedBox(height: 8),
+      for (final k in aktif.charts)
+        if (dashboard.charts[k] is Map<String, dynamic>) KartuGrafik(kunci: k, data: dashboard.charts[k] as Map<String, dynamic>),
+    ];
   }
 }

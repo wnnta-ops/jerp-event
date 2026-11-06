@@ -270,8 +270,12 @@ void main() {
     await pasang(tester);
     await isiLogin(tester, 'gm@jerp.test', 'benar');
     expect(find.text('Halo, Budi'), findsOneWidget);
-    expect(find.text('Urgent'), findsOneWidget);
-    expect(find.text('Reguler'), findsOneWidget);
+    expect(find.text('Menunggu Anda'), findsOneWidget);
+    expect(find.text('1 urgent'), findsOneWidget);
+    expect(find.text('1 reguler'), findsOneWidget);
+    // Perlu tindakan: urgent dulu.
+    expect(find.text('Perbaikan pompa'), findsOneWidget);
+    expect(find.text('Invoice PT Beton'), findsOneWidget);
     final prefs = await SharedPreferences.getInstance();
     expect(prefs.getString('jerp_token'), '1|abc');
   });
@@ -375,6 +379,13 @@ void main() {
     expect(find.text('−Rp 674 jt'), findsOneWidget);
     expect(find.text('6 · Aging Hutang'), findsOneWidget);
     expect(find.text('Belum ada data di periode ini.'), findsOneWidget);
+    // Satu grup sekaligus: Accounting tampil setelah dipilih.
+    expect(find.text('10 · Realisasi Budget'), findsNothing);
+    await tester.ensureVisible(find.widgetWithText(ChoiceChip, 'Accounting, Tax & Budget'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(ChoiceChip, 'Accounting, Tax & Budget'));
+    await tester.pumpAndSettle();
+    expect(find.text('4 · Summary Rekening Ledger'), findsNothing);
     expect(find.text('10 · Realisasi Budget'), findsOneWidget);
     expect(find.text('40%'), findsOneWidget);
     expect(tester.takeException(), isNull);

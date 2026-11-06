@@ -49,11 +49,8 @@ class JerpApproverApp extends StatelessWidget {
         title: 'J-ERP Approver',
         debugShowCheckedModeBanner: false,
         themeMode: prefs.tema,
-        theme: ThemeData(colorScheme: ColorScheme.fromSeed(seedColor: oranye, primary: oranye), useMaterial3: true),
-        darkTheme: ThemeData(
-          colorScheme: ColorScheme.fromSeed(seedColor: oranye, primary: oranye, brightness: Brightness.dark),
-          useMaterial3: true,
-        ),
+        theme: temaApp(Brightness.light),
+        darkTheme: temaApp(Brightness.dark),
         // Layar kunci di atas Navigator utama → halaman yang sedang terbuka (detail, dll) ikut tertutup.
         builder: (context, child) => MediaQuery(
           data: MediaQuery.of(context).copyWith(textScaler: TextScaler.linear(prefs.teksBesar ? 1.2 : 1.0)),

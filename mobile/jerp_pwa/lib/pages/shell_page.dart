@@ -74,23 +74,26 @@ class _ShellPageState extends State<ShellPage> {
       ]),
       bottomNavigationBar: ListenableBuilder(
         listenable: _store,
-        builder: (context, _) => NavigationBar(
-          selectedIndex: _tab,
-          onDestinationSelected: (i) => setState(() => _tab = i),
-          destinations: [
-            const NavigationDestination(icon: Icon(Icons.home_outlined), selectedIcon: Icon(Icons.home), label: 'Home'),
-            NavigationDestination(
-              icon: Badge(
-                isLabelVisible: _store.perlu.isNotEmpty,
-                label: Text('${_store.perlu.length}'),
-                child: const Icon(Icons.inbox_outlined),
+        builder: (context, _) => DecoratedBox(
+          decoration: BoxDecoration(border: Border(top: BorderSide(color: Theme.of(context).colorScheme.outlineVariant))),
+          child: NavigationBar(
+            selectedIndex: _tab,
+            onDestinationSelected: (i) => setState(() => _tab = i),
+            destinations: [
+              const NavigationDestination(icon: Icon(Icons.home_outlined), selectedIcon: Icon(Icons.home), label: 'Home'),
+              NavigationDestination(
+                icon: Badge(
+                  isLabelVisible: _store.perlu.isNotEmpty,
+                  label: Text('${_store.perlu.length}'),
+                  child: const Icon(Icons.inbox_outlined),
+                ),
+                selectedIcon: const Icon(Icons.inbox),
+                label: 'Approval',
               ),
-              selectedIcon: const Icon(Icons.inbox),
-              label: 'Approval',
-            ),
-            const NavigationDestination(icon: Icon(Icons.history), label: 'History'),
-            const NavigationDestination(icon: Icon(Icons.person_outline), selectedIcon: Icon(Icons.person), label: 'Profil'),
-          ],
+              const NavigationDestination(icon: Icon(Icons.history), label: 'History'),
+              const NavigationDestination(icon: Icon(Icons.person_outline), selectedIcon: Icon(Icons.person), label: 'Profil'),
+            ],
+          ),
         ),
       ),
     );
