@@ -1,0 +1,8 @@
+[{
+      "relation": ["delegate_permission/common.handle_all_urls"],
+      "target": {
+        "namespace": "android_app",
+        "package_name": "com.anisaproperti.j_erp.twa",
+        "sha256_cert_fingerprints": ["65:FC:1A:24:38:41:83:54:58:80:EE:11:35:96:E3:BF:9C:B1:92:4F:B6:A2:95:A4:86:6E:0B:81:16:05:60:DE"]
+      }
+    }]
