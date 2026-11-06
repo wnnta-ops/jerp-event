@@ -1,6 +1,9 @@
-import 'biometrik_stub.dart' if (dart.library.js_interop) 'biometrik_web.dart' as impl;
+import 'biometrik_stub.dart'
+    if (dart.library.io) 'biometrik_io.dart'
+    if (dart.library.js_interop) 'biometrik_web.dart' as impl;
 
-/// Face ID / sidik jari lewat passkey bawaan perangkat (WebAuthn, lihat web/kunci.js).
+/// Face ID / sidik jari: di web lewat passkey bawaan perangkat (WebAuthn, lihat web/kunci.js),
+/// di APK Android lewat local_auth (sidik jari / wajah / kunci layar).
 /// Hanya pemeriksaan lokal "pemilik HP ada di depan layar" — bukan pengganti login.
 abstract class Biometrik {
   /// Perangkat punya autentikator biometrik/PIN layar yang bisa dipakai.

@@ -20,6 +20,9 @@ class _DetailPageState extends State<DetailPage> {
   late Future<InboxDetail> _detail = widget.store.detail(widget.id);
   bool _proses = false;
 
+  /// Daftar dokumen satu per satu (di bawah tombol gabungan) sedang dibuka.
+  bool _rinci = false;
+
   Future<void> _putuskan(bool setuju) async {
     final catatan = await _mintaCatatan(setuju);
     if (catatan == null || !mounted) return;
@@ -169,20 +172,36 @@ class _DetailPageState extends State<DetailPage> {
             const SizedBox(height: 16),
             Text('Dokumen', style: tema.textTheme.titleSmall),
             const SizedBox(height: 4),
-            for (final dok in d.dokumenLain)
+            if (d.dokumenLain.length == 1)
+              _kartuDokumen(d.dokumenLain.single, i.id)
+            else ...[
+              // Satu klik: memo (bila ada) + semua dokumen pendukung dalam satu PDF. Panah = satu per satu.
               Card(
                 margin: const EdgeInsets.only(bottom: 6),
                 child: ListTile(
-                  leading: Icon(
-                    dok.pdf ? Icons.picture_as_pdf_outlined : (dok.gambar ? Icons.image_outlined : Icons.description_outlined),
-                    color: oranye,
+                  leading: const Icon(Icons.library_books_outlined, color: oranye),
+                  title: Text(_adaMemo(d) ? 'Memo dan Dokumen pendukung' : 'Dokumen pendukung',
+                      style: const TextStyle(fontWeight: FontWeight.w600)),
+                  subtitle: Text('${d.dokumenLain.length} dokumen · lihat semua sekaligus'),
+                  onTap: () => bukaGabungan(context, widget.store.api, i.id,
+                      _adaMemo(d) ? 'Memo dan Dokumen pendukung' : 'Dokumen pendukung', i.number ?? '#${i.id}', _urutGabung(d)),
+                  trailing: IconButton(
+                    tooltip: _rinci ? 'Sembunyikan daftar' : 'Lihat satu per satu',
+                    onPressed: () => setState(() => _rinci = !_rinci),
+                    icon: AnimatedRotation(
+                      turns: _rinci ? 0.5 : 0,
+                      duration: const Duration(milliseconds: 200),
+                      child: const Icon(Icons.keyboard_arrow_down),
+                    ),
                   ),
-                  title: Text(dok.nama, maxLines: 2, overflow: TextOverflow.ellipsis),
-                  subtitle: Text([dok.jenis, _ukuran(dok.ukuran)].whereType<String>().join(' · ')),
-                  trailing: const Icon(Icons.visibility_outlined),
-                  onTap: () => bukaDokumen(context, widget.store.api, i.id, dok),
                 ),
               ),
+              if (_rinci)
+                Padding(
+                  padding: const EdgeInsets.only(left: 12),
+                  child: Column(children: [for (final dok in d.dokumenLain) _kartuDokumen(dok, i.id)]),
+                ),
+            ],
           ],
           const Divider(height: 32),
           Text('Alur persetujuan (${i.done}/${i.total})', style: tema.textTheme.titleSmall),
@@ -229,6 +248,29 @@ class _DetailPageState extends State<DetailPage> {
         DokumenItem.fromJson({'kunci': t.kunci, 'nama': 'Lampiran ${t.jenis} ${t.docNo ?? ''}', 'mime': 'text/html'});
     bukaDokumen(context, widget.store.api, d.item.id, dok);
   }
+
+  bool _adaMemo(InboxDetail d) => d.dokumenLain.any((x) => x.kunci == 'memo' || x.kunci == 'memo-internal');
+
+  /// Urutan dokumen gabungan: memo dulu, lalu lampiran & file (PDF / foto / lembar) sesuai daftar BO.
+  List<DokumenItem> _urutGabung(InboxDetail d) {
+    final bisa = [for (final x in d.dokumenLain) if (x.pdf || x.gambar || x.mime.startsWith('text/html')) x];
+    bool memo(DokumenItem x) => x.kunci == 'memo' || x.kunci == 'memo-internal';
+    return [...bisa.where(memo), ...bisa.where((x) => !memo(x))];
+  }
+
+  Widget _kartuDokumen(DokumenItem dok, int id) => Card(
+        margin: const EdgeInsets.only(bottom: 6),
+        child: ListTile(
+          leading: Icon(
+            dok.pdf ? Icons.picture_as_pdf_outlined : (dok.gambar ? Icons.image_outlined : Icons.description_outlined),
+            color: oranye,
+          ),
+          title: Text(dok.nama, maxLines: 2, overflow: TextOverflow.ellipsis),
+          subtitle: Text([dok.jenis, _ukuran(dok.ukuran)].whereType<String>().join(' · ')),
+          trailing: const Icon(Icons.visibility_outlined),
+          onTap: () => bukaDokumen(context, widget.store.api, id, dok),
+        ),
+      );
 
   String? _ukuran(int? b) {
     if (b == null) return null;

@@ -92,7 +92,7 @@ class Session extends ChangeNotifier {
       TargetPlatform.linux => 'Linux',
       TargetPlatform.fuchsia => 'Fuchsia',
     };
-    return 'PWA · $os';
+    return '${kIsWeb ? 'PWA' : 'Aplikasi'} · $os';
   }
 
   Future<void> _hapusToken() async {

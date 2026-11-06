@@ -1,9 +1,9 @@
 import 'biometrik.dart';
 
 /// Di luar browser (mis. flutter test di VM) biometrik tidak tersedia.
-Biometrik buat() => _TidakAda();
+Biometrik buat() => BiometrikTidakAda();
 
-class _TidakAda implements Biometrik {
+class BiometrikTidakAda implements Biometrik {
   @override
   Future<bool> tersedia() async => false;
 

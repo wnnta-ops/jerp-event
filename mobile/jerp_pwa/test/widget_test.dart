@@ -1,6 +1,6 @@
 import 'dart:convert';
-import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
@@ -130,6 +130,7 @@ MockClient serverPalsu({List<String>? log, List<String>? aksi}) => MockClient((r
             'stages': [{'label': 'Accounting', 'state': 'done', 'by': 'Andi'}, {'label': 'GM', 'state': 'current'}], 'can_act': true,
             'dokumen': [
               {'kunci': 'file-1', 'nama': 'faktur.pdf', 'jenis': 'Faktur', 'mime': 'application/pdf', 'ukuran': 26285},
+              {'kunci': 'file-2', 'nama': 'foto-nota.jpg', 'jenis': 'Nota', 'mime': 'image/jpeg', 'ukuran': 5120},
               {'kunci': 'memo', 'nama': 'Lembar MI/2611/00001', 'jenis': 'Lembar memo', 'mime': 'text/html', 'ukuran': null},
             ]}});
         case '/api/mobile/inbox/31':
@@ -146,6 +147,8 @@ MockClient serverPalsu({List<String>? log, List<String>? aksi}) => MockClient((r
         case '/api/mobile/inbox/20/dokumen/file-1':
           return http.Response.bytes(utf8.encode('%PDF-1.4 uji'), 200,
               headers: {'content-type': 'application/pdf', 'content-disposition': 'inline; filename="faktur.pdf"'});
+        case '/api/mobile/inbox/20/dokumen/file-2':
+          return http.Response.bytes([1, 2, 3], 200, headers: {'content-type': 'image/jpeg'});
         case '/api/mobile/inbox/20/dokumen/memo':
           return http.Response.bytes(utf8.encode('<html><body>Memo</body></html>'), 200, headers: {'content-type': 'text/html; charset=UTF-8'});
         case '/api/mobile/inbox/20/act':
@@ -200,7 +203,11 @@ late KunciStore kunciTerakhir;
 class DokumenPalsu implements DokumenPlatform {
   final unduhan = <String>[];
   @override
-  Widget html(String isi, String kunci) => Text('HTML $kunci: $isi');
+  Widget html(String isi, String kunci, ValueListenable<double> skala) => Text('HTML $kunci: $isi');
+  /// null = lembar HTML tetap HTML; isi = HTML berhasil dijadikan gambar.
+  Uint8List? jpeg;
+  @override
+  Future<List<Uint8List>?> htmlKeJpeg(String isi) async => jpeg == null ? null : [jpeg!];
   @override
   Future<void> unduh(Uint8List isi, String nama, String mime) async => unduhan.add('$nama $mime ${isi.length}');
 }
@@ -405,7 +412,7 @@ void main() {
     final log = <String>[];
     await pasang(tester, log: log);
     await isiLogin(tester, 'gm@jerp.test', 'benar');
-    expect(log, contains('device=PWA · Android'));
+    expect(log, contains('device=Aplikasi · Android'));
   });
 
   Future<void> bukaProfil(WidgetTester tester, String menu) async {
@@ -540,7 +547,7 @@ void main() {
 
     await tester.tap(find.widgetWithText(SwitchListTile, 'Notifikasi di perangkat ini'));
     await tester.pumpAndSettle();
-    expect(log, contains('subscribe https://push.test/hp pk-BPUB PWA · Android'));
+    expect(log, contains('subscribe https://push.test/hp pk-BPUB Aplikasi · Android'));
     expect(find.text('Giliran saya'), findsOneWidget);
 
     await tester.tap(find.widgetWithText(SwitchListTile, 'Pengingat harian'));
@@ -578,11 +585,16 @@ void main() {
   testWidgets('Detail: preview PDF & lembar memo dalam popup, lalu unduh', (tester) async {
     final dok = DokumenPalsu();
     DokumenPlatform.instance = dok;
-    penampilPdf = (isi, kunci) => Text('PDF ${isi.length} byte');
+    penampilPdf = (isi, kunci, ctrl) => Text('PDF ${isi.length} byte');
     await pasang(tester, simpanan: {'jerp_token': '1|abc'});
     await tester.tap(find.text('Approval'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Perbaikan pompa'));
+    await tester.pumpAndSettle();
+    // Satu tombol gabungan; daftar satu per satu baru tampil setelah panah diketuk.
+    expect(find.text('Memo dan Dokumen pendukung'), findsOneWidget);
+    expect(find.text('faktur.pdf'), findsNothing);
+    await tester.tap(find.byTooltip('Lihat satu per satu'));
     await tester.pumpAndSettle();
     expect(find.text('faktur.pdf'), findsOneWidget);
     expect(find.text('Faktur · 26 KB'), findsOneWidget);
@@ -599,6 +611,32 @@ void main() {
     await tester.tap(find.text('Lembar MI/2611/00001'));
     await tester.pumpAndSettle();
     expect(find.text('HTML memo: <html><body>Memo</body></html>'), findsOneWidget);
+    await tester.tap(find.byTooltip('Tutup'));
+    await tester.pumpAndSettle();
+
+    // Satu klik: memo (jadi gambar) dulu, lalu semua dokumen pendukung → satu PDF, bisa diunduh sekaligus.
+    dok.jpeg = Uint8List(5);
+    final digabung = <String>[];
+    penggabung = (file) async {
+      digabung.addAll(file.map((f) => '${f.tipe}:${f.isi.length}'));
+      return Uint8List(99);
+    };
+    await tester.tap(find.text('Memo dan Dokumen pendukung'));
+    await tester.pumpAndSettle();
+    expect(digabung, ['image/jpeg:5', 'application/pdf:12', 'image/jpeg:3']);
+    expect(find.text('PDF 99 byte'), findsOneWidget);
+    await tester.tap(find.byTooltip('Unduh'));
+    await tester.pumpAndSettle();
+    expect(dok.unduhan.last, 'Memo dan Dokumen pendukung MI-2611-00001.pdf application/pdf 99');
+    await tester.tap(find.byTooltip('Tutup'));
+    await tester.pumpAndSettle();
+
+    // Lembar memo sendiri juga jadi PDF (bisa di-pinch zoom) bila platform bisa.
+    digabung.clear();
+    await tester.tap(find.text('Lembar MI/2611/00001'));
+    await tester.pumpAndSettle();
+    expect(digabung, ['image/jpeg:5']);
+    expect(find.text('PDF 99 byte'), findsOneWidget);
   });
 
   testWidgets('Invoice dengan alokasi/koreksi: penanda di kartu, [REVISI], lampiran, tombol setujui', (tester) async {
