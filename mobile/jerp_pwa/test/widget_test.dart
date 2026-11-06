@@ -214,6 +214,8 @@ class DokumenPalsu implements DokumenPlatform {
 Map<String, dynamic>? pushServer;
 
 class PushPalsu implements PushBrowser {
+  @override
+  bool get pakaiFcm => false;
   InfoPush infoNya = const InfoPush(didukung: true, izin: 'default', ios: false, terpasang: false);
   String? ep;
   String hasil = 'ok';

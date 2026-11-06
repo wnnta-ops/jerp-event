@@ -61,4 +61,10 @@ class PushSubscription extends Model
     {
         return $this->belongsTo(User::class);
     }
+
+    /** Token FCM bila perangkat ini APK Android (endpoint "fcm:<token>"), selain itu null (Web Push). */
+    public function fcm(): ?string
+    {
+        return str_starts_with((string) $this->endpoint, 'fcm:') ? substr((string) $this->endpoint, 4) : null;
+    }
 }

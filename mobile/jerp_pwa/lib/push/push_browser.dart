@@ -1,6 +1,8 @@
-import 'push_stub.dart' if (dart.library.js_interop) 'push_web.dart' as impl;
+import 'push_stub.dart'
+    if (dart.library.io) 'push_io.dart'
+    if (dart.library.js_interop) 'push_web.dart' as impl;
 
-/// Kemampuan browser untuk notifikasi push (lihat web/push.js).
+/// Kemampuan perangkat untuk notifikasi push: Web Push di browser (lihat web/push.js), FCM di APK Android.
 class InfoPush {
   const InfoPush({required this.didukung, required this.izin, required this.ios, required this.terpasang});
 
@@ -25,6 +27,9 @@ class InfoPush {
 typedef HasilLangganan = ({Map<String, dynamic>? sub, String? error});
 
 abstract class PushBrowser {
+  /// true di APK Android (FCM), false di browser (Web Push / VAPID).
+  bool get pakaiFcm => false;
+
   Future<InfoPush> info();
   Future<HasilLangganan> langganan(String publicKey);
   Future<String?> endpoint();
@@ -34,4 +39,7 @@ abstract class PushBrowser {
 
   /// Bisa diganti di test.
   static PushBrowser instance = impl.buat();
+
+  /// APK: notifikasi diketuk → buka detail approval ini (dipasang ShellPage; PWA memakai ?buka=ID).
+  static void Function(int id)? bukaDokumen;
 }

@@ -52,7 +52,8 @@ class _NotifikasiPageState extends State<NotifikasiPage> {
       if (!mounted) return;
       setState(() {
         _info = info;
-        _serverAktif = cfg['aktif'] == true;
+        // APK Android memakai FCM, PWA memakai Web Push (VAPID).
+        _serverAktif = (push.pakaiFcm ? cfg['fcm_aktif'] : cfg['aktif']) == true;
         _publicKey = cfg['public_key'] as String?;
         _endpoint = ep;
         _pilihan = pilihan;
@@ -78,7 +79,7 @@ class _NotifikasiPageState extends State<NotifikasiPage> {
   }
 
   Future<void> _nyalakan() => _jalan(() async {
-        final h = await push.langganan(_publicKey!);
+        final h = await push.langganan(_publicKey ?? '');
         if (h.sub == null) {
           _info2(h.error == 'denied'
               ? 'Izin notifikasi ditolak. Izinkan di pengaturan browser/HP untuk situs ini.'

@@ -8,16 +8,29 @@ use Minishlink\WebPush\Subscription;
 use Minishlink\WebPush\WebPush;
 
 /**
- * Kirim satu notifikasi Web Push ke satu perangkat (kunci VAPID dari config/push.php).
- * Dipisah dari PushApprover supaya bisa dipalsukan di test.
+ * Kirim satu notifikasi ke satu perangkat: Web Push (PWA, kunci VAPID) atau FCM (APK Android,
+ * endpoint "fcm:<token>"). Dipisah dari PushApprover supaya bisa dipalsukan di test.
  */
 class PushPengirim
 {
     private ?WebPush $webPush = null;
 
+    public function __construct(private FcmPengirim $fcm) {}
+
+    /** Ada saluran yang siap: Web Push (VAPID) atau FCM. */
     public function siap(): bool
     {
+        return $this->siapWeb() || $this->fcm->siap();
+    }
+
+    public function siapWeb(): bool
+    {
         return filled(config('push.vapid.public_key')) && filled(config('push.vapid.private_key'));
+    }
+
+    public function siapUntuk(PushSubscription $s): bool
+    {
+        return $s->fcm() ? $this->fcm->siap() : $this->siapWeb();
     }
 
     /**
@@ -26,6 +39,12 @@ class PushPengirim
      */
     public function kirim(PushSubscription $s, array $pesan): bool
     {
+        if (! $this->siapUntuk($s)) {
+            return true; // salurannya belum dikonfigurasi di server — langganan tetap disimpan
+        }
+        if ($s->fcm()) {
+            return $this->fcm->kirim($s->fcm(), $pesan);
+        }
         $laporan = $this->webPush()->sendOneNotification(
             Subscription::create(['endpoint' => $s->endpoint, 'keys' => ['p256dh' => $s->p256dh, 'auth' => $s->auth]]),
             (string) json_encode($pesan),

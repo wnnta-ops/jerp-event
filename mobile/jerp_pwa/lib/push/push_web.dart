@@ -19,6 +19,9 @@ PushBrowser buat() => _Web();
 
 class _Web implements PushBrowser {
   @override
+  bool get pakaiFcm => false;
+
+  @override
   Future<InfoPush> info() async {
     try {
       return InfoPush.fromJson(jsonDecode((await _info().toDart).toDart) as Map<String, dynamic>);

@@ -5,6 +5,7 @@ import '../dashboard/dashboard_store.dart';
 import '../inbox/inbox_store.dart';
 import '../kunci/kunci_store.dart';
 import '../prefs.dart';
+import '../push/push_browser.dart';
 import 'approval_page.dart';
 import 'detail_page.dart';
 import 'history_page.dart';
@@ -35,6 +36,12 @@ class _ShellPageState extends State<ShellPage> {
     _store.muatHistory();
     _muatDashboard();
     _bukaDariNotifikasi();
+    // APK: notifikasi FCM diketuk → langsung ke detail dokumennya.
+    PushBrowser.bukaDokumen = (id) {
+      if (!mounted) return;
+      setState(() => _tab = 1);
+      Navigator.of(context).push(MaterialPageRoute(builder: (_) => DetailPage(store: _store, id: id)));
+    };
   }
 
   /// Notifikasi diketuk → app dibuka dengan ?buka=ID → langsung ke detail dokumen itu (sekali).
@@ -53,6 +60,7 @@ class _ShellPageState extends State<ShellPage> {
 
   @override
   void dispose() {
+    PushBrowser.bukaDokumen = null;
     _store.dispose();
     _dashboard.dispose();
     super.dispose();

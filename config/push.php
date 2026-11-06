@@ -12,6 +12,13 @@ return [
         'private_key' => env('VAPID_PRIVATE_KEY'),
     ],
 
+    // APK Android (Flutter) lewat Firebase Cloud Messaging: file service account Firebase (path),
+    // atau isinya dalam base64 (praktis untuk .env server). Bukan rahasia yang boleh masuk Git.
+    'fcm' => [
+        'credentials' => env('FCM_CREDENTIALS'),
+        'credentials_b64' => env('FCM_CREDENTIALS_B64'),
+    ],
+
     // Alamat PWA yang dibuka saat notifikasi diketuk (relatif ke scope service worker).
     'buka_url' => env('PWA_PUSH_BUKA_URL', './'),
 
