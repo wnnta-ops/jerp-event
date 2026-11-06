@@ -27,7 +27,7 @@ const _judul = {
 enum _Satuan { rp, berkas, unit }
 
 const _warna = [
-  Color(0xFFF97316),
+  Color(0xFFF08A4B), // oranye agak diredam — batang penuh oranye terang menyilaukan
   Color(0xFF0EA5E9),
   Color(0xFF22C55E),
   Color(0xFFA855F7),

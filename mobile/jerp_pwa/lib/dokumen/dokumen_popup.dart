@@ -147,7 +147,7 @@ class _DokumenPopupState extends State<DokumenPopup> {
           final siap = snap.hasData;
           return Column(children: [
             Material(
-              color: oranye,
+              color: warnaHeader(context),
               child: SafeArea(
                 bottom: false,
                 child: Row(children: [

@@ -95,7 +95,7 @@ class PesanKosong extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 48, horizontal: 24),
       child: Column(children: [
-        Icon(ikon, size: 48, color: oranye.withValues(alpha: 0.6)),
+        Icon(ikon, size: 48, color: aksen(context).withValues(alpha: 0.6)),
         const SizedBox(height: 12),
         Text(judul, style: tema.textTheme.titleMedium, textAlign: TextAlign.center),
         if (isi != null) ...[

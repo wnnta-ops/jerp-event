@@ -77,7 +77,7 @@ class _SesiPageState extends State<SesiPage> {
     final tema = Theme.of(context);
     final data = _data;
     return Scaffold(
-      appBar: AppBar(backgroundColor: oranye, foregroundColor: Colors.white, title: const Text('Perangkat & sesi')),
+      appBar: AppBar(title: const Text('Perangkat & sesi')),
       body: RefreshIndicator(
         onRefresh: _muat,
         child: ListView(padding: const EdgeInsets.all(16), children: [
@@ -89,7 +89,7 @@ class _SesiPageState extends State<SesiPage> {
             for (final s in data)
               Card(
                 child: ListTile(
-                  leading: Icon(s['ini'] == true ? Icons.smartphone : Icons.devices_other, color: s['ini'] == true ? oranye : null),
+                  leading: Icon(s['ini'] == true ? Icons.smartphone : Icons.devices_other, color: s['ini'] == true ? aksen(context) : null),
                   title: Text('${s['perangkat']}${s['ini'] == true ? ' (perangkat ini)' : ''}'),
                   subtitle: Text(
                     'Masuk ${tanggal(DateTime.tryParse(s['masuk_at'] ?? '')?.toLocal())}\n'

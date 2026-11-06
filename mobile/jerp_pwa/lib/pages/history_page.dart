@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 
-import '../config.dart';
 import '../inbox/inbox_models.dart';
 import '../inbox/inbox_store.dart';
 import '../inbox/widgets.dart';
@@ -13,7 +12,7 @@ class HistoryPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(backgroundColor: oranye, foregroundColor: Colors.white, title: const Text('History')),
+      appBar: AppBar(title: const Text('History')),
       body: ListenableBuilder(
         listenable: store,
         builder: (context, _) => RefreshIndicator(

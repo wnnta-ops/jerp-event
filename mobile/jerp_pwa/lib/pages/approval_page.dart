@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 
-import '../config.dart';
 import '../inbox/inbox_store.dart';
 import '../inbox/widgets.dart';
 import 'detail_page.dart';
@@ -16,7 +15,7 @@ class ApprovalPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(backgroundColor: oranye, foregroundColor: Colors.white, title: const Text('Approval inbox')),
+      appBar: AppBar(title: const Text('Approval inbox')),
       body: ListenableBuilder(
         listenable: store,
         builder: (context, _) {

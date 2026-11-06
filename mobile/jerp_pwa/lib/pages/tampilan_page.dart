@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 
-import '../config.dart';
 import '../prefs.dart';
 
 class TampilanPage extends StatelessWidget {
@@ -18,7 +17,7 @@ class TampilanPage extends StatelessWidget {
           child: Text(t, style: tema.textTheme.titleSmall),
         );
     return Scaffold(
-      appBar: AppBar(backgroundColor: oranye, foregroundColor: Colors.white, title: const Text('Tampilan')),
+      appBar: AppBar(title: const Text('Tampilan')),
       body: ListenableBuilder(
         listenable: prefs,
         builder: (context, _) => ListView(children: [

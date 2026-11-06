@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 
 import '../auth/session.dart';
-import '../config.dart';
 import 'kunci_store.dart';
 import 'pin_pad.dart';
 
@@ -99,7 +98,7 @@ class _KunciPageState extends State<KunciPage> {
   Widget build(BuildContext context) {
     final tema = Theme.of(context);
     return Scaffold(
-      appBar: AppBar(backgroundColor: oranye, foregroundColor: Colors.white, title: const Text('Kunci aplikasi')),
+      appBar: AppBar(title: const Text('Kunci aplikasi')),
       body: ListenableBuilder(
         listenable: k,
         builder: (context, _) => ListView(children: [

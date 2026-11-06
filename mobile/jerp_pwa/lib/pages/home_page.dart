@@ -48,13 +48,13 @@ class _HomePageState extends State<HomePage> {
           child: ListView(padding: EdgeInsets.zero, children: [
             // Latar oranye berhenti 44 px sebelum bawah → kartu "Menunggu Anda" setengah menumpang di atasnya.
             Stack(children: [
-              const Positioned(
+              Positioned(
                 left: 0,
                 right: 0,
                 top: 0,
                 bottom: 44,
                 child: DecoratedBox(
-                  decoration: BoxDecoration(color: oranye, borderRadius: BorderRadius.vertical(bottom: Radius.circular(24))),
+                  decoration: BoxDecoration(color: warnaHeader(context), borderRadius: const BorderRadius.vertical(bottom: Radius.circular(24))),
                 ),
               ),
               Column(children: [
@@ -134,8 +134,8 @@ class _HomePageState extends State<HomePage> {
             ]),
             const SizedBox(height: 6),
             Row(children: [
-              _label('${store.urgent} urgent', gelap ? const Color(0xFF7F1D1D) : const Color(0xFFFEE2E2),
-                  gelap ? const Color(0xFFFECACA) : const Color(0xFFB91C1C), () => widget.bukaApproval(Saring.urgent)),
+              _label('${store.urgent} urgent', gelap ? const Color(0xFF3B2326) : const Color(0xFFFEE2E2),
+                  gelap ? const Color(0xFFF2A7A7) : const Color(0xFFB91C1C), () => widget.bukaApproval(Saring.urgent)),
               const SizedBox(width: 8),
               _label('${store.reguler} reguler', tema.colorScheme.surfaceContainerHighest, tema.colorScheme.onSurfaceVariant,
                   () => widget.bukaApproval(Saring.reguler)),
@@ -214,7 +214,7 @@ class _HomePageState extends State<HomePage> {
         if (kanan != null) Text(kanan, style: tema.textTheme.bodySmall?.copyWith(color: tema.colorScheme.onSurfaceVariant)),
         if (aksi != null)
           TextButton(
-            style: TextButton.styleFrom(visualDensity: VisualDensity.compact, foregroundColor: const Color(0xFFC2410C)),
+            style: TextButton.styleFrom(visualDensity: VisualDensity.compact, foregroundColor: aksenTeks(context)),
             onPressed: onAksi,
             child: Text(aksi),
           ),
@@ -232,7 +232,6 @@ class _HomePageState extends State<HomePage> {
     }
     if (dashboard.allowed == false || dashboard.grup.isEmpty) return const [];
     final aktif = dashboard.grup.where((g) => g.key == _grup).firstOrNull ?? dashboard.grup.first;
-    final gelap = Theme.of(context).brightness == Brightness.dark;
     return [
       _judul(context, 'Dashboard', kanan: dashboard.periode),
       if (dashboard.grup.length > 1)
@@ -246,9 +245,9 @@ class _HomePageState extends State<HomePage> {
                   label: Text(g.judul),
                   selected: g == aktif,
                   showCheckmark: false,
-                  selectedColor: gelap ? const Color(0xFF7C2D12) : const Color(0xFFFFEDD5),
+                  selectedColor: latarPilih(context),
                   labelStyle: TextStyle(
-                    color: g == aktif ? (gelap ? const Color(0xFFFED7AA) : const Color(0xFF9A3412)) : null,
+                    color: g == aktif ? teksPilih(context) : null,
                     fontWeight: g == aktif ? FontWeight.w600 : null,
                   ),
                   onSelected: (_) => setState(() => _grup = g.key),

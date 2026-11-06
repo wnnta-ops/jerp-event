@@ -110,13 +110,13 @@ class _ProfilePageState extends State<ProfilePage> {
     final p = _profil;
     final redup = tema.textTheme.bodySmall?.copyWith(color: tema.colorScheme.onSurfaceVariant);
     return Scaffold(
-      appBar: AppBar(backgroundColor: oranye, foregroundColor: Colors.white, title: const Text('Profil')),
+      appBar: AppBar(title: const Text('Profil')),
       body: RefreshIndicator(
         onRefresh: _muat,
         child: ListView(padding: const EdgeInsets.all(16), children: [
           ListTile(
             contentPadding: EdgeInsets.zero,
-            leading: CircleAvatar(radius: 24, backgroundColor: oranye, foregroundColor: Colors.white, child: Text(user.init)),
+            leading: CircleAvatar(radius: 24, backgroundColor: aksen(context), foregroundColor: Colors.white, child: Text(user.init)),
             title: Text(user.name, style: const TextStyle(fontWeight: FontWeight.w600)),
             subtitle: Text(p == null ? user.role : [p.email, if (p.roles.isNotEmpty) p.roles.join(', ')].join('\n')),
           ),
@@ -127,7 +127,7 @@ class _ProfilePageState extends State<ProfilePage> {
             const Padding(padding: EdgeInsets.all(32), child: Center(child: CircularProgressIndicator()))
           else ...[
             Row(children: [
-              Expanded(child: _ringkas(context, 'Menunggu saya', p.menunggu, oranye)),
+              Expanded(child: _ringkas(context, 'Menunggu saya', p.menunggu, aksen(context))),
               const SizedBox(width: 8),
               Expanded(child: _ringkas(context, 'Disetujui', p.disetujui, Colors.green.shade700)),
               const SizedBox(width: 8),
@@ -279,8 +279,8 @@ class _ProfilePageState extends State<ProfilePage> {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                 decoration: BoxDecoration(
-                  color: c.steps[i].saya ? oranye : null,
-                  border: Border.all(color: c.steps[i].saya ? oranye : tema.colorScheme.outlineVariant),
+                  color: c.steps[i].saya ? aksen(context) : null,
+                  border: Border.all(color: c.steps[i].saya ? aksen(context) : tema.colorScheme.outlineVariant),
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Text(

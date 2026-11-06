@@ -35,7 +35,7 @@ class LayarKunci extends StatelessWidget {
           child: SingleChildScrollView(
             padding: const EdgeInsets.all(24),
             child: Column(children: [
-              const Icon(Icons.lock_outline, size: 40, color: oranye),
+              Icon(Icons.lock_outline, size: 40, color: aksen(context)),
               const SizedBox(height: 12),
               PinPad(
                 judul: 'Masukkan PIN',
@@ -52,7 +52,7 @@ class LayarKunci extends StatelessWidget {
                     ? IconButton(
                         tooltip: 'Buka dengan biometrik',
                         iconSize: 32,
-                        color: oranye,
+                        color: aksen(context),
                         onPressed: kunci.bukaDenganBiometrik,
                         icon: const Icon(Icons.fingerprint),
                       )

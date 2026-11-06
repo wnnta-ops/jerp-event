@@ -62,7 +62,7 @@ class _DetailPageState extends State<DetailPage> {
           actions: [
             TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Batal')),
             FilledButton(
-              style: FilledButton.styleFrom(backgroundColor: setuju ? oranye : Theme.of(ctx).colorScheme.error),
+              style: FilledButton.styleFrom(backgroundColor: setuju ? aksen(context) : Theme.of(ctx).colorScheme.error),
               onPressed: () {
                 if (!setuju && ctrl.text.trim().isEmpty) {
                   setD(() => error = 'Alasan penolakan wajib diisi');
@@ -81,7 +81,7 @@ class _DetailPageState extends State<DetailPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(backgroundColor: oranye, foregroundColor: Colors.white, title: const Text('Detail approval')),
+      appBar: AppBar(title: const Text('Detail approval')),
       body: FutureBuilder<InboxDetail>(
         future: _detail,
         builder: (context, snap) {
@@ -114,7 +114,7 @@ class _DetailPageState extends State<DetailPage> {
           const SizedBox(height: 8),
           Text(i.judul, style: tema.textTheme.titleLarge),
           const SizedBox(height: 4),
-          Text(rupiah(i.amount), style: tema.textTheme.headlineSmall?.copyWith(color: const Color(0xFFC2410C), fontWeight: FontWeight.w600)),
+          Text(rupiah(i.amount), style: tema.textTheme.headlineSmall?.copyWith(color: aksenTeks(context), fontWeight: FontWeight.w600)),
           const SizedBox(height: 4),
           Text('Diajukan ${i.submitter ?? '—'} · ${tanggal(i.submittedAt)}', style: redup),
           const Divider(height: 32),
@@ -179,7 +179,7 @@ class _DetailPageState extends State<DetailPage> {
               Card(
                 margin: const EdgeInsets.only(bottom: 6),
                 child: ListTile(
-                  leading: const Icon(Icons.library_books_outlined, color: oranye),
+                  leading: Icon(Icons.library_books_outlined, color: aksen(context)),
                   title: Text(_adaMemo(d) ? 'Memo dan Dokumen pendukung' : 'Dokumen pendukung',
                       style: const TextStyle(fontWeight: FontWeight.w600)),
                   subtitle: Text('${d.dokumenLain.length} dokumen · lihat semua sekaligus'),
@@ -227,7 +227,7 @@ class _DetailPageState extends State<DetailPage> {
               const SizedBox(width: 12),
               Expanded(
                 child: FilledButton(
-                  style: FilledButton.styleFrom(backgroundColor: oranye, minimumSize: const Size.fromHeight(48)),
+                  style: FilledButton.styleFrom(backgroundColor: aksen(context), minimumSize: const Size.fromHeight(48)),
                   onPressed: _proses ? null : () => _putuskan(true),
                   child: _proses
                       ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
@@ -263,7 +263,7 @@ class _DetailPageState extends State<DetailPage> {
         child: ListTile(
           leading: Icon(
             dok.pdf ? Icons.picture_as_pdf_outlined : (dok.gambar ? Icons.image_outlined : Icons.description_outlined),
-            color: oranye,
+            color: aksen(context),
           ),
           title: Text(dok.nama, maxLines: 2, overflow: TextOverflow.ellipsis),
           subtitle: Text([dok.jenis, _ukuran(dok.ukuran)].whereType<String>().join(' · ')),
@@ -282,7 +282,7 @@ class _DetailPageState extends State<DetailPage> {
     final (ikon, warna) = switch (s.state) {
       'done' => (Icons.check_circle, Colors.green.shade700),
       'rejected' => (Icons.cancel, Theme.of(context).colorScheme.error),
-      'current' => (Icons.radio_button_checked, oranye),
+      'current' => (Icons.radio_button_checked, aksen(context)),
       'skipped' => (Icons.remove_circle_outline, Colors.grey),
       _ => (Icons.radio_button_unchecked, Colors.grey),
     };

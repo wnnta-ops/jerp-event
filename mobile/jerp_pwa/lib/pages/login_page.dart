@@ -127,7 +127,7 @@ class _LoginPageState extends State<LoginPage> {
                       const SizedBox(height: 24),
                       FilledButton(
                         style: FilledButton.styleFrom(
-                          backgroundColor: oranye,
+                          backgroundColor: aksen(context),
                           minimumSize: const Size.fromHeight(48),
                         ),
                         onPressed: _proses ? null : _kirim,

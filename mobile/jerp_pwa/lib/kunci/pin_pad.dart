@@ -65,8 +65,8 @@ class _PinPadState extends State<PinPad> {
             height: 14,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              color: i < _pin.length ? oranye : null,
-              border: Border.all(color: oranye, width: 2),
+              color: i < _pin.length ? aksen(context) : null,
+              border: Border.all(color: aksen(context), width: 2),
             ),
           ),
       ]),

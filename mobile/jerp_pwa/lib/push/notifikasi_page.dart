@@ -128,7 +128,7 @@ class _NotifikasiPageState extends State<NotifikasiPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(backgroundColor: oranye, foregroundColor: Colors.white, title: const Text('Notifikasi push')),
+      appBar: AppBar(title: const Text('Notifikasi push')),
       body: _memuat
           ? const Center(child: CircularProgressIndicator())
           : RefreshIndicator(onRefresh: _muat, child: ListView(children: _isi(context))),
@@ -140,7 +140,7 @@ class _NotifikasiPageState extends State<NotifikasiPage> {
     final info = _info;
     Widget catatan(IconData ikon, String teks) => Card(
           margin: const EdgeInsets.all(16),
-          child: ListTile(leading: Icon(ikon, color: oranye), title: Text(teks)),
+          child: ListTile(leading: Icon(ikon, color: aksen(context)), title: Text(teks)),
         );
 
     if (_error != null) return [catatan(Icons.error_outline, _error!)];
