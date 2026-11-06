@@ -235,8 +235,10 @@ class _HomePageState extends State<HomePage> {
     return [
       _judul(context, 'Dashboard', kanan: dashboard.periode),
       if (dashboard.grup.length > 1)
+        // Bisa digeser ke samping; chip boleh tergambar sampai tepi layar (tanda masih ada pilihan lain).
         SingleChildScrollView(
           scrollDirection: Axis.horizontal,
+          clipBehavior: Clip.none,
           child: Row(children: [
             for (final g in dashboard.grup)
               Padding(

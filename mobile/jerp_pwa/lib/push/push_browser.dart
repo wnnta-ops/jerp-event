@@ -42,4 +42,8 @@ abstract class PushBrowser {
 
   /// APK: notifikasi diketuk → buka detail approval ini (dipasang ShellPage; PWA memakai ?buka=ID).
   static void Function(int id)? bukaDokumen;
+
+  /// APK: notifikasi masuk saat app sedang terbuka (Android tidak menampilkannya sendiri) →
+  /// tampil sebagai banner di app (dipasang ShellPage). id = dokumen yang bisa dibuka, bila ada.
+  static void Function(String judul, String isi, int? id)? pesanMasuk;
 }

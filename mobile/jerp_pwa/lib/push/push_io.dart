@@ -25,15 +25,23 @@ class _Fcm implements PushBrowser {
     await Firebase.initializeApp();
     final fm = FirebaseMessaging.instance;
     FirebaseMessaging.onMessageOpenedApp.listen(_buka);
+    // App sedang di depan: Android tidak memunculkan notifikasinya → tampilkan sebagai banner di app.
+    FirebaseMessaging.onMessage.listen((m) {
+      final n = m.notification;
+      if (n == null) return;
+      PushBrowser.pesanMasuk?.call(n.title ?? 'J-ERP Approver', n.body ?? '', _id(m));
+    });
     final awal = await fm.getInitialMessage();
     if (awal != null) Future<void>.delayed(const Duration(seconds: 1), () => _buka(awal));
   }
 
   /// url dari server: "./?buka=ID" (sama dengan PWA).
   void _buka(RemoteMessage m) {
-    final id = int.tryParse(Uri.tryParse(m.data['url'] ?? '')?.queryParameters['buka'] ?? '');
+    final id = _id(m);
     if (id != null) PushBrowser.bukaDokumen?.call(id);
   }
+
+  int? _id(RemoteMessage m) => int.tryParse(Uri.tryParse(m.data['url'] ?? '')?.queryParameters['buka'] ?? '');
 
   @override
   Future<InfoPush> info() async {

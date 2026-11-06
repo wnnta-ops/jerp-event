@@ -659,4 +659,14 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('HTML memo-internal: <p>Memo + lampiran</p>'), findsOneWidget);
   });
+
+  testWidgets('APK: notifikasi saat app terbuka tampil sebagai banner, Buka → detail', (tester) async {
+    await pasang(tester, simpanan: {'jerp_token': '1|abc'});
+    PushBrowser.pesanMasuk!('Giliran Anda', 'Memo Urgent MI/2611/00001', 20);
+    await tester.pump(const Duration(milliseconds: 500)); // banner selesai muncul
+    expect(find.text('Giliran Anda\nMemo Urgent MI/2611/00001'), findsOneWidget);
+    tester.widget<SnackBarAction>(find.widgetWithText(SnackBarAction, 'Buka')).onPressed();
+    await tester.pumpAndSettle();
+    expect(find.text('Detail approval'), findsOneWidget);
+  });
 }

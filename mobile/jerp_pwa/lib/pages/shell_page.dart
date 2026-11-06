@@ -42,6 +42,16 @@ class _ShellPageState extends State<ShellPage> {
       setState(() => _tab = 1);
       Navigator.of(context).push(MaterialPageRoute(builder: (_) => DetailPage(store: _store, id: id)));
     };
+    PushBrowser.pesanMasuk = (judul, isi, id) {
+      if (!mounted) return;
+      _store.muatInbox();
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 6),
+        content: Text([judul, isi].where((t) => t.isNotEmpty).join('\n')),
+        action: id == null ? null : SnackBarAction(label: 'Buka', onPressed: () => PushBrowser.bukaDokumen?.call(id)),
+      ));
+    };
   }
 
   /// Notifikasi diketuk → app dibuka dengan ?buka=ID → langsung ke detail dokumen itu (sekali).
@@ -61,6 +71,7 @@ class _ShellPageState extends State<ShellPage> {
   @override
   void dispose() {
     PushBrowser.bukaDokumen = null;
+    PushBrowser.pesanMasuk = null;
     _store.dispose();
     _dashboard.dispose();
     super.dispose();
