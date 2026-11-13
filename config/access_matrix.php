@@ -7,6 +7,7 @@
  * Nama permission = "{area}.{action}". Aksi standar: index/store/update/destroy/print/approve.
  * Tiap modul = grup baris; tiap baris (area) punya checkbox per aksi.
  */
+
 $actions = [
     'index' => 'Lihat',
     'store' => 'Buat',

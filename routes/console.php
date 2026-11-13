@@ -23,6 +23,10 @@ try {
 }
 Schedule::command('collection:run')->dailyAt($jamKirim)->withoutOverlapping();
 
+// Modul Event: tarik Aktivasi NUP (FO) ke peserta event yang sedang dibuka, tiap 10 detik.
+// Tanpa event berstatus open, perintah ini hanya satu query kosong.
+Schedule::command('event:sinkron')->everyTenSeconds()->withoutOverlapping(1);
+
 // Lepas unit yang masa hold-nya habis (tak ada transfer cocok) → TERSEDIA.
 Schedule::command('hold:release')->everyTenMinutes()->withoutOverlapping();
 

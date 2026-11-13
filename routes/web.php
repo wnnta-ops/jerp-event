@@ -151,6 +151,10 @@ Route::middleware('guest')->group(function () {
 Route::middleware('auth')->group(function () {
     Route::get('/dashboard', fn () => view('dashboard'))->name('dashboard');
 
+    // Modul Event — scanner HP (di luar panel Filament /event). Akses per scan dicek
+    // ScanService lewat et_access; superadmin (akses.peran_super) selalu lolos.
+    Route::get('/event/scan', \App\Livewire\Event\Scanner::class)->name('event.scan');
+
     // Ganti password oleh penggunanya sendiri (menu nama pengguna di topbar).
     Route::get('/akun/password', [\App\Http\Controllers\AkunPasswordController::class, 'edit'])->name('akun.password');
     Route::put('/akun/password', [\App\Http\Controllers\AkunPasswordController::class, 'update'])->name('akun.password.update');

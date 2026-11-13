@@ -57,19 +57,7 @@ class ScanService
             return new ScanResult(ScanResult::REJECTED, 'Akun tidak punya akses ke pos ini');
         }
 
-        $log = fn (string $result, ?string $reason = null, ?int $regId = null, ?array $effect = null) => EtScanLog::create([
-            'tenant_id' => $event->tenant_id,
-            'event_id' => $event->id,
-            'scan_point_id' => $point->id,
-            'user_id' => $user->id,
-            'raw_payload' => $payload === '' ? '-' : $payload,
-            'fo_nup_registration_id' => $regId,
-            'result' => $result,
-            'reason' => $reason,
-            'server_time' => now(),
-            'user_agent' => $userAgent ? mb_substr($userAgent, 0, 255) : null,
-            'effect' => $effect,
-        ]);
+        $log = $this->logger($event, $point, $user, $payload, $userAgent);
 
         $tolak = function (string $pesan, ?FoParticipantData $d = null) use ($log) {
             $log(EtScanLog::REJECTED, $pesan, $d?->nup_registration_id);
@@ -131,6 +119,40 @@ class ScanService
         }
 
         return $this->apply($event, $point, $kind, $pilihan, $user, $log);
+    }
+
+    /**
+     * Tombol "Selesai" di HP Keluar: tutup kunjungan yang sedang berjalan di pos
+     * ini tanpa scan (end_reason manual). Aturan akses & status event sama
+     * dengan scan; tercatat di log dan bisa dibatalkan seperti scan biasa.
+     */
+    public function selesaikanManual(int $scanPointId, int $participantId, User $user, ?string $userAgent = null): ScanResult
+    {
+        $point = EtScanPoint::query()->with('station.event')->find($scanPointId);
+        $event = $point?->station?->event;
+        $p = EtParticipant::query()->find($participantId);
+        if (! $point || ! $event || ! $p || (int) $p->event_id !== (int) $event->id) {
+            return new ScanResult(ScanResult::REJECTED, 'Peserta tidak ditemukan');
+        }
+
+        $log = $this->logger($event, $point, $user, 'manual:'.($p->no_nup ?? $p->id), $userAgent);
+        $tolak = function (string $pesan) use ($log, $p) {
+            $log(EtScanLog::REJECTED, $pesan, (int) $p->fo_nup_registration_id);
+
+            return new ScanResult(ScanResult::REJECTED, $pesan, $p->name_snapshot, $p->no_nup, $p->id);
+        };
+
+        if (! $this->policy->canScanAt($user, $point) || $point->kind === EtScanPoint::MASUK) {
+            return $tolak('Akun tidak punya akses ke pos ini');
+        }
+        if (! $event->isOpen()) {
+            return $tolak($event->status === EtEvent::CLOSED ? 'Event sudah ditutup' : 'Event belum dibuka');
+        }
+        if ($this->openVisitAt($p, $point->station_id) === null) {
+            return $tolak('Tidak sedang dilayani di pos ini');
+        }
+
+        return $this->apply($event, $point, EtScanPoint::KELUAR, $p, $user, $log, EtVisit::END_MANUAL);
     }
 
     /**
@@ -201,6 +223,28 @@ class ScanService
     // ── internal ────────────────────────────────────────────────────────
 
     /**
+     * Penulis log scan untuk satu titik. Satu baris per percobaan.
+     *
+     * @return \Closure(string, ?string=, ?int=, ?array=): EtScanLog
+     */
+    private function logger(EtEvent $event, EtScanPoint $point, User $user, string $payload, ?string $userAgent): \Closure
+    {
+        return fn (string $result, ?string $reason = null, ?int $regId = null, ?array $effect = null) => EtScanLog::create([
+            'tenant_id' => $event->tenant_id,
+            'event_id' => $event->id,
+            'scan_point_id' => $point->id,
+            'user_id' => $user->id,
+            'raw_payload' => $payload === '' ? '-' : $payload,
+            'fo_nup_registration_id' => $regId,
+            'result' => $result,
+            'reason' => $reason,
+            'server_time' => now(),
+            'user_agent' => $userAgent ? mb_substr($userAgent, 0, 255) : null,
+            'effect' => $effect,
+        ]);
+    }
+
+    /**
      * Titik single: scan pertama = masuk, scan kedua = keluar. Untuk satu NUP
      * yang punya kunjungan terbuka di pos ini, single bertindak sebagai keluar.
      *
@@ -265,9 +309,9 @@ class ScanService
     /**
      * @param  \Closure(string, ?string=, ?int=, ?array=): EtScanLog  $log
      */
-    private function apply(EtEvent $event, EtScanPoint $point, string $kind, EtParticipant $pilih, User $user, \Closure $log): ScanResult
+    private function apply(EtEvent $event, EtScanPoint $point, string $kind, EtParticipant $pilih, User $user, \Closure $log, string $endReason = EtVisit::END_SCAN_KELUAR): ScanResult
     {
-        return DB::transaction(function () use ($event, $point, $kind, $pilih, $user, $log) {
+        return DB::transaction(function () use ($event, $point, $kind, $pilih, $user, $log, $endReason) {
             /** @var EtParticipant $p */
             $p = EtParticipant::query()->lockForUpdate()->findOrFail($pilih->id);
             $regId = (int) $p->fo_nup_registration_id;
@@ -304,7 +348,7 @@ class ScanService
 
             [$aksi, $visit, $ditutupLain, $warning] = $kind === EtScanPoint::MASUK
                 ? $this->masuk($p, $station, $stations, $user, $now)
-                : $this->keluar($p, $station, $stations, $user, $now);
+                : $this->keluar($p, $station, $stations, $user, $now, $endReason);
 
             if ($aksi === 'already_in') {
                 $log(EtScanLog::DUPLICATE, 'Sudah masuk di pos ini', $regId);
@@ -312,7 +356,7 @@ class ScanService
                 return new ScanResult(ScanResult::DUPLICATE, 'Sudah masuk di pos ini sejak '.$visit->started_at->format('H:i'), $p->name_snapshot, $p->no_nup, $p->id);
             }
 
-            $entry = $log(EtScanLog::ACCEPTED, $warning, $regId, [
+            $entry = $log(EtScanLog::ACCEPTED, $endReason === EtVisit::END_MANUAL ? trim('Selesai manual. '.$warning) : $warning, $regId, [
                 'participant_id' => $p->id,
                 'visit_id' => $visit->id,
                 'action' => $aksi,
@@ -370,14 +414,14 @@ class ScanService
      * @param  Collection<int, EtStation>  $stations
      * @return array{0:string, 1:EtVisit, 2:list<int>, 3:?string}
      */
-    private function keluar(EtParticipant $p, EtStation $station, Collection $stations, User $user, \DateTimeInterface $now): array
+    private function keluar(EtParticipant $p, EtStation $station, Collection $stations, User $user, \DateTimeInterface $now, string $endReason = EtVisit::END_SCAN_KELUAR): array
     {
         $visit = $this->openVisitAt($p, $station->id);
         $ditutup = $this->closeOpenElsewhere($p, $station->id, $user, $now);
         $warning = null;
 
         if ($visit) {
-            $visit->forceFill(['ended_at' => $now, 'ended_by' => $user->id, 'end_reason' => EtVisit::END_SCAN_KELUAR])->save();
+            $visit->forceFill(['ended_at' => $now, 'ended_by' => $user->id, 'end_reason' => $endReason])->save();
             $aksi = 'closed';
         } else {
             $visit = EtVisit::create([

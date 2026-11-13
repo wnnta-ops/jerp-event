@@ -105,6 +105,22 @@ class EventPolicy
         return $q->get()->sortBy(fn (EtScanPoint $p) => [$p->station->sequence, $p->kind === EtScanPoint::KELUAR ? 1 : 0])->values();
     }
 
+    /**
+     * Event OPEN yang punya titik scan untuk user ini (untuk halaman scanner).
+     *
+     * @return Collection<int, EtEvent>
+     */
+    public function scannerEvents(User $user): Collection
+    {
+        $q = EtEvent::query()->where('status', EtEvent::OPEN)->orderByDesc('event_date');
+        if (! $this->isSuper($user)) {
+            $q->whereIn('id', EtAccess::query()->select('event_id')
+                ->where('user_id', $user->id)->whereNotNull('scan_point_id'));
+        }
+
+        return $q->get();
+    }
+
     private function punyaFlag(?User $user, EtEvent $event, string $flag): bool
     {
         return $user instanceof User && EtAccess::query()
