@@ -50,7 +50,9 @@ class EventPanelProvider extends PanelProvider
                     ->label('Menu utama')
                     ->url(fn () => url('/dashboard'))
                     ->icon('heroicon-o-arrow-left-circle')
-                    ->sort(-1),
+                    // Panel ini tak punya halaman dashboard: Filament mengarahkan /event ke menu
+                    // PERTAMA. Kalau "Menu utama" di atas, /event memantul balik ke /dashboard.
+                    ->sort(100),
             ])
             ->middleware([
                 EncryptCookies::class,

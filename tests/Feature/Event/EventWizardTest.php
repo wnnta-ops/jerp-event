@@ -57,6 +57,13 @@ class EventWizardTest extends EventTestCase
             ->assertFormSet(['name' => 'Pilih Unit Uji', 'fo_nup_event_id' => $ev]);
     }
 
+    public function test_panel_root_opens_event_list_not_back_to_dashboard(): void
+    {
+        $this->actingAs($this->superUser())
+            ->get('/event')
+            ->assertRedirect(url('/event/events'));
+    }
+
     public function test_scanner_account_sees_only_own_events_and_cannot_create(): void
     {
         $super = $this->superUser();
