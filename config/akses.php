@@ -33,6 +33,7 @@ return [
         'bo' => 'panel.bo',
         'system' => 'panel.system',
         'backup' => 'panel.backup',
+        'event' => 'panel.event',
     ],
 
     /*
@@ -48,6 +49,7 @@ return [
         'ai' => 'panel.ai',
         'legal' => 'panel.legal',
         'sales' => 'panel.sales',
+        'event' => 'panel.event',
     ],
 
     /*
@@ -58,6 +60,9 @@ return [
     | pemetaannya belum sempat ditinjau.
     */
     'resource' => [
+        // Modul Event — nama kelas penuh supaya tak bertabrakan dengan panel lain.
+        'App\\Filament\\Event\\Resources\\EventResource' => 'event.event',
+
         // FO — NUP & launching
         'NupRegistrationResource' => 'fo.nup',
         'VerifikasiNupResource' => 'fo.verifikasi_nup',

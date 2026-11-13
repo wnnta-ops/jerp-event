@@ -77,6 +77,14 @@
             'bg'    => 'oklch(0.62 0.17 145)',
             'path'  => 'M3 3v18h18M7 14l4-4 3 3 5-6',
         ],
+        [
+            'href'  => '/event',
+            'izin'  => config('akses.modul.event'),
+            'label' => 'Event',
+            'desc'  => 'Lacak perjalanan customer per pos di hari-H (mis. Pilih Unit): live board, laporan, scanner.',
+            'bg'    => 'oklch(0.66 0.19 40)',
+            'path'  => 'M8 7V3m8 4V3M4 11h16M5 5h14a1 1 0 011 1v14a1 1 0 01-1 1H5a1 1 0 01-1-1V6a1 1 0 011-1zM9 15l2 2 4-4',
+        ],
     ];
 
     // Kartu yang tidak boleh diakses DISEMBUNYIKAN. Dalam mode lapor

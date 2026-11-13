@@ -7,7 +7,6 @@
  * Nama permission = "{area}.{action}". Aksi standar: index/store/update/destroy/print/approve.
  * Tiap modul = grup baris; tiap baris (area) punya checkbox per aksi.
  */
-
 $actions = [
     'index' => 'Lihat',
     'store' => 'Buat',
@@ -153,6 +152,9 @@ return [
         'Backup' => [
             'backup.manage' => 'Jadwal Backup',
             'backup.kelola_backup' => 'Kelola Backup',
+        ],
+        'Event' => [
+            'event.event' => 'Daftar Event',
         ],
     ],
 ];
