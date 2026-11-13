@@ -13,6 +13,7 @@ parameters:
         - app/Modules/FO/Launching/Services
         - app/Modules/FO/Launching/Controllers
         - app/Modules/FO/Shared
+        - app/Modules/Event
     excludePaths:
         - app/Filament/Bo/Resources/*/Pages/*
     ignoreErrors:
