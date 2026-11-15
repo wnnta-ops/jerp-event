@@ -3,6 +3,7 @@
 namespace Tests\Feature\Event;
 
 use App\Livewire\Event\Scanner;
+use App\Modules\Event\Models\EtAccess;
 use App\Modules\Event\Models\EtEvent;
 use App\Modules\Event\Models\EtParticipant;
 use App\Modules\Event\Models\EtScanLog;
@@ -25,6 +26,21 @@ class ScannerTest extends EventTestCase
     public function test_requires_login(): void
     {
         $this->get('/event/scan')->assertRedirect(route('login'));
+    }
+
+    public function test_event_panel_links_to_scanner_for_super_and_scan_accounts_only(): void
+    {
+        $e = $this->eventOpen($this->foNupEvent());
+        $scanner = $this->user();
+        $this->grantScan($scanner, $e['event'], $e['m2']);
+        $koorTanpaScan = $this->user();
+        EtAccess::create(['event_id' => $e['event']->id, 'user_id' => $koorTanpaScan->id, 'can_live_board' => true]);
+
+        $this->actingAs($this->superUser())->get('/event/events')->assertOk()->assertSee(route('event.scan'));
+        $this->flushSession();
+        $this->actingAs($scanner)->get('/event/events')->assertOk()->assertSee(route('event.scan'));
+        $this->flushSession();
+        $this->actingAs($koorTanpaScan)->get('/event/events')->assertOk()->assertDontSee(route('event.scan'));
     }
 
     public function test_scanner_with_one_point_opens_straight_on_it_and_scans(): void

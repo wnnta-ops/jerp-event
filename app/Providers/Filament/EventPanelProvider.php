@@ -2,6 +2,8 @@
 
 namespace App\Providers\Filament;
 
+use App\Models\User;
+use App\Modules\Event\Policies\EventPolicy;
 use Filament\Http\Middleware\Authenticate;
 use Filament\Http\Middleware\AuthenticateSession;
 use Filament\Http\Middleware\DisableBladeIconComponents;
@@ -46,6 +48,15 @@ class EventPanelProvider extends PanelProvider
             ->discoverResources(in: app_path('Filament/Event/Resources'), for: 'App\\Filament\\Event\\Resources')
             ->discoverPages(in: app_path('Filament/Event/Pages'), for: 'App\\Filament\\Event\\Pages')
             ->navigationItems([
+                // Scanner HP ada di luar panel (/event/scan). Tampil bagi superadmin dan
+                // akun yang punya titik scan di event yang sedang dibuka.
+                NavigationItem::make('scanner')
+                    ->label('Scanner')
+                    ->url(fn () => route('event.scan'), shouldOpenInNewTab: true)
+                    ->icon('heroicon-o-qr-code')
+                    ->sort(3)
+                    ->visible(fn () => auth()->user() instanceof User
+                        && app(EventPolicy::class)->scannerEvents(auth()->user())->isNotEmpty()),
                 NavigationItem::make('menu-utama')
                     ->label('Menu utama')
                     ->url(fn () => url('/dashboard'))

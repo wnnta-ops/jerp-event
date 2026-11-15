@@ -304,6 +304,12 @@ class EventResource extends Resource
                     ->visible(fn (EtEvent $r) => $r->status !== EtEvent::DRAFT
                         && LiveBoard::canAccess()
                         && self::policy()->canLiveBoard(Auth::user(), $r)),
+                Tables\Actions\Action::make('scanner')
+                    ->label('Scanner')
+                    ->icon('heroicon-o-qr-code')
+                    ->url(fn () => route('event.scan'), shouldOpenInNewTab: true)
+                    ->visible(fn (EtEvent $r) => $r->status === EtEvent::OPEN
+                        && self::policy()->scannerEvents(Auth::user())->contains('id', $r->id)),
                 Tables\Actions\EditAction::make()->label('Ubah'),
                 Tables\Actions\ActionGroup::make([
                     Tables\Actions\Action::make('buka')
