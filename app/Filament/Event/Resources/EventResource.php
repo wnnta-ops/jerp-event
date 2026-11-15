@@ -161,6 +161,9 @@ class EventResource extends Resource
                                     ->numeric()->minValue(1)->maxValue(600)
                                     ->helperText('Kartu live board berubah warna bila lewat target.'),
                             ]),
+                            Forms\Components\Toggle::make('is_optional')
+                                ->label('Opsional — boleh dilewati peserta')
+                                ->helperText('Peserta yang melompati pos ini tidak dianggap salah urutan. Pos terakhir tidak bisa opsional.'),
                         ])
                         ->default([
                             ['code' => 'KONS', 'name' => 'Konsultasi', 'target_minutes' => 15],
@@ -169,7 +172,8 @@ class EventResource extends Resource
                         ->minItems(1)
                         ->reorderable()
                         ->addActionLabel('Tambah pos')
-                        ->itemLabel(fn (array $state) => trim(($state['code'] ?? '').' · '.($state['name'] ?? ''), ' ·'))
+                        ->itemLabel(fn (array $state) => trim(($state['code'] ?? '').' · '.($state['name'] ?? ''), ' ·')
+                            .(! empty($state['is_optional']) ? ' (opsional)' : ''))
                         ->disabled($kunci),
                 ])
                 ->afterValidation(function (Get $get, Set $set) {
@@ -384,6 +388,7 @@ class EventResource extends Resource
             $mode = ($titik[$code]['mode'] ?? EventSetupService::MODE_GANDA) === EventSetupService::MODE_SINGLE ? 'satu HP' : 'Masuk + Keluar';
             $selesai = $i === $pos->count() - 1 ? ' · <b>Selesai</b>' : '';
             $target = filled($p['target_minutes'] ?? null) ? ' · target '.(int) $p['target_minutes'].' mnt' : '';
+            $target .= ! empty($p['is_optional']) && $i !== $pos->count() - 1 ? ' · <i>opsional</i>' : '';
             $baris .= '<li>'.($i + $awal).'. '.$e($p['name'] ?? '').' ('.$e($code).') — '.$mode.$target.$selesai.'</li>';
         }
 

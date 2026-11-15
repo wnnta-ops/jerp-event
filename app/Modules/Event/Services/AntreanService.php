@@ -24,7 +24,7 @@ class AntreanService
         $peserta = EtParticipant::query()
             ->where('event_id', $station->event_id)
             ->where('status', EtParticipant::ACTIVE)
-            ->where('current_station_id', $station->id)
+            ->whereIn('current_station_id', $this->stasiunMenuju($station))
             ->where('current_state', EtParticipant::WAITING)
             ->get(['id', 'no_nup', 'name_snapshot', 'customer_code', 'checked_in_at']);
 
@@ -46,6 +46,31 @@ class AntreanService
                 'since' => $since?->toIso8601String(),
             ];
         })->sortBy('since')->values()->all();
+    }
+
+    /**
+     * Pos ini + pos OPSIONAL tepat sebelumnya (berderet): peserta yang menunggu di
+     * pos opsional bisa saja melompat langsung ke pos ini.
+     *
+     * @return list<int>
+     */
+    private function stasiunMenuju(EtStation $station): array
+    {
+        $sebelum = EtStation::query()
+            ->where('event_id', $station->event_id)
+            ->where('sequence', '<', $station->sequence)
+            ->orderByDesc('sequence')
+            ->get(['id', 'is_optional', 'type']);
+
+        $ids = [(int) $station->id];
+        foreach ($sebelum as $s) {
+            if (! $s->is_optional || $s->isFoCheckin()) {
+                break;
+            }
+            $ids[] = (int) $s->id;
+        }
+
+        return $ids;
     }
 
     /**

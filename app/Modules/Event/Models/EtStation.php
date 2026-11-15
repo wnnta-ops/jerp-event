@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 /**
  * Pos (checkpoint) di event. Urutan lewat `sequence`; pos pertama selalu
  * fo_checkin (Aktivasi NUP di FO, hanya dibaca), pos terakhir finish.
+ * is_optional = pos boleh dilewati (pos terakhir tidak boleh opsional).
  */
 class EtStation extends TenantAwareModel
 {
@@ -21,12 +22,13 @@ class EtStation extends TenantAwareModel
     public const FINISH = 'finish';
 
     protected $fillable = [
-        'tenant_id', 'event_id', 'code', 'name', 'sequence', 'type', 'target_minutes',
+        'tenant_id', 'event_id', 'code', 'name', 'sequence', 'type', 'is_optional', 'target_minutes',
     ];
 
     protected $casts = [
         'sequence' => 'integer',
         'target_minutes' => 'integer',
+        'is_optional' => 'boolean',
     ];
 
     public function isFoCheckin(): bool

@@ -26,7 +26,7 @@ use Throwable;
  *
  * Bentuk data (sama untuk buat & ubah):
  *   jenis (fo|mandiri), name, event_date, venue, fo_nup_event_id (wajib bila fo)
- *   pos   : [{code, name, target_minutes}]  — berurutan; untuk jenis fo pos 1 (FO)
+ *   pos   : [{code, name, target_minutes, is_optional}]  — berurutan; untuk jenis fo pos 1 (FO)
  *                                              ditambahkan otomatis di depan;
  *                                              pos terakhir otomatis 'finish'
  *   titik : [{code, mode: ganda|single, label_masuk, label_keluar, label_single}]
@@ -212,6 +212,7 @@ class EventSetupService
             'fo_nup_event_id' => $event->fo_nup_event_id,
             'pos' => $stations->map(fn (EtStation $s) => [
                 'code' => $s->code, 'name' => $s->name, 'target_minutes' => $s->target_minutes,
+                'is_optional' => (bool) $s->is_optional,
             ])->all(),
             'titik' => $titik,
             'akses' => $akses,
@@ -310,6 +311,10 @@ class EventSetupService
         if ($kode->contains('') || $kode->contains(self::FO_CODE)) {
             throw new RuntimeException('Kode pos wajib diisi dan tidak boleh "'.self::FO_CODE.'".');
         }
+        $pos = array_values((array) $data['pos']);
+        if (! empty($pos[count($pos) - 1]['is_optional'])) {
+            throw new RuntimeException('Pos terakhir (Selesai) tidak boleh opsional.');
+        }
         if ($kode->duplicates()->isNotEmpty()) {
             throw new RuntimeException('Kode pos tidak boleh sama: '.$kode->duplicates()->unique()->implode(', ').'.');
         }
@@ -342,6 +347,7 @@ class EventSetupService
                 'sequence' => $i + $awal,
                 'type' => $i === $terakhir ? EtStation::FINISH : EtStation::NORMAL,
                 'target_minutes' => filled($p['target_minutes'] ?? null) ? (int) $p['target_minutes'] : null,
+                'is_optional' => $i !== $terakhir && ! empty($p['is_optional']),
             ]);
 
             $t = $titik->get($code);

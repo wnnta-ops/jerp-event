@@ -404,9 +404,9 @@ class ScanService
 
         $warning = null;
         $flags = [];
-        $diharapkan = $this->expectedStation($p, $stations);
-        if ($diharapkan && $diharapkan->id !== $station->id) {
-            $warning = 'Urutan pos tidak sesuai — seharusnya ke '.$diharapkan->name;
+        $boleh = $this->allowedNextStations($p, $stations);
+        if ($boleh->isNotEmpty() && ! $boleh->contains('id', $station->id)) {
+            $warning = 'Urutan pos tidak sesuai — seharusnya ke '.$boleh->pluck('name')->implode(' / ');
             $flags[] = 'tidak_urut';
         }
 
@@ -505,19 +505,32 @@ class ScanService
     }
 
     /**
-     * Pos yang seharusnya dimasuki berikutnya: pos sesudah pos terakhir yang
-     * selesai dikunjungi (atau pos 2 bila belum ada).
+     * Pos yang boleh dimasuki berikutnya: pos-pos sesudah pos terakhir yang selesai
+     * dikunjungi, berurutan, sampai dan termasuk pos WAJIB pertama. Pos opsional di
+     * antaranya boleh dilewati.
      *
      * @param  Collection<int, EtStation>  $stations
+     * @return Collection<int, EtStation>
      */
-    private function expectedStation(EtParticipant $p, Collection $stations): ?EtStation
+    private function allowedNextStations(EtParticipant $p, Collection $stations): Collection
     {
         $selesai = EtVisit::query()->where('participant_id', $p->id)->whereNotNull('ended_at')->pluck('station_id');
         $seqTerakhir = $stations->whereIn('id', $selesai)->max('sequence')
             ?? $stations->firstWhere('type', EtStation::FO_CHECKIN)?->sequence
             ?? 0;
 
-        return $stations->first(fn (EtStation $s) => $s->sequence > $seqTerakhir && ! $s->isFoCheckin());
+        $boleh = collect();
+        foreach ($stations->sortBy('sequence') as $s) {
+            if ($s->sequence <= $seqTerakhir || $s->isFoCheckin()) {
+                continue;
+            }
+            $boleh->push($s);
+            if (! $s->is_optional) {
+                break;
+            }
+        }
+
+        return $boleh;
     }
 
     /**
