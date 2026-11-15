@@ -109,9 +109,24 @@ class EventResource extends Resource
                         Forms\Components\DatePicker::make('event_date')->label('Tanggal')->required()->native(false)->displayFormat('d M Y'),
                         Forms\Components\TextInput::make('venue')->label('Lokasi / venue')->maxLength(255),
                     ]),
+                    Forms\Components\Radio::make('jenis')
+                        ->label('Jenis event')
+                        ->options([
+                            EventSetupService::JENIS_FO => 'Terhubung ke event NUP (FO)',
+                            EventSetupService::JENIS_MANDIRI => 'Mandiri — tanpa event NUP',
+                        ])
+                        ->descriptions([
+                            EventSetupService::JENIS_FO => 'Pos 1 = Aktivasi NUP di FO (dibaca otomatis). Dilacak per NUP; customer dengan 2 NUP antre 2 kali.',
+                            EventSetupService::JENIS_MANDIRI => 'Semua pos di-scan di sini. Peserta dikenali dari QR customer FO (atau ketik kode customer / No. NUP), dilacak per customer, tercatat saat scan pertama.',
+                        ])
+                        ->default(EventSetupService::JENIS_FO)
+                        ->required()
+                        ->live()
+                        ->disabled($kunci),
                     Forms\Components\Select::make('fo_nup_event_id')
                         ->label('Event NUP (FO)')
                         ->helperText('Peserta diambil dari NUP event ini yang sudah Aktivasi di FO.')
+                        ->visible(fn (Get $get) => $get('jenis') !== EventSetupService::JENIS_MANDIRI)
                         ->options(fn () => app(FoNupLookup::class)->nupEvents()
                             ->mapWithKeys(fn ($e) => [$e['id'] => self::labelNupEvent($e)])->all())
                         ->searchable()
@@ -125,9 +140,14 @@ class EventResource extends Resource
                 ->schema([
                     Forms\Components\Placeholder::make('pos_fo')
                         ->label('Pos 1')
-                        ->content('Aktivasi NUP (FO) — dibaca otomatis dari FO, tidak perlu scan di modul ini.'),
+                        ->content('Aktivasi NUP (FO) — dibaca otomatis dari FO, tidak perlu scan di modul ini.')
+                        ->visible(fn (Get $get) => $get('jenis') !== EventSetupService::JENIS_MANDIRI),
+                    Forms\Components\Placeholder::make('pos_mandiri')
+                        ->hiddenLabel()
+                        ->content('Event mandiri: scan pertama customer di pos mana pun mencatat kedatangannya. Biasanya pos pertama = meja kedatangan.')
+                        ->visible(fn (Get $get) => $get('jenis') === EventSetupService::JENIS_MANDIRI),
                     Forms\Components\Repeater::make('pos')
-                        ->label('Pos berikutnya (urut)')
+                        ->label(fn (Get $get) => $get('jenis') === EventSetupService::JENIS_MANDIRI ? 'Pos (urut)' : 'Pos berikutnya (urut)')
                         ->helperText('Pos terakhir otomatis menjadi pos Selesai. Seret untuk mengubah urutan.')
                         ->schema([
                             Forms\Components\Grid::make(3)->schema([
@@ -253,7 +273,8 @@ class EventResource extends Resource
                     ->description(fn (EtEvent $r) => $r->venue),
                 Tables\Columns\TextColumn::make('event_date')->label('Tanggal')->date('d M Y')->sortable(),
                 Tables\Columns\TextColumn::make('fo_nup_event_id')->label('Event NUP (FO)')
-                    ->formatStateUsing(fn ($state) => ($e = $nupEvents()->get((int) $state)) ? self::labelNupEvent($e) : '#'.$state),
+                    ->formatStateUsing(fn ($state) => ($e = $nupEvents()->get((int) $state)) ? self::labelNupEvent($e) : '#'.$state)
+                    ->placeholder('Mandiri (tanpa NUP)'),
                 Tables\Columns\TextColumn::make('status')->label('Status')->badge()
                     ->formatStateUsing(fn (string $state) => match ($state) {
                         EtEvent::OPEN => 'Dibuka', EtEvent::CLOSED => 'Ditutup', default => 'Draft',
@@ -353,15 +374,17 @@ class EventResource extends Resource
         $e = e(...);
         $pos = collect((array) $get('pos'))->values();
         $titik = collect((array) $get('titik'))->keyBy('code');
-        $nup = app(FoNupLookup::class)->nupEvent((int) $get('fo_nup_event_id'));
+        $mandiri = $get('jenis') === EventSetupService::JENIS_MANDIRI;
+        $nup = $mandiri ? null : app(FoNupLookup::class)->nupEvent((int) $get('fo_nup_event_id'));
 
-        $baris = '<li>1. Aktivasi NUP (FO) — dari FO</li>';
+        $baris = $mandiri ? '' : '<li>1. Aktivasi NUP (FO) — dari FO</li>';
+        $awal = $mandiri ? 1 : 2;
         foreach ($pos as $i => $p) {
             $code = strtoupper((string) ($p['code'] ?? ''));
             $mode = ($titik[$code]['mode'] ?? EventSetupService::MODE_GANDA) === EventSetupService::MODE_SINGLE ? 'satu HP' : 'Masuk + Keluar';
             $selesai = $i === $pos->count() - 1 ? ' · <b>Selesai</b>' : '';
             $target = filled($p['target_minutes'] ?? null) ? ' · target '.(int) $p['target_minutes'].' mnt' : '';
-            $baris .= '<li>'.($i + 2).'. '.$e($p['name'] ?? '').' ('.$e($code).') — '.$mode.$target.$selesai.'</li>';
+            $baris .= '<li>'.($i + $awal).'. '.$e($p['name'] ?? '').' ('.$e($code).') — '.$mode.$target.$selesai.'</li>';
         }
 
         $akses = collect((array) $get('akses'))->filter(fn ($a) => filled($a['user_id'] ?? null))->count();
@@ -369,7 +392,7 @@ class EventResource extends Resource
         return new HtmlString(
             '<div class="space-y-3 text-sm">'.
             '<div><b>'.$e((string) $get('name')).'</b> · '.$e((string) $get('event_date')).' · '.$e((string) $get('venue')).'</div>'.
-            '<div>Event NUP: '.($nup ? $e(self::labelNupEvent($nup)) : '—').'</div>'.
+            '<div>'.($mandiri ? 'Event mandiri — tanpa event NUP, dilacak per customer.' : 'Event NUP: '.($nup ? $e(self::labelNupEvent($nup)) : '—')).'</div>'.
             '<ol class="list-none space-y-1">'.$baris.'</ol>'.
             '<div>'.$akses.' pengguna diberi akses. Superadmin selalu punya akses penuh.</div>'.
             '</div>'

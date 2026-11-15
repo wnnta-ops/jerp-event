@@ -2,6 +2,7 @@
 
 namespace App\Modules\Event\Services;
 
+use App\Modules\Event\Data\FoCustomerData;
 use App\Modules\Event\Data\FoParticipantData;
 use App\Modules\FO\Launching\Models\NupEvent;
 use App\Modules\FO\Launching\Models\NupRegistration;
@@ -74,6 +75,49 @@ class FoNupLookup
         }
 
         return 'Kode tidak ditemukan';
+    }
+
+    /**
+     * Event MANDIRI: customer untuk payload ini, atau null.
+     *
+     * - "CUST:<kode>" → hanya kode customer.
+     * - Tanpa awalan → No. NUP dulu (event mana pun; diambil customer-nya), lalu kode customer.
+     *
+     * Tidak ada syarat APPROVED / aktivasi / hold — itu aturan event NUP.
+     */
+    public function findCustomerByScan(string $payload): ?FoCustomerData
+    {
+        $parsed = $this->parse($payload);
+        if ($parsed === null) {
+            return null;
+        }
+        [$jenis, $kode] = $parsed;
+
+        $customer = null;
+        $noNup = null;
+        if ($jenis === 'nup') {
+            $reg = NupRegistration::query()->select(['id', 'customer_id', 'no_nup'])
+                ->where('no_nup', $kode)->whereNotNull('customer_id')->first();
+            if ($reg) {
+                $customer = $this->customer()->whereKey($reg->customer_id)->first();
+                $noNup = $reg->no_nup;
+            }
+        }
+        $customer ??= $this->customer()->where('code', $kode)->first();
+
+        return $customer ? new FoCustomerData(
+            customer_id: (int) $customer->id,
+            customer_code: $customer->code,
+            name: $customer->full_name,
+            phone: $customer->mobile ?: $customer->phone,
+            no_nup: $noNup,
+        ) : null;
+    }
+
+    /** Pesan untuk findCustomerByScan() yang kosong. */
+    public function explainCustomerMiss(string $payload): string
+    {
+        return $this->parse($payload) === null ? 'QR tidak dikenali' : 'Kode tidak ditemukan';
     }
 
     /**
@@ -236,6 +280,12 @@ class FoNupLookup
         }
 
         return Customer::query()->where('code', $kode)->exists();
+    }
+
+    /** @return Builder<Customer> */
+    private function customer(): Builder
+    {
+        return Customer::query()->select(['id', 'code', 'full_name', 'phone', 'mobile']);
     }
 
     /** @return Builder<NupRegistration> */

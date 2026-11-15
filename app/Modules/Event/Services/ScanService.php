@@ -75,6 +75,17 @@ class ScanService
             return $tolak('Pos 1 dicatat di FO (Aktivasi NUP), bukan di sini');
         }
 
+        // ── Event mandiri: satu customer = satu peserta, tercatat saat scan pertama ──
+        if ($event->isMandiri()) {
+            $customer = $this->fo->findCustomerByScan($payload);
+            if ($customer === null) {
+                return $tolak($this->fo->explainCustomerMiss($payload));
+            }
+            $p = $this->sync->upsertCustomer($event, $customer);
+
+            return $this->apply($event, $point, $this->effectiveKind($point, collect([$p])), $p, $user, $log);
+        }
+
         // ── Cari NUP di FO (selalu, supaya hold / batal aktivasi langsung terasa) ──
         $kandidat = $this->fo->findByScan($payload, (int) $event->fo_nup_event_id);
         if ($nupRegistrationId !== null) {
@@ -137,7 +148,7 @@ class ScanService
 
         $log = $this->logger($event, $point, $user, 'manual:'.($p->no_nup ?? $p->id), $userAgent);
         $tolak = function (string $pesan) use ($log, $p) {
-            $log(EtScanLog::REJECTED, $pesan, (int) $p->fo_nup_registration_id);
+            $log(EtScanLog::REJECTED, $pesan, $p->fo_nup_registration_id, null, (int) $p->id);
 
             return new ScanResult(ScanResult::REJECTED, $pesan, $p->name_snapshot, $p->no_nup, $p->id);
         };
@@ -180,7 +191,7 @@ class ScanService
                 ->where('effect->undo_of', $asli->id)->exists();
             $adaScanLanjutan = EtScanLog::query()->where('result', EtScanLog::ACCEPTED)
                 ->where('event_id', $asli->event_id)
-                ->where('fo_nup_registration_id', $asli->fo_nup_registration_id)
+                ->where('participant_id', $asli->participant_id)
                 ->where('id', '>', $asli->id)->exists();
             if ($sudahDibatalkan || $adaScanLanjutan) {
                 return new ScanResult(ScanResult::REJECTED, 'Scan tidak bisa dibatalkan — sudah ada perubahan sesudahnya');
@@ -210,6 +221,7 @@ class ScanService
                 'user_id' => $user->id,
                 'raw_payload' => $asli->raw_payload,
                 'fo_nup_registration_id' => $asli->fo_nup_registration_id,
+                'participant_id' => $asli->participant_id,
                 'result' => EtScanLog::UNDONE,
                 'reason' => 'Scan #'.$asli->id.' dibatalkan',
                 'server_time' => now(),
@@ -225,17 +237,18 @@ class ScanService
     /**
      * Penulis log scan untuk satu titik. Satu baris per percobaan.
      *
-     * @return \Closure(string, ?string=, ?int=, ?array=): EtScanLog
+     * @return \Closure(string, ?string=, ?int=, ?array=, ?int=): EtScanLog
      */
     private function logger(EtEvent $event, EtScanPoint $point, User $user, string $payload, ?string $userAgent): \Closure
     {
-        return fn (string $result, ?string $reason = null, ?int $regId = null, ?array $effect = null) => EtScanLog::create([
+        return fn (string $result, ?string $reason = null, ?int $regId = null, ?array $effect = null, ?int $participantId = null) => EtScanLog::create([
             'tenant_id' => $event->tenant_id,
             'event_id' => $event->id,
             'scan_point_id' => $point->id,
             'user_id' => $user->id,
             'raw_payload' => $payload === '' ? '-' : $payload,
             'fo_nup_registration_id' => $regId,
+            'participant_id' => $participantId,
             'result' => $result,
             'reason' => $reason,
             'server_time' => now(),
@@ -307,37 +320,38 @@ class ScanService
     }
 
     /**
-     * @param  \Closure(string, ?string=, ?int=, ?array=): EtScanLog  $log
+     * @param  \Closure(string, ?string=, ?int=, ?array=, ?int=): EtScanLog  $log
      */
     private function apply(EtEvent $event, EtScanPoint $point, string $kind, EtParticipant $pilih, User $user, \Closure $log, string $endReason = EtVisit::END_SCAN_KELUAR): ScanResult
     {
         return DB::transaction(function () use ($event, $point, $kind, $pilih, $user, $log, $endReason) {
             /** @var EtParticipant $p */
             $p = EtParticipant::query()->lockForUpdate()->findOrFail($pilih->id);
-            $regId = (int) $p->fo_nup_registration_id;
+            $regId = $p->fo_nup_registration_id;
+            $pid = (int) $p->id;
             $station = $point->station;
             $now = now();
 
             $duplikat = EtScanLog::query()
                 ->where('scan_point_id', $point->id)
-                ->where('fo_nup_registration_id', $regId)
+                ->where('participant_id', $pid)
                 ->where('result', EtScanLog::ACCEPTED)
                 ->where('server_time', '>=', $now->copy()->subSeconds(self::DUPLICATE_SECONDS))
                 ->exists();
             if ($duplikat) {
-                $log(EtScanLog::DUPLICATE, 'Scan ganda (< '.self::DUPLICATE_SECONDS.' detik)', $regId);
+                $log(EtScanLog::DUPLICATE, 'Scan ganda (< '.self::DUPLICATE_SECONDS.' detik)', $regId, null, $pid);
 
                 return new ScanResult(ScanResult::DUPLICATE, 'Sudah tercatat barusan', $p->name_snapshot, $p->no_nup, $p->id);
             }
 
             if ($p->status === EtParticipant::FINISHED) {
-                $log(EtScanLog::REJECTED, 'Sudah selesai', $regId);
+                $log(EtScanLog::REJECTED, 'Sudah selesai', $regId, null, $pid);
 
                 return new ScanResult(ScanResult::REJECTED, 'Sudah selesai', $p->name_snapshot, $p->no_nup, $p->id);
             }
             if ($p->status !== EtParticipant::ACTIVE) {
                 $pesan = $p->status === EtParticipant::LEFT ? 'Peserta sudah ditandai pulang' : 'Belum aktivasi di pos 1';
-                $log(EtScanLog::REJECTED, $pesan, $regId);
+                $log(EtScanLog::REJECTED, $pesan, $regId, null, $pid);
 
                 return new ScanResult(ScanResult::REJECTED, $pesan, $p->name_snapshot, $p->no_nup, $p->id);
             }
@@ -351,7 +365,7 @@ class ScanService
                 : $this->keluar($p, $station, $stations, $user, $now, $endReason);
 
             if ($aksi === 'already_in') {
-                $log(EtScanLog::DUPLICATE, 'Sudah masuk di pos ini', $regId);
+                $log(EtScanLog::DUPLICATE, 'Sudah masuk di pos ini', $regId, null, $pid);
 
                 return new ScanResult(ScanResult::DUPLICATE, 'Sudah masuk di pos ini sejak '.$visit->started_at->format('H:i'), $p->name_snapshot, $p->no_nup, $p->id);
             }
@@ -362,7 +376,7 @@ class ScanService
                 'action' => $aksi,
                 'reopened_other' => $ditutupLain,
                 'participant_before' => $sebelum,
-            ]);
+            ], $pid);
 
             $pesan = match (true) {
                 $kind === EtScanPoint::MASUK => 'Masuk '.$station->name,

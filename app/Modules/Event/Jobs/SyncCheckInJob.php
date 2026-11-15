@@ -40,6 +40,7 @@ class SyncCheckInJob implements ShouldBeUnique, ShouldQueue
         $events = EtEvent::query()
             ->withoutGlobalScope(TenantScope::class)
             ->where('status', EtEvent::OPEN)
+            ->whereNotNull('fo_nup_event_id')   // event mandiri tak punya check-in FO
             ->when($this->eventId, fn ($q) => $q->whereKey($this->eventId))
             ->get();
 

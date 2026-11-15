@@ -18,9 +18,16 @@ use Throwable;
 /**
  * Setup event: buat / ubah / buka / tutup / duplikat. Dipakai wizard Filament.
  *
+ * Dua jenis event:
+ *   fo      — terhubung ke event NUP FO. Pos 1 = Aktivasi NUP (dibaca dari FO),
+ *             peserta dilacak per NUP.
+ *   mandiri — tanpa event NUP. Semua pos di-scan di modul ini; peserta = customer
+ *             (QR customer FO), dibuat saat scan pertama.
+ *
  * Bentuk data (sama untuk buat & ubah):
- *   name, event_date, venue, fo_nup_event_id
- *   pos   : [{code, name, target_minutes}]  — pos 2..n berurutan; pos 1 (FO) otomatis,
+ *   jenis (fo|mandiri), name, event_date, venue, fo_nup_event_id (wajib bila fo)
+ *   pos   : [{code, name, target_minutes}]  — berurutan; untuk jenis fo pos 1 (FO)
+ *                                              ditambahkan otomatis di depan;
  *                                              pos terakhir otomatis 'finish'
  *   titik : [{code, mode: ganda|single, label_masuk, label_keluar, label_single}]
  *   akses : [{user_id, titik: ['KODE:masuk', …], can_live_board, can_reports}]
@@ -35,6 +42,10 @@ class EventSetupService
     public const MODE_SINGLE = 'single';
 
     public const FO_CODE = 'FO';
+
+    public const JENIS_FO = 'fo';
+
+    public const JENIS_MANDIRI = 'mandiri';
 
     public function __construct(
         private readonly FoNupLookup $fo,
@@ -69,7 +80,8 @@ class EventSetupService
     {
         $draft = $event->status === EtEvent::DRAFT;
         if (! $draft) {
-            // Pos & titik terkunci; FO event juga tak boleh ganti setelah dibuka.
+            // Pos & titik terkunci; jenis & event NUP juga tak boleh ganti setelah dibuka.
+            $data['jenis'] = $event->isMandiri() ? self::JENIS_MANDIRI : self::JENIS_FO;
             $data['fo_nup_event_id'] = $event->fo_nup_event_id;
         }
         $this->validasi($data, strukturDiperiksa: $draft);
@@ -97,7 +109,7 @@ class EventSetupService
         }
         $stations = $event->stations()->withCount('scanPoints')->get();
         if ($stations->where('type', '!=', EtStation::FO_CHECKIN)->isEmpty()) {
-            throw new RuntimeException('Event belum punya pos setelah Aktivasi NUP.');
+            throw new RuntimeException('Event belum punya pos untuk di-scan.');
         }
         if ($stations->where('type', '!=', EtStation::FO_CHECKIN)->contains(fn ($s) => $s->scan_points_count === 0)) {
             throw new RuntimeException('Ada pos tanpa titik scan.');
@@ -193,6 +205,7 @@ class EventSetupService
             ])->values()->all();
 
         return [
+            'jenis' => $event->isMandiri() ? self::JENIS_MANDIRI : self::JENIS_FO,
             'name' => $event->name,
             'event_date' => $event->event_date->toDateString(),
             'venue' => $event->venue,
@@ -261,13 +274,19 @@ class EventSetupService
     // ── internal ────────────────────────────────────────────────────────
 
     /** @param array<string, mixed> $data */
+    public static function isMandiri(array $data): bool
+    {
+        return ($data['jenis'] ?? self::JENIS_FO) === self::JENIS_MANDIRI;
+    }
+
+    /** @param array<string, mixed> $data */
     private function detail(array $data): array
     {
         return [
             'name' => trim((string) $data['name']),
             'event_date' => $data['event_date'],
             'venue' => filled($data['venue'] ?? null) ? trim((string) $data['venue']) : null,
-            'fo_nup_event_id' => (int) $data['fo_nup_event_id'],
+            'fo_nup_event_id' => self::isMandiri($data) ? null : (int) $data['fo_nup_event_id'],
         ];
     }
 
@@ -277,7 +296,7 @@ class EventSetupService
         if (blank($data['name'] ?? null) || blank($data['event_date'] ?? null)) {
             throw new RuntimeException('Nama dan tanggal event wajib diisi.');
         }
-        if (! $this->fo->nupEvent((int) ($data['fo_nup_event_id'] ?? 0))) {
+        if (! self::isMandiri($data) && ! $this->fo->nupEvent((int) ($data['fo_nup_event_id'] ?? 0))) {
             throw new RuntimeException('Event NUP FO tidak ditemukan.');
         }
         if (! $strukturDiperiksa) {
@@ -286,7 +305,7 @@ class EventSetupService
 
         $kode = collect((array) ($data['pos'] ?? []))->map(fn ($p) => strtoupper(trim((string) ($p['code'] ?? ''))));
         if ($kode->isEmpty()) {
-            throw new RuntimeException('Minimal satu pos setelah Aktivasi NUP.');
+            throw new RuntimeException(self::isMandiri($data) ? 'Minimal satu pos.' : 'Minimal satu pos setelah Aktivasi NUP.');
         }
         if ($kode->contains('') || $kode->contains(self::FO_CODE)) {
             throw new RuntimeException('Kode pos wajib diisi dan tidak boleh "'.self::FO_CODE.'".');
@@ -299,10 +318,15 @@ class EventSetupService
     /** @param array<string, mixed> $data */
     private function bangunStruktur(EtEvent $event, array $data): void
     {
-        EtStation::create([
-            'tenant_id' => $event->tenant_id, 'event_id' => $event->id, 'code' => self::FO_CODE,
-            'name' => 'Aktivasi NUP (FO)', 'sequence' => 1, 'type' => EtStation::FO_CHECKIN,
-        ]);
+        // Event terhubung FO: pos 1 = Aktivasi NUP (dibaca dari FO). Mandiri: tidak ada.
+        $awal = 1;
+        if (! $event->isMandiri()) {
+            EtStation::create([
+                'tenant_id' => $event->tenant_id, 'event_id' => $event->id, 'code' => self::FO_CODE,
+                'name' => 'Aktivasi NUP (FO)', 'sequence' => 1, 'type' => EtStation::FO_CHECKIN,
+            ]);
+            $awal = 2;
+        }
 
         $pos = array_values((array) $data['pos']);
         $titik = collect($this->titikBawaan($pos, (array) ($data['titik'] ?? [])))->keyBy('code');
@@ -315,7 +339,7 @@ class EventSetupService
                 'event_id' => $event->id,
                 'code' => $code,
                 'name' => trim((string) $p['name']) ?: $code,
-                'sequence' => $i + 2,
+                'sequence' => $i + $awal,
                 'type' => $i === $terakhir ? EtStation::FINISH : EtStation::NORMAL,
                 'target_minutes' => filled($p['target_minutes'] ?? null) ? (int) $p['target_minutes'] : null,
             ]);

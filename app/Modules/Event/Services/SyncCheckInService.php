@@ -2,6 +2,7 @@
 
 namespace App\Modules\Event\Services;
 
+use App\Modules\Event\Data\FoCustomerData;
 use App\Modules\Event\Data\FoParticipantData;
 use App\Modules\Event\Models\EtEvent;
 use App\Modules\Event\Models\EtParticipant;
@@ -26,6 +27,11 @@ class SyncCheckInService
      */
     public function syncEvent(EtEvent $event): array
     {
+        // Event mandiri tak punya event NUP FO — kedatangan dicatat dari scan pertama.
+        if ($event->isMandiri()) {
+            return ['baru' => 0, 'diperbarui' => 0, 'dibatalkan' => 0];
+        }
+
         $tenant = app(TenantContext::class);
         $tenantSebelum = $tenant->id();
         $tenant->set((int) $event->tenant_id);
@@ -115,6 +121,40 @@ class SyncCheckInService
         }
 
         return [$p, false];
+    }
+
+    /**
+     * Event mandiri: peserta per customer, dibuat saat scan pertama (kedatangan =
+     * saat itu). Nama & HP disegarkan dari FO tiap scan.
+     */
+    public function upsertCustomer(EtEvent $event, FoCustomerData $data): EtParticipant
+    {
+        $snapshot = [
+            'customer_code' => $data->customer_code,
+            'name_snapshot' => $data->name,
+            'phone_snapshot' => $data->phone,
+        ];
+
+        $p = EtParticipant::query()->createOrFirst(
+            ['event_id' => $event->id, 'fo_customer_id' => $data->customer_id],
+            $snapshot + [
+                'tenant_id' => $event->tenant_id,
+                'no_nup' => $data->no_nup,
+                'checked_in_at' => now(),
+                'status' => EtParticipant::ACTIVE,
+                'current_station_id' => $this->stationAfterCheckin($event)?->id,
+                'current_state' => EtParticipant::WAITING,
+            ],
+        );
+
+        if (! $p->wasRecentlyCreated) {
+            $p->fill($snapshot);
+            if ($p->isDirty()) {
+                $p->save();
+            }
+        }
+
+        return $p;
     }
 
     private function stationAfterCheckin(EtEvent $event): ?EtStation

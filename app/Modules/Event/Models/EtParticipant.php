@@ -9,6 +9,9 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 /**
  * Peserta = SATU NUP di satu event. Customer dengan beberapa NUP punya beberapa
  * peserta yang antre masing-masing.
+ *
+ * Event mandiri (tanpa event NUP FO): peserta = satu CUSTOMER (fo_customer_id),
+ * dibuat saat scan pertama.
  */
 class EtParticipant extends TenantAwareModel
 {
@@ -29,13 +32,14 @@ class EtParticipant extends TenantAwareModel
     public const DONE = 'done';
 
     protected $fillable = [
-        'tenant_id', 'event_id', 'fo_nup_registration_id', 'no_nup', 'customer_code',
+        'tenant_id', 'event_id', 'fo_nup_registration_id', 'fo_customer_id', 'no_nup', 'customer_code',
         'name_snapshot', 'phone_snapshot', 'checked_in_at', 'finished_at', 'status',
         'current_station_id', 'current_state',
     ];
 
     protected $casts = [
         'fo_nup_registration_id' => 'integer',
+        'fo_customer_id' => 'integer',
         'checked_in_at' => 'datetime',
         'finished_at' => 'datetime',
     ];

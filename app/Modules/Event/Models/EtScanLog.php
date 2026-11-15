@@ -27,7 +27,7 @@ class EtScanLog extends Model
     public const UNDONE = 'undone';
 
     protected $fillable = [
-        'tenant_id', 'event_id', 'scan_point_id', 'user_id', 'raw_payload',
+        'tenant_id', 'event_id', 'scan_point_id', 'participant_id', 'user_id', 'raw_payload',
         'fo_nup_registration_id', 'result', 'reason', 'server_time', 'user_agent', 'effect',
     ];
 

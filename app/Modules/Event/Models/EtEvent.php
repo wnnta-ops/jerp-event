@@ -34,6 +34,12 @@ class EtEvent extends TenantAwareModel
         'last_synced_at' => 'datetime',
     ];
 
+    /** Event mandiri: tidak terhubung ke event NUP FO; peserta dikenali per customer. */
+    public function isMandiri(): bool
+    {
+        return $this->fo_nup_event_id === null;
+    }
+
     public function isOpen(): bool
     {
         return $this->status === self::OPEN;
