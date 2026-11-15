@@ -3,6 +3,7 @@
 namespace App\Filament\Event\Resources;
 
 use App\Filament\Concerns\MematuhiIzin;
+use App\Filament\Event\Pages\LiveBoard;
 use App\Filament\Event\Resources\EventResource\Pages;
 use App\Models\User;
 use App\Modules\Event\Models\EtEvent;
@@ -296,6 +297,13 @@ class EventResource extends Resource
                 ]),
             ])
             ->actions([
+                Tables\Actions\Action::make('liveBoard')
+                    ->label('Live board')
+                    ->icon('heroicon-o-view-columns')
+                    ->url(fn (EtEvent $r) => LiveBoard::getUrl(['event' => $r->id]))
+                    ->visible(fn (EtEvent $r) => $r->status !== EtEvent::DRAFT
+                        && LiveBoard::canAccess()
+                        && self::policy()->canLiveBoard(Auth::user(), $r)),
                 Tables\Actions\EditAction::make()->label('Ubah'),
                 Tables\Actions\ActionGroup::make([
                     Tables\Actions\Action::make('buka')

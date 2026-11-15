@@ -249,6 +249,9 @@ return [
         'UploadPriceList' => 'fo.upload_price_list',
         'UploadSitePlan' => 'fo.upload_site_plan',
         'UploadUnit' => 'fo.upload_unit',
+
+        // Modul Event
+        'App\\Filament\\Event\\Pages\\LiveBoard' => 'event.live_board',
     ],
 
     /*

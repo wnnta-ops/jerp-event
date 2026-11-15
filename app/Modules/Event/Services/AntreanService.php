@@ -2,6 +2,7 @@
 
 namespace App\Modules\Event\Services;
 
+use App\Modules\Event\Models\EtEvent;
 use App\Modules\Event\Models\EtParticipant;
 use App\Modules\Event\Models\EtStation;
 use App\Modules\Event\Models\EtVisit;
@@ -17,14 +18,17 @@ class AntreanService
      * Peserta yang menunggu masuk pos ini, paling lama menunggu di atas.
      * "Menunggu sejak" = keluar dari pos terakhir, atau check-in FO bila belum ke mana pun.
      *
+     * $lewatOpsional: ikut tampilkan yang menunggu di pos opsional tepat sebelumnya
+     * (untuk HP scanner). Live board mematikannya supaya tiap peserta muncul sekali.
+     *
      * @return list<array{participant_id:int, no_nup:?string, name:?string, customer_code:?string, since:?string}>
      */
-    public function menunggu(EtStation $station): array
+    public function menunggu(EtStation $station, bool $lewatOpsional = true): array
     {
         $peserta = EtParticipant::query()
             ->where('event_id', $station->event_id)
             ->where('status', EtParticipant::ACTIVE)
-            ->whereIn('current_station_id', $this->stasiunMenuju($station))
+            ->whereIn('current_station_id', $lewatOpsional ? $this->stasiunMenuju($station) : [(int) $station->id])
             ->where('current_state', EtParticipant::WAITING)
             ->get(['id', 'no_nup', 'name_snapshot', 'customer_code', 'checked_in_at']);
 
@@ -97,5 +101,56 @@ class AntreanService
                 'since' => $v->started_at?->toIso8601String(),
                 'flags' => array_values(array_filter((array) $v->flags, 'is_string')),
             ])->values()->all();
+    }
+
+    /**
+     * Data live board satu event: satu kolom per pos (tanpa pos FO), masing-masing
+     * berisi yang menunggu & yang sedang dilayani, plus ringkasan status peserta.
+     *
+     * @return array{
+     *     pos: list<array{id:int, code:string, name:string, sequence:int, target:?int, optional:bool, finish:bool,
+     *         menunggu: list<array{participant_id:int, no_nup:?string, name:?string, customer_code:?string, since:?string}>,
+     *         dilayani: list<array{participant_id:int, visit_id:int, no_nup:?string, name:?string, customer_code:?string, since:?string, flags:list<string>}>,
+     *         selesai:int}>,
+     *     ringkasan: array{total:int, aktif:int, selesai:int, pulang:int, batal:int}
+     * }
+     */
+    public function papan(EtEvent $event): array
+    {
+        $stations = $event->stations()->where('type', '!=', EtStation::FO_CHECKIN)->get();
+
+        $selesaiPerPos = EtVisit::query()
+            ->whereIn('station_id', $stations->pluck('id'))
+            ->whereNotNull('ended_at')
+            ->groupBy('station_id')
+            ->selectRaw('station_id, count(*) as n')
+            ->pluck('n', 'station_id');
+
+        $pos = $stations->toBase()->map(fn (EtStation $s) => [
+            'id' => (int) $s->id,
+            'code' => $s->code,
+            'name' => $s->name,
+            'sequence' => (int) $s->sequence,
+            'target' => $s->target_minutes,
+            'optional' => (bool) $s->is_optional,
+            'finish' => $s->isFinish(),
+            'menunggu' => $this->menunggu($s, lewatOpsional: false),
+            'dilayani' => $this->dilayani($s),
+            'selesai' => (int) ($selesaiPerPos[$s->id] ?? 0),
+        ])->values()->all();
+
+        $status = EtParticipant::query()->where('event_id', $event->id)
+            ->groupBy('status')->selectRaw('status, count(*) as n')->pluck('n', 'status');
+
+        return [
+            'pos' => $pos,
+            'ringkasan' => [
+                'total' => (int) $status->sum(),
+                'aktif' => (int) ($status[EtParticipant::ACTIVE] ?? 0),
+                'selesai' => (int) ($status[EtParticipant::FINISHED] ?? 0),
+                'pulang' => (int) ($status[EtParticipant::LEFT] ?? 0),
+                'batal' => (int) ($status[EtParticipant::CANCELLED] ?? 0),
+            ],
+        ];
     }
 }
