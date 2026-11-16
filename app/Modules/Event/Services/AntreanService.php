@@ -153,4 +153,112 @@ class AntreanService
             ],
         ];
     }
+
+    public const DOT_TEPAT = 'tepat';        // selesai, ≤ target (atau tanpa target)
+
+    public const DOT_TELAT = 'telat';        // selesai, lewat target
+
+    public const DOT_DILAYANI = 'dilayani';  // sedang dilayani di pos ini (titik putih + radar)
+
+    public const DOT_MENUNGGU = 'menunggu';  // sedang menunggu pos ini (titik putih)
+
+    public const DOT_DILEWATI = 'dilewati';  // pos dilewati (opsional / tanpa scan)
+
+    public const DOT_BELUM = 'belum';        // belum sampai
+
+    /**
+     * Tampilan "per peserta": satu baris per peserta (NUP / customer), satu titik
+     * per pos. Pos 1 FO (bila ada) selalu titik check-in.
+     *
+     * @return array{
+     *     pos: list<array{id:int, name:string, target:?int, optional:bool, fo:bool}>,
+     *     baris: list<array{participant_id:int, name:?string, no_nup:?string, customer_code:?string, status:string,
+     *         checked_in_at:?string, since:?string, titik: list<array{state:string, mulai:?string, selesai:?string, detik:?int}>}>
+     * }
+     */
+    public function perjalanan(EtEvent $event, string $cari = ''): array
+    {
+        $stations = $event->stations()->get();
+        $peserta = EtParticipant::query()
+            ->where('event_id', $event->id)
+            ->where('status', '!=', EtParticipant::CANCELLED)
+            ->when(mb_strlen(trim($cari)) >= 2, fn ($q) => $q->where(fn ($w) => $w
+                ->where('name_snapshot', 'like', '%'.trim($cari).'%')
+                ->orWhere('no_nup', 'like', '%'.trim($cari).'%')
+                ->orWhere('customer_code', 'like', '%'.trim($cari).'%')))
+            ->orderByRaw("case status when 'active' then 0 when 'finished' then 1 else 2 end")
+            ->orderBy('checked_in_at')
+            ->get();
+
+        $kunjungan = EtVisit::query()
+            ->whereIn('participant_id', $peserta->pluck('id'))
+            ->orderBy('id')
+            ->get(['id', 'participant_id', 'station_id', 'started_at', 'ended_at'])
+            ->groupBy('participant_id');
+
+        $seqStasiun = $stations->pluck('sequence', 'id');
+
+        $baris = $peserta->toBase()->map(function (EtParticipant $p) use ($stations, $kunjungan, $seqStasiun) {
+            $v = ($kunjungan[$p->id] ?? collect())->keyBy('station_id');   // terakhir per pos
+            $seqSekarang = (int) ($seqStasiun[$p->current_station_id] ?? 0);
+            $seqTerjauh = max($seqSekarang, (int) $v->keys()->map(fn ($id) => $seqStasiun[$id] ?? 0)->max());
+            $since = null;
+
+            $titik = $stations->toBase()->map(function (EtStation $s) use ($p, $v, $seqTerjauh, &$since) {
+                if ($s->isFoCheckin()) {
+                    return ['state' => $p->checked_in_at ? self::DOT_TEPAT : self::DOT_BELUM, 'mulai' => null,
+                        'selesai' => $p->checked_in_at?->toIso8601String(), 'detik' => null];
+                }
+
+                /** @var EtVisit|null $k */
+                $k = $v->get($s->id);
+                if ($k && $k->ended_at === null) {
+                    $since = $k->started_at?->toIso8601String();
+
+                    return ['state' => self::DOT_DILAYANI, 'mulai' => $since, 'selesai' => null, 'detik' => null];
+                }
+                if ($k) {
+                    $detik = $k->serviceSeconds();
+                    $telat = $s->target_minutes && $detik !== null && $detik > $s->target_minutes * 60;
+
+                    return ['state' => $telat ? self::DOT_TELAT : self::DOT_TEPAT, 'mulai' => $k->started_at?->toIso8601String(),
+                        'selesai' => $k->ended_at?->toIso8601String(), 'detik' => $detik];
+                }
+                if ($p->status === EtParticipant::ACTIVE && (int) $p->current_station_id === (int) $s->id
+                    && $p->current_state === EtParticipant::WAITING) {
+                    return ['state' => self::DOT_MENUNGGU, 'mulai' => null, 'selesai' => null, 'detik' => null];
+                }
+
+                return ['state' => $s->sequence < $seqTerjauh ? self::DOT_DILEWATI : self::DOT_BELUM,
+                    'mulai' => null, 'selesai' => null, 'detik' => null];
+            })->values()->all();
+
+            if ($since === null && $p->current_state === EtParticipant::WAITING) {
+                $akhir = ($kunjungan[$p->id] ?? collect())->whereNotNull('ended_at')->max('ended_at');
+                $since = ($akhir ? Carbon::parse($akhir) : $p->checked_in_at)?->toIso8601String();
+            }
+
+            return [
+                'participant_id' => (int) $p->id,
+                'name' => $p->name_snapshot,
+                'no_nup' => $p->no_nup,
+                'customer_code' => $p->customer_code,
+                'status' => $p->status,
+                'checked_in_at' => $p->checked_in_at?->toIso8601String(),
+                'since' => $p->status === EtParticipant::ACTIVE ? $since : null,
+                'titik' => $titik,
+            ];
+        })->values()->all();
+
+        return [
+            'pos' => $stations->toBase()->map(fn (EtStation $s) => [
+                'id' => (int) $s->id,
+                'name' => $s->isFoCheckin() ? 'Check-in' : $s->name,
+                'target' => $s->target_minutes,
+                'optional' => (bool) $s->is_optional,
+                'fo' => $s->isFoCheckin(),
+            ])->values()->all(),
+            'baris' => $baris,
+        ];
+    }
 }

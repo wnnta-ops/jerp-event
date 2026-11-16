@@ -35,6 +35,36 @@
     .lb-tbl{width:100%;font-size:.85rem;border-collapse:collapse}
     .lb-tbl td,.lb-tbl th{padding:.45rem .5rem;border-bottom:1px solid rgb(229 231 235);text-align:left}
     .dark .lb-tbl td,.dark .lb-tbl th{border-color:rgb(55 65 81)}
+    .lb-toggle{display:inline-flex;border:1px solid rgb(209 213 219);border-radius:.6rem;overflow:hidden}
+    .dark .lb-toggle{border-color:rgb(55 65 81)}
+    .lb-toggle button{padding:.45rem .8rem;font-size:.85rem;font-weight:600}
+    .lb-toggle button.on{background:#ff8c00;color:#fff}
+    /* Tampilan per peserta */
+    .jr-wrap{overflow-x:auto;border:1px solid rgb(229 231 235);border-radius:.75rem}
+    .dark .jr-wrap{border-color:rgb(55 65 81)}
+    .jr{width:100%;border-collapse:collapse;font-size:.85rem}
+    .jr th{font-size:.72rem;font-weight:600;opacity:.75;padding:.6rem .4rem;text-align:center;white-space:nowrap;border-bottom:1px solid rgb(229 231 235)}
+    .jr th.kiri,.jr td.kiri{text-align:left;padding-left:.9rem}
+    .jr td{padding:.55rem .4rem;border-bottom:1px solid rgb(243 244 246);vertical-align:middle}
+    .dark .jr th,.dark .jr td{border-color:rgb(31 41 55)}
+    .jr td.dot-cell{position:relative;text-align:center;min-width:5.5rem}
+    .jr td.dot-cell::before{content:"";position:absolute;top:50%;left:0;right:0;height:2px;background:rgb(229 231 235);z-index:0}
+    .dark .jr td.dot-cell::before{background:rgb(55 65 81)}
+    .jr td.dot-cell.first::before{left:50%}
+    .jr td.dot-cell.last::before{right:50%}
+    .jr td.dot-cell.lewat::before{background:rgb(16 185 129)}
+    .dot{position:relative;z-index:1;display:inline-block;width:16px;height:16px;border-radius:50%;vertical-align:middle}
+    .dot.tepat{background:rgb(16 185 129)}
+    .dot.telat{background:rgb(225 29 72)}
+    .dot.menunggu,.dot.dilayani{background:#fff;border:2px solid #ff8c00}
+    .dot.belum{background:#fff;border:2px solid rgb(209 213 219)}
+    .dark .dot.belum{background:rgb(17 24 39);border-color:rgb(75 85 99)}
+    .dot.dilewati{background:transparent;border:2px dashed rgb(156 163 175)}
+    .dot.dilayani::before,.dot.dilayani::after{content:"";position:absolute;inset:-2px;border-radius:50%;border:2px solid #ff8c00;animation:radar 1.8s ease-out infinite}
+    .dot.dilayani::after{animation-delay:.9s}
+    @keyframes radar{0%{transform:scale(1);opacity:.85}100%{transform:scale(3.2);opacity:0}}
+    .jr-legend{display:flex;flex-wrap:wrap;gap:1rem;font-size:.75rem;opacity:.85;align-items:center}
+    .jr-legend span{display:inline-flex;gap:.4rem;align-items:center}
 </style>
 
 <div wire:poll.5s
@@ -60,6 +90,10 @@
         <x-filament::input.wrapper style="min-width:18rem" prefix-icon="heroicon-m-magnifying-glass">
             <x-filament::input type="search" placeholder="Cari nama / No. NUP / kode customer" wire:model.live.debounce.400ms="cari" />
         </x-filament::input.wrapper>
+        <div class="lb-toggle" role="group" aria-label="Tampilan">
+            <button type="button" class="{{ $perPeserta ? '' : 'on' }}" wire:click="gantiTampilan('pos')">Per pos</button>
+            <button type="button" class="{{ $perPeserta ? 'on' : '' }}" wire:click="gantiTampilan('peserta')">Per peserta</button>
+        </div>
         @if ($papan)
             @php $r = $papan['ringkasan']; @endphp
             <span class="lb-chip">Peserta {{ $r['total'] }}</span>
@@ -67,7 +101,9 @@
             <span class="lb-chip" style="color:rgb(5 150 105)">Selesai {{ $r['selesai'] }}</span>
             @if ($r['pulang']) <span class="lb-chip" style="color:rgb(225 29 72)">Pulang {{ $r['pulang'] }}</span> @endif
             @if ($r['batal']) <span class="lb-chip">Batal aktivasi {{ $r['batal'] }}</span> @endif
-            <span class="lb-sub" style="margin-left:auto">Kuning = lewat target · merah = lewat 1,5× target</span>
+            @unless ($perPeserta)
+                <span class="lb-sub" style="margin-left:auto">Kuning = lewat target · merah = lewat 1,5× target</span>
+            @endunless
         @endif
     </div>
 
@@ -76,7 +112,7 @@
     @else
         @php $cari = mb_strtolower(trim($this->cari)); @endphp
 
-        @if ($hasilCari->isNotEmpty())
+        @if ($hasilCari->isNotEmpty() && ! $perPeserta)
             <x-filament::section :heading="'Hasil pencarian ('.$hasilCari->count().')'" compact>
                 <table class="lb-tbl">
                     <thead><tr><th>Nama</th><th>No. NUP</th><th>Kode</th><th>Posisi</th><th>Status</th><th></th></tr></thead>
@@ -103,10 +139,68 @@
                     </tbody>
                 </table>
             </x-filament::section>
-        @elseif (mb_strlen($cari) >= 2)
+        @elseif (mb_strlen($cari) >= 2 && ! $perPeserta)
             <div class="lb-sub">Tidak ada peserta yang cocok dengan "{{ $this->cari }}".</div>
         @endif
 
+        @if ($perPeserta)
+            <div class="jr-legend">
+                <span><i class="dot tepat"></i> Selesai, tepat / lebih cepat</span>
+                <span><i class="dot telat"></i> Selesai, lewat target</span>
+                <span><i class="dot dilayani"></i> Sedang dilayani</span>
+                <span><i class="dot menunggu"></i> Menunggu di pos ini</span>
+                <span><i class="dot dilewati"></i> Dilewati</span>
+                <span><i class="dot belum"></i> Belum</span>
+            </div>
+            <div class="jr-wrap">
+                <table class="jr">
+                    <thead>
+                        <tr>
+                            <th class="kiri">Peserta</th>
+                            @foreach ($perjalanan['pos'] as $pos)
+                                <th>{{ $pos['name'] }}@if ($pos['optional'])<br><span style="font-weight:400;font-style:italic">opsional</span>@endif
+                                    @if ($pos['target'])<br><span style="font-weight:400">{{ $pos['target'] }} mnt</span>@endif</th>
+                            @endforeach
+                            <th>Di pos ini</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @forelse ($perjalanan['baris'] as $b)
+                            @php $n = count($b['titik']); @endphp
+                            <tr wire:key="jr-{{ $b['participant_id'] }}">
+                                <td class="kiri">
+                                    <div style="font-weight:600">{{ $b['name'] }}</div>
+                                    <div class="lb-meta">{{ $b['no_nup'] ? 'NUP '.$b['no_nup'] : '' }}{{ $b['no_nup'] && $b['customer_code'] ? ' · ' : '' }}{{ $b['customer_code'] }}
+                                        @if ($b['status'] === 'finished') · <span style="color:rgb(5 150 105)">selesai</span>
+                                        @elseif ($b['status'] === 'left') · <span style="color:rgb(225 29 72)">pulang</span> @endif
+                                    </div>
+                                </td>
+                                @foreach ($b['titik'] as $i => $t)
+                                    @php
+                                        $judul = match ($t['state']) {
+                                            'tepat', 'telat' => $t['detik'] !== null ? 'Dilayani '.gmdate($t['detik'] >= 3600 ? 'G:i:s' : 'i:s', $t['detik']).($t['state'] === 'telat' ? ' — lewat target' : '') : 'Selesai',
+                                            'dilayani' => 'Sedang dilayani',
+                                            'menunggu' => 'Menunggu di pos ini',
+                                            'dilewati' => 'Dilewati',
+                                            default => 'Belum',
+                                        };
+                                        $lewat = in_array($t['state'], ['tepat', 'telat', 'dilewati'], true);
+                                    @endphp
+                                    <td @class(['dot-cell', 'first' => $i === 0, 'last' => $i === $n - 1, 'lewat' => $lewat])>
+                                        <i class="dot {{ $t['state'] }}" title="{{ $perjalanan['pos'][$i]['name'] }}: {{ $judul }}"></i>
+                                    </td>
+                                @endforeach
+                                <td style="text-align:center">
+                                    @if ($b['since'])<span class="lb-time" x-text="fmt('{{ $b['since'] }}')"></span>@else <span class="lb-sub">—</span> @endif
+                                </td>
+                            </tr>
+                        @empty
+                            <tr><td class="kiri" colspan="{{ count($perjalanan['pos']) + 2 }}"><span class="lb-sub">Belum ada peserta{{ mb_strlen(trim($this->cari)) >= 2 ? ' yang cocok' : '' }}.</span></td></tr>
+                        @endforelse
+                    </tbody>
+                </table>
+            </div>
+        @else
         <div class="lb-cols">
             @foreach ($papan['pos'] as $pos)
                 @php
@@ -178,6 +272,7 @@
                 </div>
             @endforeach
         </div>
+        @endif
     @endif
 </div>
 </x-filament-panels::page>

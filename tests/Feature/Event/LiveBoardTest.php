@@ -3,6 +3,7 @@
 namespace Tests\Feature\Event;
 
 use App\Filament\Event\Pages\LiveBoard;
+use App\Models\User;
 use App\Modules\Event\Models\EtAccess;
 use App\Modules\Event\Models\EtEvent;
 use App\Modules\Event\Models\EtParticipant;
@@ -51,6 +52,45 @@ class LiveBoardTest extends EventTestCase
         Livewire::actingAs($u)->test(LiveBoard::class, ['eventId' => $e['event']->id])
             ->assertOk()->assertSee('Lia')->assertSee('Rio')->assertSee('Konsultasi')
             ->set('cari', 'rio')->assertSee('Hasil pencarian (1)');
+    }
+
+    public function test_per_participant_view_dot_states(): void
+    {
+        $this->superUser();
+        $this->projectId();
+        $this->seed(EventDemoSeeder::class);
+        $e = EtEvent::where('name', EventDemoSeeder::NAMA)->sole();
+
+        $j = app(AntreanService::class)->perjalanan($e);
+        $this->assertSame(['Check-in', 'Konsultasi', 'Validasi Berkas', 'Pilih Unit', 'Merchandise'], array_column($j['pos'], 'name'));
+        $this->assertSame(29, count($j['baris']));   // semua peserta, termasuk yang pulang & yang di-hold
+        $baris = collect($j['baris'])->keyBy('no_nup');
+        $state = fn (string $nup) => array_column($baris[$nup]['titik'], 'state');
+
+        // Selesai lewat Validasi; Pilih Unit 13 mnt (target 15) tepat.
+        $this->assertSame(['tepat', 'tepat', 'tepat', 'tepat', 'tepat'], $state('DEMO-0001'));
+        // Selesai, melewati Validasi (opsional).
+        $this->assertSame(['tepat', 'tepat', 'dilewati', 'tepat', 'tepat'], $state('DEMO-0029'));
+        // Konsultasi 11 mnt (target 10) → telat.
+        $this->assertSame('telat', $state('DEMO-0009')[1]);
+        // Sedang dilayani di Pilih Unit (radar), Validasi dilewati.
+        $this->assertSame(['tepat', 'tepat', 'dilewati', 'dilayani', 'belum'], $state('DEMO-0014'));
+        // Menunggu Konsultasi.
+        $this->assertSame(['tepat', 'menunggu', 'belum', 'belum', 'belum'], $state('DEMO-0024'));
+        $this->assertNotNull($baris['DEMO-0024']['since']);
+        $this->assertSame('left', $baris['DEMO-0028']['status']);
+        $this->assertNull($baris['DEMO-0028']['since']);
+
+        // Cari ikut menyaring baris.
+        $this->assertSame(['DEMO-0003', 'DEMO-0004'], array_column(app(AntreanService::class)->perjalanan($e, 'citra')['baris'], 'no_nup'));
+
+        Livewire::actingAs(User::role('super_admin')->first())
+            ->test(LiveBoard::class, ['eventId' => $e->id])
+            ->call('gantiTampilan', 'peserta')
+            ->assertSet('tampilan', 'peserta')
+            ->assertSee('Sedang dilayani')->assertSee('Check-in')->assertSee('Gilang Ramadhan')
+            ->call('gantiTampilan', 'lain')
+            ->assertSet('tampilan', 'pos');
     }
 
     public function test_access_super_or_can_live_board_only(): void

@@ -53,6 +53,10 @@ class LiveBoard extends Page
 
     public string $cari = '';
 
+    /** 'pos' = kolom per pos; 'peserta' = satu baris per peserta dengan titik per pos. */
+    #[Url(as: 'tampilan')]
+    public string $tampilan = 'pos';
+
     public static function canAccess(): bool
     {
         $user = Auth::user();
@@ -72,6 +76,11 @@ class LiveBoard extends Page
         }
     }
 
+    public function gantiTampilan(string $tampilan): void
+    {
+        $this->tampilan = in_array($tampilan, ['pos', 'peserta'], true) ? $tampilan : 'pos';
+    }
+
     public function getSubheading(): ?string
     {
         return $this->event()?->name;
@@ -81,8 +90,11 @@ class LiveBoard extends Page
     protected function getViewData(): array
     {
         $event = $this->event();
+        $perPeserta = $this->tampilan === 'peserta';
 
         return [
+            'perPeserta' => $perPeserta,
+            'perjalanan' => $event && $perPeserta ? app(AntreanService::class)->perjalanan($event, $this->cari) : null,
             'events' => $this->eventTersedia(),
             'event' => $event,
             'papan' => $event ? app(AntreanService::class)->papan($event) : null,
