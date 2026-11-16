@@ -175,6 +175,11 @@ class ScannerTest extends EventTestCase
         Carbon::setTestNow('2026-11-20 10:06:00');
         $res = Livewire::actingAs($rina)->test(Scanner::class)->call('pilihTitik', $e['m2']->id)->instance()->selesai($p1->id);
         $this->assertSame('accepted', $res['status'], $res['message']);
+        // Isi popup "Customer selesai di pos Anda".
+        $this->assertSame('selesai', $res['action']);
+        $this->assertSame('Selesai di Konsultasi', $res['message']);
+        $this->assertSame('Pilih Unit', $res['berikutnya']);
+        $this->assertSame(360, $res['durasi_detik']);
         $v = EtVisit::where('participant_id', $p1->id)->sole();
         $this->assertSame(EtVisit::END_MANUAL, $v->end_reason);
         $this->assertSame(360, $v->serviceSeconds());
@@ -183,34 +188,6 @@ class ScannerTest extends EventTestCase
         // Live board menampilkan siapa yang memegang.
         $papan = app(AntreanService::class)->papan($e['event']);
         $this->assertSame([$joko->full_name], array_column($papan['pos'][0]['dilayani'], 'petugas'));
-    }
-
-    public function test_scan_again_finishes_own_customer_only_when_style_is_on(): void
-    {
-        Carbon::setTestNow('2026-11-20 10:00:00');
-        $ev = $this->foNupEvent();
-        $this->foNup($ev, $this->foCustomer('C-SU', 'Scan Ulang'), '1401');
-        $e = $this->eventOpen($ev);
-        $rina = $this->user();
-        $joko = $this->user();
-        $this->grantScan($rina, $e['event'], $e['m2']);
-        $this->grantScan($joko, $e['event'], $e['m2']);
-        $scan = app(ScanService::class);
-
-        $scan->handle($e['m2']->id, 'CUST:C-SU', $rina);
-
-        // Gaya mati → tetap "sudah masuk".
-        Carbon::setTestNow('2026-11-20 10:03:00');
-        $this->assertSame('duplicate', $scan->handle($e['m2']->id, 'CUST:C-SU', $rina)->status);
-        // Petugas lain dengan gaya nyala → bukan miliknya → tetap "sudah masuk".
-        $this->assertSame('duplicate', $scan->handle($e['m2']->id, 'CUST:C-SU', $joko, scanUlangSelesai: true)->status);
-
-        // Rina, gaya nyala → selesai (keluar), 4 menit.
-        Carbon::setTestNow('2026-11-20 10:04:00');
-        $r = Livewire::actingAs($rina)->test(Scanner::class)->call('pilihTitik', $e['m2']->id)->instance()->scan('CUST:C-SU', null, true);
-        $this->assertSame('accepted', $r['status'], $r['message']);
-        $this->assertSame('Keluar Konsultasi', $r['message']);
-        $this->assertSame(240, EtVisit::sole()->serviceSeconds());
     }
 
     public function test_sync_job_command_handles_all_open_events_with_tenant_context(): void

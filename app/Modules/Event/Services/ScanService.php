@@ -41,8 +41,6 @@ class ScanService
 
     /**
      * @param  int|null  $nupRegistrationId  Pilihan dari picker "Customer ini punya 2 NUP".
-     * @param  bool  $scanUlangSelesai  Gaya "scan ulang = selesai": di titik Masuk, scan customer
-     *                                  yang sedang DIA layani di pos ini menutup kunjungannya.
      */
     public function handle(
         int $scanPointId,
@@ -50,7 +48,6 @@ class ScanService
         User $user,
         ?int $nupRegistrationId = null,
         ?string $userAgent = null,
-        bool $scanUlangSelesai = false,
     ): ScanResult {
         $payload = mb_substr(trim($payload), 0, 255);
 
@@ -86,7 +83,7 @@ class ScanService
             }
             $p = $this->sync->upsertCustomer($event, $customer);
 
-            return $this->apply($event, $point, $this->effectiveKind($point, collect([$p])), $p, $user, $log, scanUlangSelesai: $scanUlangSelesai);
+            return $this->apply($event, $point, $this->effectiveKind($point, collect([$p])), $p, $user, $log);
         }
 
         // ── Cari NUP di FO (selalu, supaya hold / batal aktivasi langsung terasa) ──
@@ -132,7 +129,7 @@ class ScanService
             );
         }
 
-        return $this->apply($event, $point, $kind, $pilihan, $user, $log, scanUlangSelesai: $scanUlangSelesai);
+        return $this->apply($event, $point, $kind, $pilihan, $user, $log);
     }
 
     /**
@@ -334,9 +331,9 @@ class ScanService
     /**
      * @param  \Closure(string, ?string=, ?int=, ?array=, ?int=): EtScanLog  $log
      */
-    private function apply(EtEvent $event, EtScanPoint $point, string $kind, EtParticipant $pilih, User $user, \Closure $log, string $endReason = EtVisit::END_SCAN_KELUAR, bool $scanUlangSelesai = false): ScanResult
+    private function apply(EtEvent $event, EtScanPoint $point, string $kind, EtParticipant $pilih, User $user, \Closure $log, string $endReason = EtVisit::END_SCAN_KELUAR): ScanResult
     {
-        return DB::transaction(function () use ($event, $point, $kind, $pilih, $user, $log, $endReason, $scanUlangSelesai) {
+        return DB::transaction(function () use ($event, $point, $kind, $pilih, $user, $log, $endReason) {
             /** @var EtParticipant $p */
             $p = EtParticipant::query()->lockForUpdate()->findOrFail($pilih->id);
             $regId = $p->fo_nup_registration_id;
@@ -372,12 +369,6 @@ class ScanService
             $sebelum['finished_at'] = $p->finished_at?->toDateTimeString();
             $stations = $event->stations()->get();
 
-            // Gaya "scan ulang = selesai": customer yang sedang dia layani di pos ini → keluar.
-            if ($scanUlangSelesai && $kind === EtScanPoint::MASUK
-                && (int) $this->openVisitAt($p, $station->id)?->started_by === (int) $user->id) {
-                $kind = EtScanPoint::KELUAR;
-            }
-
             [$aksi, $visit, $ditutupLain, $warning] = $kind === EtScanPoint::MASUK
                 ? $this->masuk($p, $station, $stations, $user, $now)
                 : $this->keluar($p, $station, $stations, $user, $now, $endReason);
@@ -396,14 +387,25 @@ class ScanService
                 'participant_before' => $sebelum,
             ], $pid);
 
+            $manual = $endReason === EtVisit::END_MANUAL;
             $pesan = match (true) {
                 $kind === EtScanPoint::MASUK => 'Masuk '.$station->name,
+                $manual => 'Selesai di '.$station->name,
                 $station->isFinish() => 'Selesai — '.$station->name.' (event tuntas)',
                 default => 'Keluar '.$station->name,
             };
 
+            // Info untuk popup "customer selesai di pos Anda": lama layanan & pos berikutnya.
+            $berikutnya = null;
+            if ($kind !== EtScanPoint::MASUK) {
+                $berikutnya = $station->isFinish()
+                    ? 'Semua pos selesai'
+                    : ($stations->firstWhere('id', $p->current_station_id)?->name);
+            }
+
             return new ScanResult(ScanResult::ACCEPTED, $pesan, $p->name_snapshot, $p->no_nup, $p->id,
-                warning: $warning, log_id: $entry->id, action: $kind);
+                warning: $warning, log_id: $entry->id, action: $manual ? 'selesai' : $kind,
+                berikutnya: $berikutnya, durasi_detik: $kind === EtScanPoint::MASUK ? null : $visit->serviceSeconds());
         });
     }
 

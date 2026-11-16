@@ -2,12 +2,6 @@
 import { Html5Qrcode, Html5QrcodeSupportedFormats } from 'html5-qrcode';
 
 const KUNCI_TITIK = 'jerp-event-titik';
-const KUNCI_CARA = 'jerp-event-cara-selesai';
-const CARA_SELESAI = ['geser', 'tahan', 'konfirmasi', 'scan'];
-
-function bacaCara() {
-    try { const c = localStorage.getItem(KUNCI_CARA); return CARA_SELESAI.includes(c) ? c : 'geser'; } catch (_) { return 'geser'; }
-}
 
 function bunyi(ok) {
     try {
@@ -41,8 +35,7 @@ document.addEventListener('alpine:init', () => {
         sibuk: false,
         kameraGagal: null,
         undo: null,              // { id, sampai }
-        cara: bacaCara(),        // cara menandai customer selesai — diingat per HP
-        setelan: false,
+        popup: null,             // hasil "selesai di pos Anda" (slider)
         sekarang: Date.now(),
         qr: null,
         tick: null,
@@ -85,18 +78,12 @@ document.addEventListener('alpine:init', () => {
             this.sibuk = true;
             this.jeda();
             try {
-                this.tampil(await this.$wire.scan(payload, nupId, this.cara === 'scan'), payload);
+                this.tampil(await this.$wire.scan(payload, nupId), payload);
             } catch (e) {
                 this.tampil({ status: 'rejected', message: 'Gagal terhubung ke server' }, payload);
             } finally {
                 this.sibuk = false;
             }
-        },
-
-        pilihCara(c) {
-            this.cara = CARA_SELESAI.includes(c) ? c : 'geser';
-            try { localStorage.setItem(KUNCI_CARA, this.cara); } catch (_) {}
-            this.setelan = false;
         },
 
         kirimManual() {
@@ -115,7 +102,42 @@ document.addEventListener('alpine:init', () => {
             if (this.sibuk) return;
             this.sibuk = true;
             this.jeda();
-            try { this.tampil(await this.$wire.selesai(participantId)); } finally { this.sibuk = false; }
+            try {
+                const res = await this.$wire.selesai(participantId);
+                if (res.status === 'accepted' && res.action === 'selesai') {
+                    this.tampilSelesai(res);
+                } else {
+                    this.tampil(res);
+                }
+            } catch (e) {
+                this.tampil({ status: 'rejected', message: 'Gagal terhubung ke server' });
+            } finally {
+                this.sibuk = false;
+            }
+        },
+
+        // Popup "Customer selesai di pos Anda" — tetap di layar scanner, tutup sendiri.
+        tampilSelesai(res) {
+            clearTimeout(this.kembali);
+            this.popup = res;
+            navigator.vibrate?.(80);
+            bunyi(true);
+            if (res.log_id) {
+                this.undo = { id: res.log_id, sampai: Date.now() + undoSeconds * 1000 };
+            }
+            this.kembali = setTimeout(() => this.tutupPopup(), 2500);
+        },
+
+        tutupPopup() {
+            clearTimeout(this.kembali);
+            this.popup = null;
+            this.lanjut();
+        },
+
+        durasi(detik) {
+            if (detik == null) return '';
+            const m = Math.floor(detik / 60), s = detik % 60;
+            return String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0');
         },
 
         async batalkan() {
@@ -219,41 +241,6 @@ document.addEventListener('alpine:init', () => {
         async konfirmasi() {
             this.ukur();
             this.x = this.maks;
-            this.selesaiKah = true;
-            await this.selesai(participantId);
-        },
-    }));
-
-    // Tombol "Tahan untuk selesai": tekan & tahan 1,5 detik; lepas lebih cepat = batal.
-    window.Alpine.data('tahanSelesai', (participantId, durasi = 1500) => ({
-        p: 0,
-        raf: null,
-        mulaiPada: 0,
-        selesaiKah: false,
-
-        mulai(e) {
-            if (this.selesaiKah) return;
-            e?.target?.setPointerCapture?.(e.pointerId);
-            navigator.vibrate?.(15);
-            this.mulaiPada = performance.now();
-            clearInterval(this.raf);
-            // Timer biasa (bukan requestAnimationFrame) supaya tetap jalan walau layar tak
-            // menggambar ulang; ~60 langkah per detik cukup halus untuk bilah progres.
-            this.raf = setInterval(() => {
-                this.p = Math.min(1, (performance.now() - this.mulaiPada) / durasi);
-                if (this.p >= 1) { this.konfirmasi(); }
-            }, 16);
-        },
-
-        batal() {
-            if (this.selesaiKah) return;
-            clearInterval(this.raf);
-            this.p = 0;
-        },
-
-        async konfirmasi() {
-            clearInterval(this.raf);
-            this.p = 1;
             this.selesaiKah = true;
             await this.selesai(participantId);
         },

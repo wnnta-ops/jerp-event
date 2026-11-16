@@ -6,6 +6,7 @@ namespace App\Modules\Event\Data;
  * Hasil satu scan, dikirim ke HP scanner sebagai JSON.
  *
  * status: accepted | rejected | duplicate | pick (perlu pilih NUP).
+ * action: masuk | keluar | single | selesai (slider petugas) | undo.
  */
 final class ScanResult
 {
@@ -30,6 +31,10 @@ final class ScanResult
         public readonly array $candidates = [],
         public readonly ?int $log_id = null,
         public readonly ?string $action = null,
+        /** Setelah keluar/selesai: nama pos berikutnya, atau "Semua pos selesai". */
+        public readonly ?string $berikutnya = null,
+        /** Setelah keluar/selesai: lama layanan di pos ini (detik). */
+        public readonly ?int $durasi_detik = null,
     ) {}
 
     public function ok(): bool

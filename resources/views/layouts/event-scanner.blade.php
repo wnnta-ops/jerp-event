@@ -52,17 +52,6 @@
         .jc-slide.balik .jc-knob, .jc-slide.balik .jc-slide-fill { transition:transform .25s ease, width .25s ease; }
         .jc-slide.done { background:#10b981; border-color:#10b981; }
         .jc-slide.done .jc-knob { background:#fff; color:#10b981; }
-        .jc-hold { position:relative; display:grid; place-items:center; width:100%; height:56px; border-radius:999px; border:2px solid var(--jc-orange); background:var(--jc-orange-soft);
-                   overflow:hidden; user-select:none; -webkit-user-select:none; -webkit-touch-callout:none; touch-action:none; }
-        .jc-hold-fill { position:absolute; top:0; bottom:0; left:0; background:var(--jc-orange); }
-        .jc-hold-text { position:relative; font-weight:800; color:var(--jc-orange-dark); mix-blend-mode:normal; }
-        .jc-hold.done { background:#10b981; border-color:#10b981; }
-        .jc-hold.done .jc-hold-fill { background:#10b981; }
-        .jc-hold.done .jc-hold-text { color:#fff; }
-        .jc-confirm { border:2px solid var(--jc-orange); border-radius:.9rem; padding:.75rem; background:var(--jc-orange-soft); }
-        .jc-hint { border:2px dashed var(--jc-orange); border-radius:.9rem; padding:.75rem; color:var(--jc-orange-dark); font-weight:600; font-size:.9rem; text-align:center; }
-        .jc-opt { display:block; width:100%; text-align:left; border:2px solid var(--jc-line); border-radius:.9rem; padding:.75rem .9rem; background:#fff; }
-        .jc-opt.on { border-color:var(--jc-orange); background:var(--jc-orange-soft); box-shadow:0 0 12px rgba(255,140,0,.2); }
     </style>
 </head>
 <body class="jc-scan min-h-dvh antialiased">
