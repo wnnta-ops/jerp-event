@@ -4,7 +4,6 @@ namespace App\Modules\Event\Models;
 
 use App\Models\Concerns\TenantAwareModel;
 use App\Models\User;
-use App\Models\User;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 /**
