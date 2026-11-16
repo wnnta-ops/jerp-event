@@ -49,7 +49,7 @@ class AntreanService
                 'customer_code' => $p->customer_code,
                 'since' => $since?->toIso8601String(),
             ];
-        })->sortBy('since')->values()->all();
+        })->sortBy([['since', 'asc'], ['participant_id', 'asc']])->values()->all();
     }
 
     /**
@@ -188,6 +188,8 @@ class AntreanService
                 ->orWhere('customer_code', 'like', '%'.trim($cari).'%')))
             ->orderByRaw("case status when 'active' then 0 when 'finished' then 1 else 2 end")
             ->orderBy('checked_in_at')
+            ->orderBy('no_nup')   // check-in bersamaan (mis. 2 NUP satu customer) → urut No. NUP
+            ->orderBy('id')
             ->get();
 
         $kunjungan = EtVisit::query()

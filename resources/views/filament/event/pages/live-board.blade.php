@@ -78,7 +78,33 @@
     .jr-step.last::before{right:50%}
     .jr-step.lewat::before{background:rgb(16 185 129)}
     .jr-lbl{font-size:.6rem;line-height:1.1;opacity:.7;text-align:center;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:0 .1rem}
+    /* Per pos versi HP: daftar pos bertumpuk, tap untuk buka */
+    .lbm{display:none;flex-direction:column;gap:.6rem}
+    .lbm-pos{border:1px solid rgb(229 231 235);border-radius:.8rem;background:white;overflow:hidden}
+    .dark .lbm-pos{border-color:rgb(55 65 81);background:rgb(17 24 39)}
+    .lbm-head{display:flex;align-items:center;gap:.6rem;width:100%;padding:.75rem .85rem;text-align:left}
+    .lbm-count{display:flex;flex-direction:column;align-items:center;min-width:2.6rem;border-radius:.6rem;padding:.25rem .35rem;background:rgb(243 244 246)}
+    .dark .lbm-count{background:rgb(31 41 55)}
+    .lbm-count b{font-size:1.15rem;line-height:1.1}
+    .lbm-count span{font-size:.58rem;opacity:.7;text-transform:uppercase;letter-spacing:.03em}
+    .lbm-count.svc b{color:rgb(2 132 199)}
+    .lbm-chev{transition:transform .15s ease;opacity:.5}
+    .lbm-chev.open{transform:rotate(180deg)}
+    .lbm-foot{display:flex;justify-content:space-between;font-size:.72rem;opacity:.75;padding:0 .85rem .6rem}
+    .lbm-body{border-top:1px solid rgb(229 231 235);padding:.5rem .6rem .7rem}
+    .dark .lbm-body{border-color:rgb(55 65 81)}
+    .lbm-orang{display:flex;align-items:center;gap:.5rem;width:100%;text-align:left;padding:.55rem .6rem;border-radius:.55rem;border-left:4px solid rgb(156 163 175);background:rgb(249 250 251);margin-top:.35rem}
+    .dark .lbm-orang{background:rgb(31 41 55)}
+    .lbm-orang.svc{border-left-color:rgb(14 165 233)}
+    .lbm-orang.amber{border-left-color:rgb(245 158 11);background:rgb(255 251 235)}
+    .lbm-orang.red{border-left-color:rgb(225 29 72);background:rgb(255 241 242)}
+    .dark .lbm-orang.amber{background:rgb(69 26 3)}
+    .dark .lbm-orang.red{background:rgb(76 5 25)}
+    .lbm-detail{font-size:.78rem;padding:.45rem .7rem .2rem 1rem;display:flex;flex-direction:column;gap:.2rem}
+    .lbm-detail .lb-acts{margin-top:.3rem;font-size:.8rem;gap:1rem}
     @media (max-width: 640px) {
+        .lbm{display:flex}
+        .lb-cols{display:none !important}
         .lb-bar{gap:.5rem}
         .lb-field{min-width:0;width:100%}
         .lb-bar .lb-sub{margin-left:0 !important;width:100%}
@@ -255,6 +281,67 @@
                 @endforelse
             </div>
         @else
+        {{-- HP: daftar pos bertumpuk. Tap pos → orangnya; tap orang → detail & koreksi.
+             Yang sudah selesai di pos cukup dihitung ("Selesai n"); riwayat per orang ada di
+             tampilan Per peserta. State buka/tutup disimpan Alpine, tetap terbuka saat poll. --}}
+        <div class="lbm" x-data="{ buka: null, orang: null }" wire:key="lbm-{{ $event->id }}">
+            @foreach ($papan['pos'] as $pos)
+                @php
+                    $tertua = collect($pos['dilayani'])->pluck('since')->merge(collect($pos['menunggu'])->pluck('since'))->filter()->min();
+                    $baris = collect($pos['dilayani'])->map(fn ($c) => $c + ['jenis' => 'dilayani'])
+                        ->merge(collect($pos['menunggu'])->map(fn ($c) => $c + ['jenis' => 'menunggu']));
+                @endphp
+                <div class="lbm-pos" wire:key="lbm-pos-{{ $pos['id'] }}">
+                    <button type="button" class="lbm-head" @click="buka = buka === {{ $pos['id'] }} ? null : {{ $pos['id'] }}; orang = null">
+                        <div style="flex:1;min-width:0">
+                            <div class="lb-title" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ $pos['name'] }}</div>
+                            <div class="lb-sub">Pos {{ $pos['sequence'] }}{{ $pos['target'] ? ' · target '.$pos['target'].' mnt' : '' }}{{ $pos['optional'] ? ' · opsional' : '' }}</div>
+                        </div>
+                        <div class="lbm-count svc"><b>{{ count($pos['dilayani']) }}</b><span>Dilayani</span></div>
+                        <div class="lbm-count"><b>{{ count($pos['menunggu']) }}</b><span>Menunggu</span></div>
+                        <svg class="lbm-chev" :class="buka === {{ $pos['id'] }} && 'open'" width="18" height="18" viewBox="0 0 20 20" fill="currentColor"><path d="M5.3 7.3a1 1 0 0 1 1.4 0L10 10.6l3.3-3.3a1 1 0 1 1 1.4 1.4l-4 4a1 1 0 0 1-1.4 0l-4-4a1 1 0 0 1 0-1.4z"/></svg>
+                    </button>
+                    <div class="lbm-foot">
+                        <span>{!! $tertua ? 'Terlama: <b class="lb-time" x-text="fmt(\''.$tertua.'\')"></b>' : 'Kosong' !!}</span>
+                        <span style="color:rgb(5 150 105)">Selesai {{ $pos['selesai'] }}</span>
+                    </div>
+                    <div class="lbm-body" x-show="buka === {{ $pos['id'] }}" x-cloak>
+                        @forelse ($baris as $c)
+                            @php $kunci = $pos['id'].'-'.$c['participant_id']; @endphp
+                            <button type="button" wire:key="lbm-o-{{ $kunci }}"
+                                    class="lbm-orang {{ $c['jenis'] === 'dilayani' ? 'svc' : '' }}"
+                                    :class="warna('{{ $c['since'] }}', {{ (int) $pos['target'] }})"
+                                    @click="orang = orang === '{{ $kunci }}' ? null : '{{ $kunci }}'">
+                                <div style="flex:1;min-width:0">
+                                    <div class="lb-name">{{ $c['name'] }}</div>
+                                    <div class="lb-meta">{{ $c['jenis'] === 'dilayani' ? 'Sedang dilayani' : 'Menunggu' }}</div>
+                                </div>
+                                <span class="lb-time" x-text="fmt('{{ $c['since'] }}')"></span>
+                            </button>
+                            <div class="lbm-detail" x-show="orang === '{{ $kunci }}'" x-cloak>
+                                @if ($c['no_nup'])<div>NUP <b>{{ $c['no_nup'] }}</b></div>@endif
+                                @if ($c['customer_code'])<div>Kode customer <b>{{ $c['customer_code'] }}</b></div>@endif
+                                @if ($c['since'])<div>{{ $c['jenis'] === 'dilayani' ? 'Mulai dilayani' : 'Menunggu sejak' }} <b>{{ \Illuminate\Support\Carbon::parse($c['since'])->timezone(config('app.timezone'))->format('H:i') }}</b>{{ $pos['target'] ? ' · target '.$pos['target'].' mnt' : '' }}</div>@endif
+                                @if (! empty($c['flags']))<div>@foreach ($c['flags'] as $f)<span class="lb-flag" style="margin-left:0;margin-right:.25rem">{{ str_replace('_', ' ', $f) }}</span>@endforeach</div>@endif
+                                @if ($bolehKoreksi)
+                                    <div class="lb-acts">
+                                        @if ($c['jenis'] === 'dilayani')
+                                            <button type="button" wire:click="mountAction('tutupKunjungan', { visit: {{ $c['visit_id'] }} })">Tutup paksa</button>
+                                        @else
+                                            <button type="button" wire:click="mountAction('mulaiLayanan', { participant: {{ $c['participant_id'] }}, station: {{ $pos['id'] }} })">Mulai di sini</button>
+                                        @endif
+                                        <button type="button" class="del" wire:click="mountAction('tandaiPulang', { participant: {{ $c['participant_id'] }} })">Pulang</button>
+                                    </div>
+                                @endif
+                            </div>
+                        @empty
+                            <div class="lb-empty" style="padding:.4rem .2rem">Tidak ada yang menunggu atau dilayani.</div>
+                        @endforelse
+                    </div>
+                </div>
+            @endforeach
+        </div>
+
         <div class="lb-cols">
             @foreach ($papan['pos'] as $pos)
                 @php
