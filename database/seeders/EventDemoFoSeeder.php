@@ -21,7 +21,9 @@ use RuntimeException;
  *                      (bahan EventDemoSeeder untuk live board)
  *
  * Ditulis lewat query builder (bukan model FO) supaya observer FO — mis. webhook
- * survei pada Customer — tidak ikut terpicu. Idempoten: data demo lama dihapus dulu.
+ * survei pada Customer — tidak ikut terpicu. Idempoten: baris demo yang sudah ada
+ * DIPERBARUI di tempat (id tetap), jadi event modul Event yang sudah terhubung ke
+ * DEMOEVT tidak putus saat seeder dijalankan ulang.
  * Hapus: php artisan db:seed --class=EventDemoFoHapusSeeder
  */
 class EventDemoFoSeeder extends Seeder
@@ -38,8 +40,6 @@ class EventDemoFoSeeder extends Seeder
             throw new RuntimeException('EventDemoFoSeeder hanya untuk lingkungan lokal/testing.');
         }
 
-        (new EventDemoFoHapusSeeder)->run();
-
         $projectId = DB::table('projects')->where('tenant_id', 1)->orderBy('id')->value('id');
         if (! $projectId) {
             throw new RuntimeException('Belum ada proyek untuk tenant 1.');
@@ -47,11 +47,10 @@ class EventDemoFoSeeder extends Seeder
 
         DB::transaction(function () use ($projectId) {
             $now = now();
-            $eventId = DB::table('fo_nup_events')->insertGetId([
-                'tenant_id' => 1, 'project_id' => $projectId, 'code' => self::EVENT_CODE,
+            $eventId = $this->simpan('fo_nup_events', ['tenant_id' => 1, 'code' => self::EVENT_CODE], [
+                'project_id' => $projectId,
                 'name' => '[DEMO-EVENT] Launching uji modul Event', 'tgl_launching' => $now->toDateString(),
                 'booking_fee' => 0, 'status' => 'OPEN', 'keterangan' => 'Data contoh lokal — boleh dihapus.',
-                'created_at' => $now, 'updated_at' => $now,
             ]);
 
             $nama = ['01' => 'Andi Pratama', '02' => 'Budi Santoso', '03' => 'Citra Lestari', '04' => 'Dewi Anggraini', '05' => 'Eko Wibowo', '06' => 'Fajar Nugroho'];
@@ -64,10 +63,8 @@ class EventDemoFoSeeder extends Seeder
 
             $customer = [];
             foreach ($nama as $no => $nm) {
-                $customer[$no] = DB::table('fo_customers')->insertGetId([
-                    'tenant_id' => 1, 'project_id' => $projectId, 'code' => self::CUST_PREFIX.$no,
-                    'full_name' => $nm, 'mobile' => '08120000'.$no,
-                    'created_at' => $now, 'updated_at' => $now,
+                $customer[$no] = $this->simpan('fo_customers', ['tenant_id' => 1, 'code' => self::CUST_PREFIX.$no], [
+                    'project_id' => $projectId, 'full_name' => $nm, 'mobile' => '08120000'.$no,
                 ]);
             }
 
@@ -87,19 +84,36 @@ class EventDemoFoSeeder extends Seeder
                 $nup[] = [str_pad((string) ($i + 8), 4, '0', STR_PAD_LEFT), str_pad((string) ($i + 7), 2, '0', STR_PAD_LEFT), 'CHECK_IN', $menit, 'APPROVED', false];
             }
             foreach ($nup as $i => [$no, $cust, $status, $menit, $verif, $hold]) {
-                DB::table('fo_nup_registrations')->insert([
-                    'tenant_id' => 1, 'nup_event_id' => $eventId, 'customer_id' => $customer[$cust],
-                    'no_nup' => self::NUP_PREFIX.$no, 'urutan' => $i + 1,
-                    'nama_pendaftar' => DB::table('fo_customers')->where('id', $customer[$cust])->value('full_name'),
+                $this->simpan('fo_nup_registrations', ['tenant_id' => 1, 'no_nup' => self::NUP_PREFIX.$no], [
+                    'nup_event_id' => $eventId, 'customer_id' => $customer[$cust], 'urutan' => $i + 1,
+                    'nama_pendaftar' => $nama[$cust],
                     'tgl_daftar' => $now->copy()->subDays(7), 'status' => $status,
                     'tgl_check_in' => $menit !== null ? $now->copy()->subSeconds((int) round($menit * 60)) : null,
                     'verif_status' => $verif, 'is_hold' => $hold,
                     'hold_reason' => $hold ? 'Data contoh: di-hold' : null,
-                    'created_at' => $now, 'updated_at' => $now,
                 ]);
             }
         });
 
         $this->command?->info('  Data FO contoh [DEMO-EVENT] siap: 1 event NUP, 30 customer, 31 NUP.');
+    }
+
+    /**
+     * Perbarui baris demo bila sudah ada (termasuk yang terhapus lunak), selain itu buat.
+     *
+     * @param  array<string, mixed>  $kunci
+     * @param  array<string, mixed>  $nilai
+     */
+    private function simpan(string $tabel, array $kunci, array $nilai): int
+    {
+        $now = now();
+        $id = DB::table($tabel)->where($kunci)->value('id');
+        if ($id) {
+            DB::table($tabel)->where('id', $id)->update($nilai + ['deleted_at' => null, 'updated_at' => $now]);
+
+            return (int) $id;
+        }
+
+        return (int) DB::table($tabel)->insertGetId($kunci + $nilai + ['created_at' => $now, 'updated_at' => $now]);
     }
 }
