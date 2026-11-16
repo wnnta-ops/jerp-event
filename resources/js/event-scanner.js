@@ -16,6 +16,16 @@ function bunyi(ok) {
     } catch (_) { /* tanpa suara pun tetap jalan */ }
 }
 
+// Sesi kedaluwarsa (419) saat poll/scan → muat ulang (ke halaman login bila perlu),
+// bukan menampilkan halaman error di atas scanner.
+document.addEventListener('livewire:init', () => {
+    window.Livewire.hook('request', ({ fail }) => {
+        fail(({ status, preventDefault }) => {
+            if (status === 419) { preventDefault(); window.location.reload(); }
+        });
+    });
+});
+
 document.addEventListener('alpine:init', () => {
     window.Alpine.data('eventScanner', (scanPointId, undoSeconds) => ({
         fase: 'kamera',          // kamera | hasil | pilih

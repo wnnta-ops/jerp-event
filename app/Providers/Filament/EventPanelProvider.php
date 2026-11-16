@@ -12,11 +12,13 @@ use Filament\Navigation\NavigationItem;
 use Filament\Panel;
 use Filament\PanelProvider;
 use Filament\Support\Colors\Color;
+use Filament\View\PanelsRenderHook;
 use Illuminate\Cookie\Middleware\AddQueuedCookiesToResponse;
 use Illuminate\Cookie\Middleware\EncryptCookies;
 use Illuminate\Foundation\Http\Middleware\VerifyCsrfToken;
 use Illuminate\Routing\Middleware\SubstituteBindings;
 use Illuminate\Session\Middleware\StartSession;
+use Illuminate\Support\HtmlString;
 use Illuminate\View\Middleware\ShareErrorsFromSession;
 
 /**
@@ -65,6 +67,20 @@ class EventPanelProvider extends PanelProvider
                     // PERTAMA. Kalau "Menu utama" di atas, /event memantul balik ke /dashboard.
                     ->sort(100),
             ])
+            // Live board polling tiap 5 detik: bila sesi kedaluwarsa (419), muat ulang halaman
+            // dengan tenang (→ halaman login bila perlu), bukan menampilkan halaman error 419
+            // di atas papan.
+            ->renderHook(PanelsRenderHook::BODY_END, fn () => new HtmlString(<<<'HTML'
+                <script>
+                    document.addEventListener('livewire:init', () => {
+                        Livewire.hook('request', ({ fail }) => {
+                            fail(({ status, preventDefault }) => {
+                                if (status === 419) { preventDefault(); window.location.reload(); }
+                            });
+                        });
+                    });
+                </script>
+                HTML))
             ->middleware([
                 EncryptCookies::class,
                 AddQueuedCookiesToResponse::class,
