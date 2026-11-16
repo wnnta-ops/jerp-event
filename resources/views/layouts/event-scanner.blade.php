@@ -10,7 +10,9 @@
     @vite(['resources/css/app.css', 'resources/js/event-scanner.js'])
     @livewireStyles
 </head>
-<body class="min-h-dvh antialiased bg-slate-950 text-slate-100">
+{{-- Warna dikunci inline: aturan body global di app.css (latar & teks terang/gelap tema
+     J-ERP) berada di luar layer Tailwind sehingga mengalahkan kelas bg-/text- di sini. --}}
+<body class="min-h-dvh antialiased" style="background-color:#020617; color:#f1f5f9;">
     {{ $slot }}
     @livewireScripts
 </body>
