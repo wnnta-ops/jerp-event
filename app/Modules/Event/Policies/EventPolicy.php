@@ -121,6 +121,25 @@ class EventPolicy
         return $q->get();
     }
 
+    /**
+     * Untuk daftar di halaman scanner: event OPEN (bisa dipilih) + DRAFT (tampil
+     * sebagai "belum aktif"). Event yang sudah ditutup tidak ditampilkan.
+     *
+     * @return \Illuminate\Support\Collection<int, EtEvent>
+     */
+    public function scannerEventsTermasukDraft(User $user): \Illuminate\Support\Collection
+    {
+        $q = EtEvent::query()->whereIn('status', [EtEvent::OPEN, EtEvent::DRAFT])
+            ->orderByRaw("case when status = 'open' then 0 else 1 end")
+            ->orderByDesc('event_date');
+        if (! $this->isSuper($user)) {
+            $q->whereIn('id', EtAccess::query()->select('event_id')
+                ->where('user_id', $user->id)->whereNotNull('scan_point_id'));
+        }
+
+        return $q->get();
+    }
+
     private function punyaFlag(?User $user, EtEvent $event, string $flag): bool
     {
         return $user instanceof User && EtAccess::query()

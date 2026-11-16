@@ -135,6 +135,7 @@ class Scanner extends Component
 
         return view('livewire.event.scanner', [
             'events' => $events,
+            'daftarEvent' => $this->policy()->scannerEventsTermasukDraft($user),
             'event' => $event,
             'titik' => $titik,
             'point' => $point,

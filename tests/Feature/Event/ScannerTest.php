@@ -66,6 +66,24 @@ class ScannerTest extends EventTestCase
         $this->assertNotNull($res['log_id']);
     }
 
+    public function test_draft_events_listed_as_belum_aktif_and_not_selectable(): void
+    {
+        $open = $this->eventOpen($this->foNupEvent('A'));
+        $draft = $this->eventOpen($this->foNupEvent('B'), EtEvent::DRAFT);
+        $draft['event']->update(['name' => 'Event Draft Uji']);
+        $open2 = $this->eventOpen($this->foNupEvent('C'));
+        $u = $this->superUser();
+
+        $lw = Livewire::actingAs($u)->test(Scanner::class)
+            ->assertSet('eventId', null)
+            ->assertSee('Event Draft Uji')
+            ->assertSee('belum aktif')
+            ->call('pilihEvent', $draft['event']->id)
+            ->assertSet('eventId', null);
+
+        $lw->call('pilihEvent', $open['event']->id)->assertSet('eventId', $open['event']->id);
+    }
+
     public function test_scanner_cannot_select_unassigned_point(): void
     {
         $e = $this->eventOpen($this->foNupEvent());
