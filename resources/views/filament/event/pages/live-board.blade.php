@@ -65,6 +65,31 @@
     @keyframes radar{0%{transform:scale(1);opacity:.85}100%{transform:scale(3.2);opacity:0}}
     .jr-legend{display:flex;flex-wrap:wrap;gap:1rem;font-size:.75rem;opacity:.85;align-items:center}
     .jr-legend span{display:inline-flex;gap:.4rem;align-items:center}
+    .lb-field{min-width:18rem}
+    /* Kartu per peserta (HP) */
+    .jr-cards{display:none;flex-direction:column;gap:.6rem}
+    .jr-card{border:1px solid rgb(229 231 235);border-radius:.8rem;padding:.7rem .8rem;background:white}
+    .dark .jr-card{border-color:rgb(55 65 81);background:rgb(17 24 39)}
+    .jr-track{display:grid;margin-top:.6rem}
+    .jr-step{position:relative;display:flex;flex-direction:column;align-items:center;gap:.3rem;min-width:0}
+    .jr-step::before{content:"";position:absolute;top:7px;left:0;right:0;height:2px;background:rgb(229 231 235);z-index:0}
+    .dark .jr-step::before{background:rgb(55 65 81)}
+    .jr-step.first::before{left:50%}
+    .jr-step.last::before{right:50%}
+    .jr-step.lewat::before{background:rgb(16 185 129)}
+    .jr-lbl{font-size:.6rem;line-height:1.1;opacity:.7;text-align:center;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:0 .1rem}
+    @media (max-width: 640px) {
+        .lb-bar{gap:.5rem}
+        .lb-field{min-width:0;width:100%}
+        .lb-bar .lb-sub{margin-left:0 !important;width:100%}
+        .jr-legend{gap:.35rem .8rem;font-size:.68rem}
+        .jr-legend .dot{width:12px;height:12px}
+        .jr-wrap{display:none}
+        .jr-cards{display:flex}
+        .lb-cols{scroll-snap-type:x mandatory;gap:.6rem;margin:0 -.25rem;padding:0 .25rem .5rem}
+        .lb-col{flex:0 0 88%;scroll-snap-align:start;max-height:none}
+        .lb-tbl{display:block;overflow-x:auto;white-space:nowrap}
+    }
 </style>
 
 <div wire:poll.5s
@@ -78,7 +103,7 @@
      class="space-y-4">
 
     <div class="lb-bar">
-        <x-filament::input.wrapper style="min-width:18rem">
+        <x-filament::input.wrapper class="lb-field">
             <x-filament::input.select wire:model.live="eventId">
                 @forelse ($events as $e)
                     <option value="{{ $e->id }}">{{ $e->name }} · {{ $e->event_date->translatedFormat('d M Y') }}{{ $e->status === 'closed' ? ' (ditutup)' : '' }}</option>
@@ -87,7 +112,7 @@
                 @endforelse
             </x-filament::input.select>
         </x-filament::input.wrapper>
-        <x-filament::input.wrapper style="min-width:18rem" prefix-icon="heroicon-m-magnifying-glass">
+        <x-filament::input.wrapper class="lb-field" prefix-icon="heroicon-m-magnifying-glass">
             <x-filament::input type="search" placeholder="Cari nama / No. NUP / kode customer" wire:model.live.debounce.400ms="cari" />
         </x-filament::input.wrapper>
         <div class="lb-toggle" role="group" aria-label="Tampilan">
@@ -199,6 +224,35 @@
                         @endforelse
                     </tbody>
                 </table>
+            </div>
+
+            {{-- HP: kartu per peserta, jalur titik selebar layar --}}
+            <div class="jr-cards">
+                @forelse ($perjalanan['baris'] as $b)
+                    @php $n = count($b['titik']); @endphp
+                    <div class="jr-card" wire:key="jrc-{{ $b['participant_id'] }}">
+                        <div class="lb-row">
+                            <div style="min-width:0">
+                                <div class="lb-name">{{ $b['name'] }}</div>
+                                <div class="lb-meta">{{ $b['no_nup'] ? 'NUP '.$b['no_nup'] : $b['customer_code'] }}
+                                    @if ($b['status'] === 'finished') · <span style="color:rgb(5 150 105)">selesai</span>
+                                    @elseif ($b['status'] === 'left') · <span style="color:rgb(225 29 72)">pulang</span> @endif
+                                </div>
+                            </div>
+                            @if ($b['since'])<span class="lb-time" x-text="fmt('{{ $b['since'] }}')"></span>@endif
+                        </div>
+                        <div class="jr-track" style="grid-template-columns:repeat({{ $n }}, minmax(0, 1fr))">
+                            @foreach ($b['titik'] as $i => $t)
+                                <div @class(['jr-step', 'first' => $i === 0, 'last' => $i === $n - 1, 'lewat' => in_array($t['state'], ['tepat', 'telat', 'dilewati'], true)])>
+                                    <i class="dot {{ $t['state'] }}"></i>
+                                    <span class="jr-lbl">{{ $perjalanan['pos'][$i]['name'] }}</span>
+                                </div>
+                            @endforeach
+                        </div>
+                    </div>
+                @empty
+                    <div class="lb-sub">Belum ada peserta{{ mb_strlen(trim($this->cari)) >= 2 ? ' yang cocok' : '' }}.</div>
+                @endforelse
             </div>
         @else
         <div class="lb-cols">
