@@ -76,6 +76,9 @@
                 <div class="text-xs truncate" style="opacity:.9">{{ $event->name }}</div>
                 <div class="text-2xl font-black leading-tight truncate">{{ $point->station->name }} · {{ $point->kindLabel() }}</div>
             </div>
+            <button type="button" class="jc-header-btn shrink-0" @click="setelan = true" aria-label="Cara menandai selesai" title="Cara menandai selesai" style="padding:.4rem .55rem">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h0a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h0a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v0a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+            </button>
             <button type="button" class="jc-header-btn shrink-0" @click="jerpLupakanTitikEvent(); $wire.gantiTitik()">Ganti</button>
         </header>
 
@@ -95,7 +98,8 @@
                                 <div class="text-xs jc-muted">dilayani</div>
                             </div>
                         </div>
-                        <div class="mt-3" x-data="geserSelesai({{ $d['participant_id'] }})">
+                        {{-- A. Geser --}}
+                        <div class="mt-3" x-show="cara === 'geser'" x-data="geserSelesai({{ $d['participant_id'] }})">
                             <div class="jc-slide" x-ref="track" :class="selesaiKah && 'done'">
                                 <div class="jc-slide-fill" :style="`width:${x + 52}px`"></div>
                                 <div class="jc-slide-text" :style="`opacity:${1 - persen}`">Geser untuk selesai ›››</div>
@@ -107,6 +111,30 @@
                                     <svg width="22" height="22" viewBox="0 0 20 20" fill="currentColor"><path d="M7.3 4.3a1 1 0 0 1 1.4 0l5 5a1 1 0 0 1 0 1.4l-5 5a1 1 0 0 1-1.4-1.4L11.6 10 7.3 5.7a1 1 0 0 1 0-1.4z"/></svg>
                                 </div>
                             </div>
+                        </div>
+                        {{-- B. Tahan --}}
+                        <div class="mt-3" x-show="cara === 'tahan'" x-cloak x-data="tahanSelesai({{ $d['participant_id'] }})">
+                            <button type="button" class="jc-hold" :class="selesaiKah && 'done'"
+                                    @pointerdown.prevent="mulai($event)" @pointerup="batal()" @pointerleave="batal()" @pointercancel="batal()"
+                                    @keydown.enter.prevent="konfirmasi()" @contextmenu.prevent>
+                                <span class="jc-hold-fill" :style="`width:${p * 100}%`"></span>
+                                <span class="jc-hold-text" x-text="selesaiKah ? 'Selesai ✓' : (p > 0 ? 'Tahan terus…' : 'Tahan untuk selesai')"></span>
+                            </button>
+                        </div>
+                        {{-- C. Tombol + konfirmasi --}}
+                        <div class="mt-3" x-show="cara === 'konfirmasi'" x-cloak x-data="{ tanya: false }">
+                            <button type="button" x-show="! tanya" @click="tanya = true" class="jc-btn w-full" style="padding:.9rem">Selesai</button>
+                            <div x-show="tanya" class="jc-confirm">
+                                <div class="text-sm font-semibold">Selesaikan {{ $d['name'] }}?</div>
+                                <div class="flex gap-2 mt-2">
+                                    <button type="button" @click="tanya = false; selesai({{ $d['participant_id'] }})" class="jc-btn flex-1">Ya, selesai</button>
+                                    <button type="button" @click="tanya = false" class="jc-btn-outline flex-1" style="width:auto">Batal</button>
+                                </div>
+                            </div>
+                        </div>
+                        {{-- D. Scan ulang --}}
+                        <div class="mt-3 jc-hint" x-show="cara === 'scan'" x-cloak>
+                            Scan ulang QR customer ini — atau ketik No. NUP-nya — untuk menandai selesai.
                         </div>
                     </div>
                 @endforeach
@@ -182,6 +210,26 @@
             <div class="mt-1 text-xl" style="opacity:.9" x-show="hasil?.no_nup" x-text="'NUP ' + (hasil?.no_nup || '')"></div>
             <div class="mt-6 rounded-lg px-4 py-2 text-lg" style="background:rgba(0,0,0,.2)" x-show="hasil?.warning" x-text="hasil?.warning"></div>
             <div class="mt-10 text-sm" style="opacity:.8">Ketuk untuk lanjut</div>
+        </div>
+
+        {{-- Setelan: cara menandai customer selesai (diingat di HP ini) --}}
+        <div x-show="setelan" x-cloak class="fixed inset-0 z-40 flex items-end" style="background:rgba(0,0,0,.35)" @click.self="setelan = false">
+            <div class="w-full rounded-t-2xl p-5 space-y-2" style="background:#fff">
+                <div class="text-lg font-bold">Cara menandai selesai</div>
+                <div class="text-sm jc-muted mb-2">Dipakai di panel "Customer Anda". Diingat di HP ini.</div>
+                @foreach ([
+                    'geser' => ['Geser', 'Geser tombol ke kanan sampai ujung. Paling aman dari tersenggol.'],
+                    'tahan' => ['Tahan tombol', 'Tekan & tahan 1,5 detik sampai penuh. Satu jempol.'],
+                    'konfirmasi' => ['Tombol + konfirmasi', 'Tap "Selesai", lalu "Ya, selesai".'],
+                    'scan' => ['Scan ulang QR', 'Scan QR customer yang sama sekali lagi. Tanpa sentuh layar.'],
+                ] as $kode => [$judul, $ket])
+                    <button type="button" class="jc-opt" :class="cara === '{{ $kode }}' && 'on'" @click="pilihCara('{{ $kode }}')">
+                        <div class="font-bold">{{ $judul }}</div>
+                        <div class="text-sm jc-muted">{{ $ket }}</div>
+                    </button>
+                @endforeach
+                <button type="button" class="jc-btn-outline mt-2" @click="setelan = false">Tutup</button>
+            </div>
         </div>
 
         {{-- Pilih NUP (customer dengan beberapa NUP) --}}

@@ -41,6 +41,8 @@ class ScanService
 
     /**
      * @param  int|null  $nupRegistrationId  Pilihan dari picker "Customer ini punya 2 NUP".
+     * @param  bool  $scanUlangSelesai  Gaya "scan ulang = selesai": di titik Masuk, scan customer
+     *                                  yang sedang DIA layani di pos ini menutup kunjungannya.
      */
     public function handle(
         int $scanPointId,
@@ -48,6 +50,7 @@ class ScanService
         User $user,
         ?int $nupRegistrationId = null,
         ?string $userAgent = null,
+        bool $scanUlangSelesai = false,
     ): ScanResult {
         $payload = mb_substr(trim($payload), 0, 255);
 
@@ -83,7 +86,7 @@ class ScanService
             }
             $p = $this->sync->upsertCustomer($event, $customer);
 
-            return $this->apply($event, $point, $this->effectiveKind($point, collect([$p])), $p, $user, $log);
+            return $this->apply($event, $point, $this->effectiveKind($point, collect([$p])), $p, $user, $log, scanUlangSelesai: $scanUlangSelesai);
         }
 
         // ── Cari NUP di FO (selalu, supaya hold / batal aktivasi langsung terasa) ──
@@ -129,7 +132,7 @@ class ScanService
             );
         }
 
-        return $this->apply($event, $point, $kind, $pilihan, $user, $log);
+        return $this->apply($event, $point, $kind, $pilihan, $user, $log, scanUlangSelesai: $scanUlangSelesai);
     }
 
     /**
@@ -331,9 +334,9 @@ class ScanService
     /**
      * @param  \Closure(string, ?string=, ?int=, ?array=, ?int=): EtScanLog  $log
      */
-    private function apply(EtEvent $event, EtScanPoint $point, string $kind, EtParticipant $pilih, User $user, \Closure $log, string $endReason = EtVisit::END_SCAN_KELUAR): ScanResult
+    private function apply(EtEvent $event, EtScanPoint $point, string $kind, EtParticipant $pilih, User $user, \Closure $log, string $endReason = EtVisit::END_SCAN_KELUAR, bool $scanUlangSelesai = false): ScanResult
     {
-        return DB::transaction(function () use ($event, $point, $kind, $pilih, $user, $log, $endReason) {
+        return DB::transaction(function () use ($event, $point, $kind, $pilih, $user, $log, $endReason, $scanUlangSelesai) {
             /** @var EtParticipant $p */
             $p = EtParticipant::query()->lockForUpdate()->findOrFail($pilih->id);
             $regId = $p->fo_nup_registration_id;
@@ -368,6 +371,12 @@ class ScanService
             $sebelum = $p->only(['status', 'current_station_id', 'current_state', 'finished_at']);
             $sebelum['finished_at'] = $p->finished_at?->toDateTimeString();
             $stations = $event->stations()->get();
+
+            // Gaya "scan ulang = selesai": customer yang sedang dia layani di pos ini → keluar.
+            if ($scanUlangSelesai && $kind === EtScanPoint::MASUK
+                && (int) $this->openVisitAt($p, $station->id)?->started_by === (int) $user->id) {
+                $kind = EtScanPoint::KELUAR;
+            }
 
             [$aksi, $visit, $ditutupLain, $warning] = $kind === EtScanPoint::MASUK
                 ? $this->masuk($p, $station, $stations, $user, $now)

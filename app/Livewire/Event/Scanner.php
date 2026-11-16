@@ -77,14 +77,17 @@ class Scanner extends Component
     }
 
     /** @return array<string, mixed> */
-    public function scan(string $payload, ?int $nupRegistrationId = null): array
+    /**
+     * @param  bool  $scanUlangSelesai  HP ini memakai gaya "scan ulang = selesai".
+     */
+    public function scan(string $payload, ?int $nupRegistrationId = null, bool $scanUlangSelesai = false): array
     {
         if (! $this->scanPointId) {
             return ['status' => 'rejected', 'message' => 'Pilih titik scan dulu'];
         }
 
         return app(ScanService::class)
-            ->handle($this->scanPointId, $payload, $this->user(), $nupRegistrationId, request()->userAgent())
+            ->handle($this->scanPointId, $payload, $this->user(), $nupRegistrationId, request()->userAgent(), $scanUlangSelesai)
             ->toArray();
     }
 
