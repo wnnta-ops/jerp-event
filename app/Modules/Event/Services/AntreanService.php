@@ -222,7 +222,7 @@ class AntreanService
                     $telat = $s->target_minutes && $detik !== null && $detik > $s->target_minutes * 60;
 
                     return ['state' => $telat ? self::DOT_TELAT : self::DOT_TEPAT, 'mulai' => $k->started_at?->toIso8601String(),
-                        'selesai' => $k->ended_at?->toIso8601String(), 'detik' => $detik];
+                        'selesai' => $k->ended_at->toIso8601String(), 'detik' => $detik];
                 }
                 if ($p->status === EtParticipant::ACTIVE && (int) $p->current_station_id === (int) $s->id
                     && $p->current_state === EtParticipant::WAITING) {

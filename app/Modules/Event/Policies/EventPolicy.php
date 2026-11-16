@@ -125,9 +125,9 @@ class EventPolicy
      * Untuk daftar di halaman scanner: event OPEN (bisa dipilih) + DRAFT (tampil
      * sebagai "belum aktif"). Event yang sudah ditutup tidak ditampilkan.
      *
-     * @return \Illuminate\Support\Collection<int, EtEvent>
+     * @return Collection<int, EtEvent>
      */
-    public function scannerEventsTermasukDraft(User $user): \Illuminate\Support\Collection
+    public function scannerEventsTermasukDraft(User $user): Collection
     {
         $q = EtEvent::query()->whereIn('status', [EtEvent::OPEN, EtEvent::DRAFT])
             ->orderByRaw("case when status = 'open' then 0 else 1 end")
