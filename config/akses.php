@@ -252,6 +252,7 @@ return [
 
         // Modul Event
         'App\\Filament\\Event\\Pages\\LiveBoard' => 'event.live_board',
+        'App\\Filament\\Event\\Pages\\Laporan' => 'event.laporan',
     ],
 
     /*

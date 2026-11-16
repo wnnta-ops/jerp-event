@@ -157,6 +157,7 @@ return [
         'Event' => [
             'event.event' => 'Daftar Event',
             'event.live_board' => 'Live Board',
+            'event.laporan' => 'Laporan Event',
         ],
     ],
 ];

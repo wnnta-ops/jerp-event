@@ -3,6 +3,7 @@
 namespace App\Filament\Event\Resources;
 
 use App\Filament\Concerns\MematuhiIzin;
+use App\Filament\Event\Pages\Laporan;
 use App\Filament\Event\Pages\LiveBoard;
 use App\Filament\Event\Resources\EventResource\Pages;
 use App\Models\User;
@@ -304,6 +305,13 @@ class EventResource extends Resource
                     ->visible(fn (EtEvent $r) => $r->status !== EtEvent::DRAFT
                         && LiveBoard::canAccess()
                         && self::policy()->canLiveBoard(Auth::user(), $r)),
+                Tables\Actions\Action::make('laporan')
+                    ->label('Laporan')
+                    ->icon('heroicon-o-chart-bar')
+                    ->url(fn (EtEvent $r) => Laporan::getUrl(['event' => $r->id]))
+                    ->visible(fn (EtEvent $r) => $r->status !== EtEvent::DRAFT
+                        && Laporan::canAccess()
+                        && self::policy()->canReports(Auth::user(), $r)),
                 Tables\Actions\Action::make('scanner')
                     ->label('Scanner')
                     ->icon('heroicon-o-qr-code')
