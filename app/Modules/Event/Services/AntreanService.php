@@ -80,12 +80,12 @@ class AntreanService
     /**
      * Kunjungan yang sedang berjalan di pos ini, paling lama di atas.
      *
-     * @return list<array{participant_id:int, visit_id:int, no_nup:?string, name:?string, customer_code:?string, since:?string, flags:list<string>}>
+     * @return list<array{participant_id:int, visit_id:int, no_nup:?string, name:?string, customer_code:?string, since:?string, flags:list<string>, started_by:?int, petugas:?string}>
      */
     public function dilayani(EtStation $station): array
     {
         return EtVisit::query()
-            ->with('participant:id,no_nup,name_snapshot,customer_code')
+            ->with(['participant:id,no_nup,name_snapshot,customer_code', 'petugas:id,name,full_name'])
             ->where('station_id', $station->id)
             ->whereNull('ended_at')
             ->orderBy('started_at')
@@ -100,6 +100,8 @@ class AntreanService
                 'customer_code' => $v->participant->customer_code,
                 'since' => $v->started_at?->toIso8601String(),
                 'flags' => array_values(array_filter((array) $v->flags, 'is_string')),
+                'started_by' => $v->started_by ? (int) $v->started_by : null,
+                'petugas' => $v->petugas ? ($v->petugas->full_name ?: $v->petugas->name) : null,
             ])->values()->all();
     }
 
@@ -110,7 +112,7 @@ class AntreanService
      * @return array{
      *     pos: list<array{id:int, code:string, name:string, sequence:int, target:?int, optional:bool, finish:bool,
      *         menunggu: list<array{participant_id:int, no_nup:?string, name:?string, customer_code:?string, since:?string}>,
-     *         dilayani: list<array{participant_id:int, visit_id:int, no_nup:?string, name:?string, customer_code:?string, since:?string, flags:list<string>}>,
+     *         dilayani: list<array{participant_id:int, visit_id:int, no_nup:?string, name:?string, customer_code:?string, since:?string, flags:list<string>, started_by:?int, petugas:?string}>,
      *         selesai:int}>,
      *     ringkasan: array{total:int, aktif:int, selesai:int, pulang:int, batal:int}
      * }

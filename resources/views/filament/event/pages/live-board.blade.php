@@ -314,7 +314,7 @@
                                     @click="orang = orang === '{{ $kunci }}' ? null : '{{ $kunci }}'">
                                 <div style="flex:1;min-width:0">
                                     <div class="lb-name">{{ $c['name'] }}</div>
-                                    <div class="lb-meta">{{ $c['jenis'] === 'dilayani' ? 'Sedang dilayani' : 'Menunggu' }}</div>
+                                    <div class="lb-meta">{{ $c['jenis'] === 'dilayani' ? 'Sedang dilayani'.(($c['petugas'] ?? null) ? ' · '.$c['petugas'] : '') : 'Menunggu' }}</div>
                                 </div>
                                 <span class="lb-time" x-text="fmt('{{ $c['since'] }}')"></span>
                             </button>
@@ -379,6 +379,7 @@
                                     {{ $c['no_nup'] ? 'NUP '.$c['no_nup'] : '' }}{{ $c['no_nup'] && $c['customer_code'] ? ' · ' : '' }}{{ $c['customer_code'] }}
                                     @foreach ($c['flags'] as $f) <span class="lb-flag">{{ str_replace('_', ' ', $f) }}</span> @endforeach
                                 </div>
+                                @if ($c['petugas'])<div class="lb-meta">oleh {{ $c['petugas'] }}</div>@endif
                                 @if ($bolehKoreksi)
                                     <div class="lb-acts">
                                         <button type="button" wire:click="mountAction('tutupKunjungan', { visit: {{ $c['visit_id'] }} })">Tutup paksa</button>

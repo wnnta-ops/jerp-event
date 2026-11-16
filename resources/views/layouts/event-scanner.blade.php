@@ -41,6 +41,17 @@
         .jc-time { font-family:ui-monospace,monospace; font-variant-numeric:tabular-nums; color:var(--jc-ink); font-weight:700; }
         .jc-warn { background:var(--jc-orange-soft); color:#9a3412; border-radius:.6rem; padding:.75rem; font-size:.875rem; }
         .jc-pick { background:var(--jc-orange); color:#fff; border-radius:1rem; padding:1.4rem; font-size:1.8rem; font-weight:900; width:100%; box-shadow:0 6px 16px rgba(255,140,0,.28); }
+        /* Panel "Customer Anda" + slider geser untuk selesai */
+        .jc-mine { background:#fff; border:2px solid var(--jc-orange); border-radius:1rem; padding:.9rem 1rem; box-shadow:0 0 14px rgba(255,140,0,.18); }
+        .jc-slide { position:relative; height:56px; border-radius:999px; background:var(--jc-orange-soft); border:2px solid var(--jc-orange); overflow:hidden; touch-action:none; user-select:none; }
+        .jc-slide-fill { position:absolute; top:0; bottom:0; left:0; background:#ffd29a; border-radius:999px; }
+        .jc-slide-text { position:absolute; inset:0; display:grid; place-items:center; padding-left:2.5rem; color:var(--jc-orange-dark); font-weight:800; letter-spacing:.02em; pointer-events:none; }
+        .jc-knob { position:absolute; top:2px; left:2px; width:48px; height:48px; border-radius:50%; background:var(--jc-orange); color:#fff;
+                   display:grid; place-items:center; box-shadow:0 3px 10px rgba(255,140,0,.45); cursor:grab; touch-action:none; }
+        .jc-knob:focus-visible { outline:3px solid #ffd29a; outline-offset:2px; }
+        .jc-slide.balik .jc-knob, .jc-slide.balik .jc-slide-fill { transition:transform .25s ease, width .25s ease; }
+        .jc-slide.done { background:#10b981; border-color:#10b981; }
+        .jc-slide.done .jc-knob { background:#fff; color:#10b981; }
     </style>
 </head>
 <body class="jc-scan min-h-dvh antialiased">

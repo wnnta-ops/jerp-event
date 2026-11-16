@@ -3,6 +3,7 @@
 namespace App\Modules\Event\Models;
 
 use App\Models\Concerns\TenantAwareModel;
+use App\Models\User;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 /**
@@ -42,6 +43,12 @@ class EtVisit extends TenantAwareModel
     public function participant(): BelongsTo
     {
         return $this->belongsTo(EtParticipant::class, 'participant_id');
+    }
+
+    /** Petugas yang memulai layanan (scan Masuk). @return BelongsTo<\App\Models\User, $this> */
+    public function petugas(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'started_by');
     }
 
     /** @return BelongsTo<EtStation, $this> */

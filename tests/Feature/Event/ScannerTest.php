@@ -138,11 +138,51 @@ class ScannerTest extends EventTestCase
 
         // Tak sedang dilayani → ditolak; titik Masuk tak boleh menekan Selesai.
         $this->assertSame('Tidak sedang dilayani di pos ini', app(ScanService::class)->selesaikanManual($e['k2']->id, $p->id, $u)->message);
-        $this->assertSame('Akun tidak punya akses ke pos ini', app(ScanService::class)->selesaikanManual($e['m2']->id, $p->id, $u)->message);
+        $this->assertSame('Tidak sedang dilayani di pos ini', app(ScanService::class)->selesaikanManual($e['m2']->id, $p->id, $u)->message);
 
         // Selesai manual bisa dibatalkan seperti scan biasa.
         $this->assertTrue(app(ScanService::class)->undo($res->log_id, $u)->ok());
         $this->assertNull($v->fresh()->ended_at);
+    }
+
+    public function test_petugas_masuk_handles_own_customer_and_slides_to_finish(): void
+    {
+        Carbon::setTestNow('2026-11-20 10:00:00');
+        $ev = $this->foNupEvent();
+        $this->foNup($ev, $this->foCustomer('C-PG1', 'Pegang Satu'), '1301');
+        $this->foNup($ev, $this->foCustomer('C-PG2', 'Pegang Dua'), '1302');
+        $e = $this->eventOpen($ev);
+        $rina = $this->user();
+        $joko = $this->user();
+        $this->grantScan($rina, $e['event'], $e['m2']);
+        $this->grantScan($joko, $e['event'], $e['m2']);
+        $scan = app(ScanService::class);
+
+        $scan->handle($e['m2']->id, '1301', $rina);
+        $scan->handle($e['m2']->id, '1302', $joko);
+
+        // Panel "Customer Anda" hanya berisi customer yang dia scan sendiri.
+        Livewire::actingAs($rina)->test(Scanner::class)
+            ->call('pilihTitik', $e['m2']->id)
+            ->assertSee('Customer Anda')->assertSee('Geser untuk selesai')
+            ->assertSee('Pegang Satu')->assertDontSee('Pegang Dua');
+
+        // Petugas lain tak boleh menyelesaikan customer Rina dari titik Masuk.
+        $p1 = EtParticipant::where('no_nup', '1301')->sole();
+        $this->assertSame('Customer ini dipegang petugas lain', $scan->selesaikanManual($e['m2']->id, $p1->id, $joko)->message);
+
+        // Rina menggeser slider → selesai, 6 menit.
+        Carbon::setTestNow('2026-11-20 10:06:00');
+        $res = Livewire::actingAs($rina)->test(Scanner::class)->call('pilihTitik', $e['m2']->id)->instance()->selesai($p1->id);
+        $this->assertSame('accepted', $res['status'], $res['message']);
+        $v = EtVisit::where('participant_id', $p1->id)->sole();
+        $this->assertSame(EtVisit::END_MANUAL, $v->end_reason);
+        $this->assertSame(360, $v->serviceSeconds());
+        $this->assertSame($e['s3']->id, $p1->fresh()->current_station_id);
+
+        // Live board menampilkan siapa yang memegang.
+        $papan = app(AntreanService::class)->papan($e['event']);
+        $this->assertSame([$joko->full_name], array_column($papan['pos'][0]['dilayani'], 'petugas'));
     }
 
     public function test_sync_job_command_handles_all_open_events_with_tenant_context(): void

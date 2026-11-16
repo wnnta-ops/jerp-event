@@ -123,13 +123,19 @@ class Scanner extends Component
         }
 
         $antrean = app(AntreanService::class);
-        $menunggu = $dilayani = [];
+        $menunggu = $dilayani = $milikSaya = [];
         if ($point) {
             if ($point->kind !== EtScanPoint::KELUAR) {
                 $menunggu = $antrean->menunggu($point->station);
             }
+            $semuaDilayani = $antrean->dilayani($point->station);
+            // Satu petugas pegang satu customer: yang DIA scan Masuk tampil di panel
+            // "Customer Anda" dengan slider selesai (titik Masuk & single).
+            if ($point->kind !== EtScanPoint::KELUAR) {
+                $milikSaya = array_values(array_filter($semuaDilayani, fn ($d) => $d['started_by'] === (int) $user->id));
+            }
             if ($point->kind !== EtScanPoint::MASUK) {
-                $dilayani = $antrean->dilayani($point->station);
+                $dilayani = array_values(array_filter($semuaDilayani, fn ($d) => ! in_array($d, $milikSaya, true)));
             }
         }
 
@@ -141,6 +147,7 @@ class Scanner extends Component
             'point' => $point,
             'menunggu' => $menunggu,
             'dilayani' => $dilayani,
+            'milikSaya' => $milikSaya,
             'undoSeconds' => ScanService::UNDO_SECONDS,
         ])->layout('layouts.event-scanner', ['title' => $point ? $point->station->name.' · '.$point->kindLabel() : 'Scanner Event']);
     }

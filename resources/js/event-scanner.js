@@ -169,6 +169,47 @@ document.addEventListener('alpine:init', () => {
         },
     }));
 
+    // Slider "Geser untuk selesai" milik petugas: lepas di >= 85% → tandai selesai.
+    // Dipasang di dalam eventScanner, jadi selesai() milik induknya bisa dipanggil langsung.
+    window.Alpine.data('geserSelesai', (participantId) => ({
+        x: 0,
+        maks: 1,
+        asal: 0,
+        geser: false,
+        selesaiKah: false,
+
+        get persen() { return this.maks > 0 ? Math.min(1, this.x / this.maks) : 0; },
+
+        ukur() { this.maks = Math.max(1, this.$refs.track.clientWidth - this.$refs.knob.offsetWidth - 4); },
+
+        mulai(e) {
+            if (this.selesaiKah) return;
+            this.ukur();
+            this.geser = true;
+            this.asal = e.clientX - this.x;
+            this.$refs.track.classList.remove('balik');
+            this.$refs.knob.setPointerCapture(e.pointerId);
+            const gerak = (ev) => { if (this.geser) this.x = Math.max(0, Math.min(this.maks, ev.clientX - this.asal)); };
+            const lepas = () => {
+                this.geser = false;
+                this.$refs.knob.removeEventListener('pointermove', gerak);
+                this.$refs.knob.removeEventListener('pointerup', lepas);
+                this.$refs.knob.removeEventListener('pointercancel', lepas);
+                if (this.persen >= 0.85) { this.konfirmasi(); } else { this.$refs.track.classList.add('balik'); this.x = 0; }
+            };
+            this.$refs.knob.addEventListener('pointermove', gerak);
+            this.$refs.knob.addEventListener('pointerup', lepas);
+            this.$refs.knob.addEventListener('pointercancel', lepas);
+        },
+
+        async konfirmasi() {
+            this.ukur();
+            this.x = this.maks;
+            this.selesaiKah = true;
+            await this.selesai(participantId);
+        },
+    }));
+
     // Pulihkan titik scan terakhir di HP ini.
     window.Alpine.data('eventScannerPemulih', () => ({
         async init() {

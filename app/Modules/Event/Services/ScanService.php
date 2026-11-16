@@ -133,9 +133,14 @@ class ScanService
     }
 
     /**
-     * Tombol "Selesai" di HP Keluar: tutup kunjungan yang sedang berjalan di pos
-     * ini tanpa scan (end_reason manual). Aturan akses & status event sama
-     * dengan scan; tercatat di log dan bisa dibatalkan seperti scan biasa.
+     * Tandai selesai tanpa scan (end_reason manual) — tombol "Selesai" di HP Keluar,
+     * atau slider "Geser untuk selesai" milik petugas yang memegang customer itu.
+     *
+     * - Titik Keluar / single: boleh menyelesaikan siapa pun yang sedang dilayani di pos.
+     * - Titik Masuk: hanya kunjungan yang DIA mulai sendiri (satu petugas pegang satu
+     *   customer, dari scan Masuk sampai selesai).
+     *
+     * Aturan akses & status event sama dengan scan; tercatat di log dan bisa dibatalkan.
      */
     public function selesaikanManual(int $scanPointId, int $participantId, User $user, ?string $userAgent = null): ScanResult
     {
@@ -153,14 +158,18 @@ class ScanService
             return new ScanResult(ScanResult::REJECTED, $pesan, $p->name_snapshot, $p->no_nup, $p->id);
         };
 
-        if (! $this->policy->canScanAt($user, $point) || $point->kind === EtScanPoint::MASUK) {
+        if (! $this->policy->canScanAt($user, $point)) {
             return $tolak('Akun tidak punya akses ke pos ini');
         }
         if (! $event->isOpen()) {
             return $tolak($event->status === EtEvent::CLOSED ? 'Event sudah ditutup' : 'Event belum dibuka');
         }
-        if ($this->openVisitAt($p, $point->station_id) === null) {
+        $visit = $this->openVisitAt($p, $point->station_id);
+        if ($visit === null) {
             return $tolak('Tidak sedang dilayani di pos ini');
+        }
+        if ($point->kind === EtScanPoint::MASUK && (int) $visit->started_by !== (int) $user->id) {
+            return $tolak('Customer ini dipegang petugas lain');
         }
 
         return $this->apply($event, $point, EtScanPoint::KELUAR, $p, $user, $log, EtVisit::END_MANUAL);

@@ -80,6 +80,38 @@
         </header>
 
         <div class="p-4 space-y-4">
+            {{-- Customer yang sedang dipegang petugas ini: geser untuk selesai --}}
+            <div class="space-y-3" @if (empty($milikSaya)) style="display:none" @endif>
+                @foreach ($milikSaya as $d)
+                    <div class="jc-mine" wire:key="mine-{{ $d['visit_id'] }}">
+                        <div class="flex items-start justify-between gap-3">
+                            <div class="min-w-0">
+                                <div class="text-xs font-bold uppercase" style="color:var(--jc-orange);letter-spacing:.05em">Customer Anda</div>
+                                <div class="text-xl font-bold truncate">{{ $d['name'] }}</div>
+                                <div class="text-sm jc-muted">{{ $d['no_nup'] ? 'NUP '.$d['no_nup'] : '' }}{{ $d['no_nup'] && $d['customer_code'] ? ' · ' : '' }}{{ $d['customer_code'] }}</div>
+                            </div>
+                            <div class="text-right shrink-0">
+                                <div class="jc-time text-2xl" x-text="lama('{{ $d['since'] }}')"></div>
+                                <div class="text-xs jc-muted">dilayani</div>
+                            </div>
+                        </div>
+                        <div class="mt-3" x-data="geserSelesai({{ $d['participant_id'] }})">
+                            <div class="jc-slide" x-ref="track" :class="selesaiKah && 'done'">
+                                <div class="jc-slide-fill" :style="`width:${x + 52}px`"></div>
+                                <div class="jc-slide-text" :style="`opacity:${1 - persen}`">Geser untuk selesai ›››</div>
+                                <div class="jc-knob" x-ref="knob" role="slider" tabindex="0"
+                                     aria-label="Geser untuk menandai {{ $d['name'] }} selesai"
+                                     :aria-valuenow="Math.round(persen * 100)" aria-valuemin="0" aria-valuemax="100"
+                                     :style="`transform:translateX(${x}px)`"
+                                     @pointerdown="mulai($event)" @keydown.enter.prevent="konfirmasi()" @keydown.space.prevent="konfirmasi()">
+                                    <svg width="22" height="22" viewBox="0 0 20 20" fill="currentColor"><path d="M7.3 4.3a1 1 0 0 1 1.4 0l5 5a1 1 0 0 1 0 1.4l-5 5a1 1 0 0 1-1.4-1.4L11.6 10 7.3 5.7a1 1 0 0 1 0-1.4z"/></svg>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                @endforeach
+            </div>
+
             {{-- Kamera --}}
             <div wire:ignore>
                 <div id="qr-reader" class="w-full aspect-square rounded-xl overflow-hidden" style="background:#000"></div>
